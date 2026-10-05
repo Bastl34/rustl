@@ -467,7 +467,8 @@ impl State
                 draw_bounding_boxes: false,
                 draw_bounding_spheres: false,
                 draw_physics_volumes: false,
-                draw_light_camera_volumes: true,
+                // only the editor shows them - exports without it have no way to turn them off
+                draw_light_camera_volumes: cfg!(feature = "editor"),
                 debug_volumes_show_internal: false,
 
                 xray_mode: false,
@@ -623,6 +624,9 @@ impl State
                 {
                     existing.source = sound_source.source.clone();
                 }
+
+                // a lasting resource for the same file keeps it
+                existing.temporary &= sound_source.temporary;
             }
 
             return existing.clone();
@@ -654,7 +658,9 @@ impl State
         if self.resources.sound_sources.contains_key(&hash)
         {
             println!("reusing sound source {}", name);
-            return self.resources.sound_sources.get_mut(&hash).unwrap().clone();
+            let existing = self.resources.sound_sources.get_mut(&hash).unwrap().clone();
+            existing.write().unwrap().temporary = false;
+            return existing;
         }
 
         let sound_source = SoundSource::new(name, self.io.audio_device.clone(), &sound_bytes, extension);
@@ -986,15 +992,32 @@ impl State
 
     pub fn set_active_scene(&mut self, id: u32)
     {
-        for scene in &mut self.scenes
+        let run_mode = self.run_mode;
+        let mut changed = vec![];
+
+        for (index, scene) in self.scenes.iter_mut().enumerate()
         {
-            if scene.id == id
+            let active = scene.id == id;
+            if scene.active != active
             {
-                scene.active = true;
+                scene.active = active;
+                changed.push(index);
+            }
+        }
+
+        // leaving a scene stops it like the stop button, entering starts it fresh
+        self.sync_physics_run_state();
+
+        for index in changed
+        {
+            let scene = &mut self.scenes[index];
+            if scene.active
+            {
+                scene.notify_run_mode_changed(RunMode::Edit, run_mode);
             }
             else
             {
-                scene.active = false;
+                scene.notify_run_mode_changed(run_mode, RunMode::Edit);
             }
         }
     }
@@ -1131,7 +1154,7 @@ impl State
 
         for scene in &mut self.scenes
         {
-            scene.physics.set_running(running);
+            scene.physics.set_running(running && scene.active);
         }
     }
 
@@ -1228,7 +1251,7 @@ impl State
 
         for (_, sound_source) in finished_sound_sources
         {
-            if Arc::strong_count(&sound_source) == 2
+            if Arc::strong_count(&sound_source) == 2 && sound_source.read().unwrap().temporary
             {
                 sound_source.write().unwrap().delete_later();
             }

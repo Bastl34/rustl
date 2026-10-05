@@ -88,6 +88,9 @@ const WOBBLE_MOVER_TIME: f32 = 0.25;
 const SETTLE_DRIFT: f32 = 0.2;
 const SETTLE_WINDOW: f32 = 0.5;
 
+// how many loads deep on a vehicle are still kept from freezing, e.g. carrier - truck - pickup
+const CARRY_DEPTH: usize = 4;
+
 // Everything about a physics world the author gets to set. Kept apart from the solver
 // state so it can be serialized with the scene and edited in the ui.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -357,7 +360,14 @@ impl Anchor
 
         match self
         {
-            Anchor::Instance { instance, .. } => Some(instance.read().unwrap().calculate_transform()),
+            // same as for a node: the renderer would show it a frame late - a load on a trailer then trails it by the distance of one frame
+            Anchor::Instance { instance, .. } =>
+            {
+                let world_matrix = instance.read().unwrap().calculate_transform();
+                instance.write().unwrap().get_data_mut().get_mut().computed.world_matrix = world_matrix;
+
+                Some(world_matrix)
+            }
             Anchor::Node { node } =>
             {
                 // The scene refreshes the cached world matrices in its update, which has
@@ -424,6 +434,9 @@ pub struct BodyEntry
     settling: bool, // carries the settle damping on top of its own
     active_time: f32, // since it was last set moving: run start, release or thaw
 
+    // the pose before and after the last step while awake - written back in between like the vehicles, or a load on a trailer jitters against it
+    step_pose: Option<(Pose, Pose)>,
+
     pub parts: Vec<Part>,
 
     // every part the scene asked for, built or not - a mesh without geometry stays on this
@@ -471,6 +484,7 @@ pub enum PhysicsDebugShape
     Sphere { radius: f32 },
     Capsule { half_height: f32, radius: f32 }, // along the local y axis
     Bounds { half_extents: Vector3<f32> },
+    Segment { a: Vector3<f32>, b: Vector3<f32> }, // one edge, local space
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -515,6 +529,10 @@ pub struct VehicleChassisDesc
 
     // frictionless massless balls in chassis space (center, radius) - they slide the vehicle up over edges its wheel rays cannot see yet
     pub bumpers: Vec<(Vector3<f32>, f32)>,
+
+    // the vehicle axes in chassis space - a hitch is straight when both vehicles' axes line up
+    pub forward: Vector3<f32>,
+    pub up: Vector3<f32>,
 }
 
 // One wheel, in chassis space.
@@ -544,6 +562,10 @@ pub struct VehicleEntry
     // nodes outside the vehicle that ride along, e.g. the driver and the passengers, at a pose in chassis space
     riders: Vec<(Weak<RwLock<Box<Node>>>, Pose)>,
     rider_starts: Vec<(Weak<RwLock<Box<Node>>>, Matrix4<f32>)>, // node local transforms when the run started
+
+    frame: (Vector, Vector), // forward and up, chassis space
+
+    pre_velocity: Vector, // before the last step - what changed it besides the wheels came through the hitch
 }
 
 impl VehicleEntry
@@ -580,7 +602,75 @@ impl VehicleEntry
 
         self.previous = pose;
     }
+
+    // the vehicle axes as a rotation from the joint axes: x forward, y up, z right
+    fn frame_rotation(&self) -> Rotation
+    {
+        let (forward, up) = self.frame;
+        let up = up.normalize_or(Vector::Y);
+        let forward = (forward - up * forward.dot(up)).normalize_or(Vector::Z);
+
+        Rotation::from_mat3(&Matrix::from_cols(forward, up, forward.cross(up)))
+    }
+
+    // the sum of what rapier's vehicle applied in its last update: suspension, drive and side grip - the step leaves the wheels as they are
+    fn applied_wheel_impulse(&self, dt: f32) -> Vector
+    {
+        self.controller.wheels().iter().filter(|wheel| wheel.raycast_info().is_in_contact).map(|wheel|
+        {
+            let info = wheel.raycast_info();
+            let normal = info.contact_normal_ws;
+            let side = (wheel.axle() - normal * wheel.axle().dot(normal)).normalize_or_zero();
+            let forward = normal.cross(side).normalize_or_zero();
+
+            normal * wheel.wheel_suspension_force.min(wheel.max_suspension_force) * dt + forward * wheel.forward_impulse + side * wheel.side_impulse
+        }).sum()
+    }
 }
+
+// A trailer coupling the tow vehicle's controller asks for - a ball joint between the two chassis bodies.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct HitchDesc
+{
+    pub point: Vector, // the ball, chassis space of the tow vehicle
+
+    // rad to each side, from the straight line - at or above PI the axis is free
+    pub yaw_limit: f32,
+    pub pitch_limit: f32,
+    pub roll_limit: f32,
+
+    pub break_roll: f32, // rad of roll against the tow vehicle that tear the trailer off, 0 = never
+    pub break_force: f32, // N at the ball that tear it off, 0 = never
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum HitchState
+{
+    Waiting, // one of the two vehicles has no body yet
+    Coupled,
+    Broken, // torn off - stays apart until the run restarts or the tow vehicle recovers
+}
+
+pub struct HitchEntry
+{
+    pub tow: u32, // node id of the tow vehicle, the trailer is the key
+    pub desc: HitchDesc,
+    pub state: HitchState,
+
+    pub brake: f32, // 0..1, the tow vehicle brakes with it and the trailer follows
+    pub force: f32, // N at the ball in the last step
+    pub angles: Vector3<f32>, // rad of the trailer against the tow vehicle: yaw, pitch, roll
+
+    joint: Option<ImpulseJointHandle>,
+    anchor: Option<Vector>, // the ball in trailer chassis space, measured when it was coupled
+    release_in: f32, // s until a torn off pair collides again
+}
+
+// a torn off pair stays without contacts this long - the drawbar still sits in the tow vehicle's body, s
+const HITCH_RELEASE_TIME: f32 = 0.5;
+
+// s the hitch force is smoothed over - a single step spike, e.g. a landing, does not tear the trailer off
+const HITCH_FORCE_SMOOTHING: f32 = 0.03;
 
 // What the scene wants built at one anchor, collected during a scan.
 struct Request
@@ -665,6 +755,9 @@ pub struct PhysicsWorld
     // vehicles by node id - kept across a rebuild, only their controllers set them up or remove them
     vehicles: HashMap<u32, VehicleEntry>,
 
+    // trailer couplings by the trailer's node id - the tow vehicle's controller sets them up
+    hitches: HashMap<u32, HitchEntry>,
+
     // started, touching and stopped contacts of the last frame, see contact_events
     contacts: ContactTracker,
 }
@@ -706,7 +799,8 @@ impl PhysicsWorld
             moved_kinematics: HashSet::new(),
             pre_step_speed: HashMap::new(),
             running: true, // the editor turns this off, a game build just runs
-            snapshot_pending: false,
+            // a run that starts with the world needs its start state too - else leaving the scene does not put its vehicles back
+            snapshot_pending: true,
             edit_snapshot: HashMap::new(),
             edit_snapshot_nodes: HashMap::new(),
 
@@ -721,6 +815,7 @@ impl PhysicsWorld
             excluded_nodes: HashSet::new(),
             characters: HashMap::new(),
             vehicles: HashMap::new(),
+            hitches: HashMap::new(),
             contacts: ContactTracker::default(),
         }
     }
@@ -765,6 +860,13 @@ impl PhysicsWorld
 
         // vehicles belong to their controllers, not to the scene colliders - they keep their motion and run start
         self.carry_vehicles(&old_bodies, &old_colliders);
+
+        // the new joint set hands out the old handles again - the couplings are made again at the next step
+        for hitch in self.hitches.values_mut()
+        {
+            hitch.joint = None;
+        }
+
 
         // the ground plane is configuration, not scene content, so it survives a rebuild
         self.rebuild_ground_plane();
@@ -1603,6 +1705,7 @@ impl PhysicsWorld
             rest: None,
             settling: false,
             active_time: 0.0,
+            step_pose: None,
             parts: built,
             requested_parts,
             transform: anchor_world,
@@ -2312,6 +2415,7 @@ impl PhysicsWorld
         let freeze_after = self.settings.freeze_after.max(0.0);
         let wake_speed = self.settings.wake_speed.max(0.0);
         let damp = self.settings.settle_damping > 0.0;
+        let carried = self.carried_by_vehicles();
 
         for index in 0..self.entries.len()
         {
@@ -2324,8 +2428,8 @@ impl PhysicsWorld
 
             let Some(body) = entry.body.and_then(|handle| self.bodies.get(handle)) else { continue; };
 
-            // a sleeping body costs nothing already
-            if body.is_sleeping()
+            // a sleeping body costs nothing already, and a load must stay free - frozen it would hold its vehicle like a wall
+            if body.is_sleeping() || carried.contains(&index)
             {
                 self.entries[index].rest = None;
                 self.entries[index].active_time = 0.0;
@@ -2405,6 +2509,64 @@ impl PhysicsWorld
     fn is_overdue(&self, entry: &BodyEntry) -> bool
     {
         self.settings.settle_time > 0.0 && entry.active_time >= self.settings.settle_time
+    }
+
+    // the entries lying on a vehicle, directly or on another load (a car on a truck on a car carrier)
+    fn carried_by_vehicles(&self) -> HashSet<usize>
+    {
+        let mut carried = HashSet::new();
+
+        if self.vehicles.is_empty()
+        {
+            return carried;
+        }
+
+        // built on the first touch of a dynamic body only - a car on its own never pays for it
+        let mut entry_of: Option<HashMap<ColliderHandle, usize>> = None;
+
+        let mut layer: Vec<ColliderHandle> = self.vehicles.values().map(|vehicle| vehicle.collider).collect();
+
+        for _ in 0..CARRY_DEPTH
+        {
+            let mut next = vec![];
+
+            for handle in layer
+            {
+                for pair in self.narrow_phase.contact_pairs_with(handle)
+                {
+                    if !pair.has_any_active_contact()
+                    {
+                        continue;
+                    }
+
+                    let other = if pair.collider1 == handle { pair.collider2 } else { pair.collider1 };
+
+                    if !self.colliders.get(other).and_then(|collider| collider.parent()).and_then(|body| self.bodies.get(body)).is_some_and(|body| body.is_dynamic())
+                    {
+                        continue;
+                    }
+
+                    let entry_of = entry_of.get_or_insert_with(|| self.entries.iter().enumerate()
+                        .filter(|(_, entry)| entry.body_type == PhysicsBodyType::Dynamic)
+                        .flat_map(|(index, entry)| entry.parts.iter().map(move |part| (part.handle, index)))
+                        .collect());
+
+                    if let Some(&index) = entry_of.get(&other) && carried.insert(index)
+                    {
+                        next.extend(self.entries[index].parts.iter().map(|part| part.handle));
+                    }
+                }
+            }
+
+            if next.is_empty()
+            {
+                break;
+            }
+
+            layer = next;
+        }
+
+        carried
     }
 
     fn touches_anything(&self, index: usize) -> bool
@@ -2723,6 +2885,9 @@ impl PhysicsWorld
             vehicle.start = vehicle.node.upgrade().and_then(|node| Self::node_local_transform(&node));
             vehicle.rider_starts = vehicle.riders.iter().filter_map(|(rider, _)| rider.upgrade().and_then(|node| Self::node_local_transform(&node)).map(|start| (rider.clone(), start))).collect();
         }
+
+        // coupled again where the trailers stand in the editor
+        self.reset_hitches();
     }
 
     fn restore_node_chain(&self, node: &NodeItem)
@@ -2853,6 +3018,8 @@ impl PhysicsWorld
             vehicle.stop_at(&mut self.bodies, pose);
             vehicle.shown = world;
         }
+
+        self.reset_hitches();
     }
 
     // Advances the solver in fixed steps. The frame time is not constant, and feeding a
@@ -2908,7 +3075,7 @@ impl PhysicsWorld
 
         let mut steps = 0;
 
-        let gravity = Vector::new(self.settings.gravity.x, self.settings.gravity.y, self.settings.gravity.z);
+        let gravity = self.gravity();
 
         if self.time_accumulator >= self.settings.fixed_timestep
         {
@@ -2923,6 +3090,16 @@ impl PhysicsWorld
             self.time_accumulator -= self.settings.fixed_timestep;
             steps += 1;
 
+            // only the last step of the frame is shown in between
+            if self.time_accumulator < self.settings.fixed_timestep
+            {
+                for entry in &mut self.entries
+                {
+                    entry.step_pose = entry.body.and_then(|handle| self.bodies.get(handle)).filter(|body| body.is_dynamic() && !body.is_sleeping()).map(|body| (*body.position(), *body.position()));
+                }
+            }
+
+            self.ensure_hitches();
             self.update_vehicles(self.settings.fixed_timestep);
 
             self.pipeline.step
@@ -2941,12 +3118,22 @@ impl PhysicsWorld
                 &(),
                 &self.contacts.collector
             );
+
+            self.check_hitches(self.settings.fixed_timestep);
         }
 
         self.report_contacts();
 
         if steps > 0
         {
+            for entry in &mut self.entries
+            {
+                if let (Some((_, after)), Some(body)) = (entry.step_pose.as_mut(), entry.body.and_then(|handle| self.bodies.get(handle)))
+                {
+                    *after = *body.position();
+                }
+            }
+
             self.run_steps = self.run_steps.saturating_add(steps);
             self.release_hit_bodies();
             self.settle_bodies(steps as f32 * self.settings.fixed_timestep);
@@ -3310,12 +3497,54 @@ impl PhysicsWorld
     // Suspension, drive and tire forces - right before each solver step, like any other force.
     fn update_vehicles(&mut self, dt: f32)
     {
+        let coupled: Vec<(RigidBodyHandle, RigidBodyHandle)> = self.hitches.iter().filter(|(_, hitch)| hitch.joint.is_some())
+            .filter_map(|(trailer, hitch)| Some((self.vehicles.get(&hitch.tow)?.body, self.vehicles.get(trailer)?.body)))
+            .collect();
+
+        // a sleeping vehicle is skipped - rapier would pile the spring impulses onto its velocity and turn the wheels by it
+        let mut awake: HashSet<RigidBodyHandle> = self.vehicles.values().map(|vehicle| vehicle.body).filter(|handle| self.bodies.get(*handle).is_some_and(|body| !body.is_sleeping())).collect();
+
+        // what is coupled to a vehicle woken this frame wakes with it, before its springs would miss a step
+        loop
+        {
+            let before = awake.len();
+            for (tow, trailer) in &coupled
+            {
+                if awake.contains(tow) || awake.contains(trailer)
+                {
+                    awake.extend([*tow, *trailer]);
+                }
+            }
+
+            if awake.len() == before { break; }
+        }
+
         for vehicle in self.vehicles.values_mut()
         {
             let Some(body) = self.bodies.get(vehicle.body) else { continue; };
             vehicle.previous = *body.position();
+            vehicle.pre_velocity = body.linvel();
 
-            let filter = QueryFilter::default().exclude_rigid_body(vehicle.body).exclude_sensors();
+            if !awake.contains(&vehicle.body)
+            {
+                continue;
+            }
+
+            if body.is_sleeping()
+            {
+                self.bodies.get_mut(vehicle.body).unwrap().wake_up(true);
+            }
+
+            // the wheels never stand on the vehicle they are coupled to
+            let partners: Vec<RigidBodyHandle> = coupled.iter().filter_map(|(tow, trailer)| if *tow == vehicle.body { Some(*trailer) } else if *trailer == vehicle.body { Some(*tow) } else { None }).collect();
+            let not_partner = |_: ColliderHandle, collider: &Collider| !collider.parent().is_some_and(|parent| partners.contains(&parent));
+
+            let mut filter = QueryFilter::default().exclude_rigid_body(vehicle.body).exclude_sensors();
+            if !partners.is_empty()
+            {
+                filter.predicate = Some(&not_partner);
+            }
+
             let queries = self.broad_phase_bvh.as_query_pipeline_mut(&self.dispatcher, &mut self.bodies, &mut self.colliders, filter);
 
             vehicle.controller.update_vehicle(dt, queries);
@@ -3323,9 +3552,30 @@ impl PhysicsWorld
     }
 
     // Writes the vehicle poses back, interpolated between the last two steps - the steps do not line up with the frames.
+    // how far the frame is into the step after the last one - the scene shows the bodies that far between their last two poses
+    fn interpolation_alpha(&self) -> f32
+    {
+        if self.settings.fixed_timestep > 0.0 { (self.time_accumulator / self.settings.fixed_timestep).clamp(0.0, 1.0) } else { 1.0 }
+    }
+
+    fn interpolate(before: &Pose, after: &Pose, alpha: f32) -> Pose
+    {
+        Pose::from_parts(before.translation.lerp(after.translation, alpha), before.rotation.slerp(after.rotation, alpha))
+    }
+
+    // between the last two steps, like the vehicles - unless something moved the body since
+    fn step_interpolated(step_pose: &Option<(Pose, Pose)>, current: Pose, alpha: f32) -> Pose
+    {
+        match step_pose
+        {
+            Some((before, after)) if after.translation == current.translation && after.rotation == current.rotation => Self::interpolate(before, &current, alpha),
+            _ => current,
+        }
+    }
+
     fn apply_vehicles(&mut self) -> usize
     {
-        let alpha = if self.settings.fixed_timestep > 0.0 { (self.time_accumulator / self.settings.fixed_timestep).clamp(0.0, 1.0) } else { 1.0 };
+        let alpha = self.interpolation_alpha();
         let mut applied = 0;
 
         for vehicle in self.vehicles.values_mut()
@@ -3340,7 +3590,7 @@ impl PhysicsWorld
                 continue;
             }
 
-            let pose = Pose::from_parts(vehicle.previous.translation.lerp(current.translation, alpha), vehicle.previous.rotation.slerp(current.rotation, alpha));
+            let pose = Self::interpolate(&vehicle.previous, &current, alpha);
 
             let anchor = Anchor::Node { node };
             anchor.ensure_transformation();
@@ -3367,6 +3617,7 @@ impl PhysicsWorld
         }
 
         let mut applied = 0;
+        let alpha = self.interpolation_alpha();
 
         for index in 0..self.entries.len()
         {
@@ -3376,15 +3627,15 @@ impl PhysicsWorld
                 continue;
             }
 
-            let Some(body) = self.entries[index].body else { continue; };
-            let Some(body) = self.bodies.get(body) else { continue; };
+            let Some(handle) = self.entries[index].body else { continue; };
+            let Some(body) = self.bodies.get(handle) else { continue; };
 
             if body.is_sleeping()
             {
                 continue;
             }
 
-            let pose = *body.position();
+            let pose = Self::step_interpolated(&self.entries[index].step_pose, *body.position(), alpha);
 
             // A degenerate shape or a zero mass can still make the solver produce NaN. Once
             // that reaches a transform it spreads through every derived value and takes the
@@ -3428,6 +3679,9 @@ impl PhysicsWorld
     {
         let mut volumes = vec![];
 
+        // the same in-between pose the scene shows, otherwise the volumes run up to a step ahead
+        let alpha = self.interpolation_alpha();
+
         for entry in &self.entries
         {
             let body = entry.body.and_then(|handle| self.bodies.get(handle));
@@ -3448,6 +3702,7 @@ impl PhysicsWorld
                 // an attached collider only catches up with its body in a step, and nothing steps while editing
                 let pose = match (body, collider.position_wrt_parent())
                 {
+                    (Some(body), Some(offset)) if self.running => Self::step_interpolated(&entry.step_pose, *body.position(), alpha) * *offset,
                     (Some(body), Some(offset)) => *body.position() * *offset,
                     _ => *collider.position()
                 };
@@ -3476,17 +3731,18 @@ impl PhysicsWorld
             let Some(body) = self.bodies.get(vehicle.body) else { continue; };
             let state = if body.is_sleeping() { PhysicsDebugState::Sleeping } else { PhysicsDebugState::Dynamic };
 
+            let pose = if self.running { Self::interpolate(&vehicle.previous, body.position(), alpha) } else { *body.position() };
+
             if let Some(collider) = self.colliders.get(vehicle.collider)
             {
                 let offset = collider.position_wrt_parent().copied().unwrap_or(Pose::IDENTITY);
-                Self::push_debug_shape(collider.shape(), &(*body.position() * offset), state, &mut volumes);
+                Self::push_debug_hull(collider.shape(), &(pose * offset), state, &mut volumes);
             }
 
             // wheels as balls where the suspension currently holds them
             for wheel in vehicle.controller.wheels()
             {
-                let pose = body.position();
-                let hard_point = *pose * wheel.chassis_connection_point_cs;
+                let hard_point = pose * wheel.chassis_connection_point_cs;
                 let direction = pose.rotation * wheel.direction_cs;
 
                 let length = if self.running { wheel.raycast_info().suspension_length } else { wheel.suspension_rest_length };
@@ -3551,6 +3807,32 @@ impl PhysicsWorld
 
                 volumes.push(Self::debug_volume(PhysicsDebugShape::Bounds { half_extents: Vector3::new(half.x, half.y, half.z) }, &(*pose * local), state));
             }
+        }
+    }
+
+    // A vehicle body edge by edge - its bounds would hide the slopes and the rounding. The rounding is drawn as the inner hull grown to the same bounds.
+    fn push_debug_hull(shape: &dyn Shape, pose: &Pose, state: PhysicsDebugState, volumes: &mut Vec<PhysicsDebugVolume>)
+    {
+        let (hull, radius) = match shape.as_typed_shape()
+        {
+            TypedShape::ConvexPolyhedron(hull) => (hull, 0.0),
+            TypedShape::RoundConvexPolyhedron(round) => (&round.inner_shape, round.border_radius),
+            _ => return Self::push_debug_shape(shape, pose, state, volumes),
+        };
+
+        let aabb = hull.local_aabb();
+        let (center, half) = (aabb.center(), aabb.half_extents());
+        let grow = (half + Vector::splat(radius)) / half.max(Vector::splat(0.0001));
+        let point = |index: u32| { let p = center + (hull.points()[index as usize] - center) * grow; Vector3::new(p.x, p.y, p.z) };
+
+        // only the edges around the faces - the ones inside a face are left over from its triangles
+        let mut edges = hull.edges_adj_to_face().to_vec();
+        edges.sort_unstable();
+        edges.dedup();
+
+        for edge in edges.into_iter().filter_map(|index| hull.edges().get(index as usize))
+        {
+            volumes.push(Self::debug_volume(PhysicsDebugShape::Segment { a: point(edge.vertices[0]), b: point(edge.vertices[1]) }, pose, state));
         }
     }
 
@@ -3681,6 +3963,7 @@ impl PhysicsWorld
 
         vehicle.collider = collider;
         vehicle.controller = controller;
+        vehicle.frame = (Vector::new(chassis.forward.x, chassis.forward.y, chassis.forward.z), Vector::new(chassis.up.x, chassis.up.y, chassis.up.z));
     }
 
     // A dynamic body at the node's world pose, registered as a vehicle without colliders and wheels yet.
@@ -3690,9 +3973,9 @@ impl PhysicsWorld
         let world = node.read().unwrap().get_full_transform();
         let (pose, _) = Self::split_transform(&world);
 
+        // no ccd, measured: hard ccd shook a load riding on it, soft ccd kicked the car up at edges - without, a car still stops at a 5 cm wall at 260 km/h
         let body = RigidBodyBuilder::dynamic()
             .pose(pose)
-            .ccd_enabled(true) // fast and heavy - it must not tunnel through thin walls
             .build();
 
         let body = self.bodies.insert(body);
@@ -3708,7 +3991,7 @@ impl PhysicsWorld
         }
 
         let controller = DynamicRayCastVehicleController::new(body);
-        self.vehicles.insert(node_id, VehicleEntry { node: Arc::downgrade(node), body, collider: ColliderHandle::invalid(), controller, previous: pose, shown: world, start: None, riders: vec![], rider_starts: vec![] });
+        self.vehicles.insert(node_id, VehicleEntry { node: Arc::downgrade(node), body, collider: ColliderHandle::invalid(), controller, previous: pose, shown: world, start: None, riders: vec![], rider_starts: vec![], frame: (Vector::Z, Vector::Y), pre_velocity: Vector::ZERO });
     }
 
     // Moves the vehicles from the replaced sets into the new ones - a rebuild of the scene colliders must not reset them.
@@ -3791,13 +4074,310 @@ impl PhysicsWorld
         Some((vehicle, body))
     }
 
-    // Puts a vehicle somewhere else at a standstill, without an interpolated slide there.
+    // Puts a vehicle somewhere else at a standstill, without an interpolated slide there. Its trailers follow, coupled again and straight behind.
     pub fn place_vehicle(&mut self, node_id: u32, pose: Pose)
     {
         let Some((vehicle, body)) = self.vehicle_mut(node_id) else { return; };
 
         Self::teleport(body, pose);
         vehicle.previous = pose;
+
+        self.place_trailers(node_id, pose);
+    }
+
+    fn place_trailers(&mut self, tow_id: u32, tow_pose: Pose)
+    {
+        let trailers: Vec<u32> = self.hitches.iter().filter(|(_, hitch)| hitch.tow == tow_id).map(|(trailer, _)| *trailer).collect();
+
+        for trailer_id in trailers
+        {
+            let Some(tow) = self.vehicles.get(&tow_id) else { return; };
+            let Some(trailer) = self.vehicles.get(&trailer_id) else { continue; };
+            let Some(hitch) = self.hitches.get_mut(&trailer_id) else { continue; };
+            let Some(anchor) = hitch.anchor else { continue; };
+
+            // the two balls on each other, the axes lined up
+            let ball = Pose::from_parts(hitch.desc.point, tow.frame_rotation());
+            let eye = Pose::from_parts(anchor, trailer.frame_rotation());
+            let pose = tow_pose * ball * eye.inverse();
+
+            if let Some(joint) = hitch.joint.take()
+            {
+                self.impulse_joints.remove(joint, true);
+            }
+
+            hitch.state = HitchState::Waiting;
+
+            if let Some((trailer, body)) = self.vehicle_mut(trailer_id)
+            {
+                Self::teleport(body, pose);
+                trailer.previous = pose;
+            }
+
+            self.place_trailers(trailer_id, pose);
+        }
+    }
+
+    // ********** trailer hitches **********
+
+    // Couples the trailer to the tow vehicle - one trailer per vehicle. The joint is made at the next step, once both vehicles have a body.
+    pub fn set_hitch(&mut self, tow_id: u32, trailer_id: u32, desc: HitchDesc)
+    {
+        let others: Vec<u32> = self.hitches.iter().filter(|(trailer, hitch)| hitch.tow == tow_id && **trailer != trailer_id).map(|(trailer, _)| *trailer).collect();
+        for other in others
+        {
+            self.remove_hitch(other);
+        }
+
+        if tow_id == trailer_id
+        {
+            return;
+        }
+
+        if self.hitches.get(&trailer_id).is_some_and(|hitch| hitch.tow == tow_id && hitch.desc == desc)
+        {
+            return;
+        }
+
+        // another tow vehicle, or new limits - coupled again where the two stand right now
+        self.remove_hitch(trailer_id);
+        self.hitches.insert(trailer_id, HitchEntry { tow: tow_id, desc, state: HitchState::Waiting, brake: 0.0, force: 0.0, angles: Vector3::zeros(), joint: None, anchor: None, release_in: 0.0 });
+    }
+
+    pub fn remove_hitch(&mut self, trailer_id: u32)
+    {
+        if let Some(joint) = self.hitches.remove(&trailer_id).and_then(|hitch| hitch.joint)
+        {
+            self.impulse_joints.remove(joint, true);
+        }
+    }
+
+    pub fn remove_hitches_of(&mut self, tow_id: u32)
+    {
+        let trailers: Vec<u32> = self.hitches.iter().filter(|(_, hitch)| hitch.tow == tow_id).map(|(trailer, _)| *trailer).collect();
+        for trailer in trailers
+        {
+            self.remove_hitch(trailer);
+        }
+    }
+
+    pub fn has_hitch(&self, tow_id: u32, trailer_id: u32) -> bool
+    {
+        self.hitches.get(&trailer_id).is_some_and(|hitch| hitch.tow == tow_id)
+    }
+
+    // the coupling of a trailer
+    pub fn hitch_of(&self, trailer_id: u32) -> Option<&HitchEntry>
+    {
+        self.hitches.get(&trailer_id)
+    }
+
+    // the coupling a vehicle tows with, and its trailer
+    pub fn hitch_from(&self, tow_id: u32) -> Option<(u32, &HitchEntry)>
+    {
+        self.hitches.iter().find(|(_, hitch)| hitch.tow == tow_id).map(|(trailer, hitch)| (*trailer, hitch))
+    }
+
+    // what the trailers of this vehicle brake with, 0..1
+    pub fn set_hitch_brake(&mut self, tow_id: u32, brake: f32)
+    {
+        for hitch in self.hitches.values_mut().filter(|hitch| hitch.tow == tow_id)
+        {
+            hitch.brake = brake;
+        }
+    }
+
+    // What the springs of a vehicle carry against its own weight once its couplings hold: more under a trailer, less on a trailer the tow vehicle carries part of.
+    // The suspension scales with it, so a dolly under a semi trailer does not bottom out and the trailer on it keeps its rear wheels on the ground.
+    pub fn vehicle_load_factor(&self, node_id: u32) -> f32
+    {
+        let Some(weight) = self.vehicle_weight(node_id) else { return 1.0; };
+        let carried: f32 = self.hitches.iter().filter(|(_, hitch)| hitch.tow == node_id).map(|(trailer, _)| self.hitch_load(*trailer, 0)).sum();
+        let carried_by_tow = self.hitch_load(node_id, 0);
+
+        ((weight + carried - carried_by_tow) / weight).clamp(0.2, 10.0)
+    }
+
+    fn vehicle_weight(&self, node_id: u32) -> Option<f32>
+    {
+        let body = self.bodies.get(self.vehicles.get(&node_id)?.body)?;
+        let weight = body.mass() * self.gravity().length();
+        if weight > 0.0 { Some(weight) } else { None }
+    }
+
+    fn gravity(&self) -> Vector
+    {
+        Vector::new(self.settings.gravity.x, self.settings.gravity.y, self.settings.gravity.z)
+    }
+
+    // N a trailer rests on its tow vehicle while standing, by the lever between its coupling and the middle of its wheels - with what its own trailers rest on it
+    fn hitch_load(&self, trailer_id: u32, depth: u32) -> f32
+    {
+        let (Some(hitch), Some(vehicle), Some(weight)) = (self.hitches.get(&trailer_id), self.vehicles.get(&trailer_id), self.vehicle_weight(trailer_id)) else { return 0.0; };
+        let (Some(anchor), Some(body)) = (hitch.anchor, self.bodies.get(vehicle.body)) else { return 0.0; };
+        if hitch.state == HitchState::Broken || depth > 8
+        {
+            return 0.0;
+        }
+
+        let forward = vehicle.frame.0.normalize_or(Vector::Z);
+        let along = |point: Vector| point.dot(forward);
+
+        let wheels = vehicle.controller.wheels();
+        if wheels.is_empty()
+        {
+            return weight;
+        }
+        let axles = wheels.iter().map(|wheel| along(wheel.chassis_connection_point_cs)).sum::<f32>() / wheels.len() as f32;
+
+        let coupling = along(anchor) - axles;
+        if coupling.abs() < 0.01
+        {
+            return 0.0;
+        }
+
+        let mut moment = weight * (along(body.mass_properties().local_mprops.local_com) - axles);
+        let mut total = weight;
+        for (child, child_hitch) in self.hitches.iter().filter(|(_, child_hitch)| child_hitch.tow == trailer_id)
+        {
+            let load = self.hitch_load(*child, depth + 1);
+            moment += load * (along(child_hitch.desc.point) - axles);
+            total += load;
+        }
+
+        (moment / coupling).clamp(0.0, total)
+    }
+
+    // Couples every waiting trailer whose tow vehicle has a body - the ball where it is on the tow vehicle, the eye where that is on the trailer.
+    fn ensure_hitches(&mut self)
+    {
+        for (trailer_id, hitch) in self.hitches.iter_mut()
+        {
+            if hitch.state == HitchState::Broken
+            {
+                continue;
+            }
+
+            let (Some(tow), Some(trailer)) = (self.vehicles.get(&hitch.tow), self.vehicles.get(trailer_id)) else
+            {
+                hitch.state = HitchState::Waiting;
+                continue;
+            };
+
+            let alive = hitch.joint.and_then(|joint| self.impulse_joints.get(joint)).is_some_and(|joint| joint.body1() == tow.body && joint.body2() == trailer.body);
+            if alive
+            {
+                continue;
+            }
+
+            hitch.joint = None;
+
+            let (Some(tow_body), Some(trailer_body)) = (self.bodies.get(tow.body), self.bodies.get(trailer.body)) else
+            {
+                hitch.state = HitchState::Waiting;
+                continue;
+            };
+
+            let ball = hitch.desc.point;
+            let anchor = trailer_body.position().inverse_transform_point(tow_body.position().transform_point(ball));
+
+            let mut joint = SphericalJointBuilder::new()
+                .local_frame1(Pose::from_parts(ball, tow.frame_rotation()))
+                .local_frame2(Pose::from_parts(anchor, trailer.frame_rotation()))
+                .contacts_enabled(false);
+
+            for (axis, limit) in [(JointAxis::AngX, hitch.desc.roll_limit), (JointAxis::AngY, hitch.desc.yaw_limit), (JointAxis::AngZ, hitch.desc.pitch_limit)]
+            {
+                if limit < std::f32::consts::PI
+                {
+                    let limit = limit.max(0.01);
+                    joint = joint.limits(axis, [-limit, limit]);
+                }
+            }
+
+            hitch.joint = Some(self.impulse_joints.insert(tow.body, trailer.body, joint.build(), true));
+            hitch.anchor = Some(anchor);
+            hitch.state = HitchState::Coupled;
+            hitch.force = 0.0;
+        }
+    }
+
+    // Reads force and angles of every coupling after a step and tears it off beyond its limits. A torn off pair collides again after a moment.
+    fn check_hitches(&mut self, dt: f32)
+    {
+        let gravity = self.gravity();
+
+        for (trailer_id, hitch) in self.hitches.iter_mut()
+        {
+            let Some(handle) = hitch.joint else { continue; };
+
+            if hitch.state == HitchState::Broken
+            {
+                hitch.release_in -= dt;
+                if hitch.release_in <= 0.0
+                {
+                    self.impulse_joints.remove(handle, true);
+                    hitch.joint = None;
+                }
+
+                continue;
+            }
+
+            let Some(joint) = self.impulse_joints.get(handle) else { continue; };
+            let (Some(tow), Some(trailer)) = (self.bodies.get(joint.body1()), self.bodies.get(joint.body2())) else { continue; };
+            let Some(vehicle) = self.vehicles.get(trailer_id) else { continue; };
+
+            // what moved the trailer besides its wheels, gravity and its own drag: the ball and whatever hit it - the joint impulses read back wrong
+            if trailer.is_sleeping()
+            {
+                hitch.force = 0.0;
+            }
+            else
+            {
+                let mass = trailer.mass();
+                let velocity = trailer.linvel() * (1.0 + dt * trailer.linear_damping());
+                let others = vehicle.applied_wheel_impulse(dt) + (gravity * mass * trailer.gravity_scale() + trailer.user_force()) * dt;
+                let force = ((velocity - vehicle.pre_velocity) * mass - others).length() / dt;
+
+                hitch.force += (force - hitch.force) * dt / (dt + HITCH_FORCE_SMOOTHING);
+            }
+
+            // the trailer turned against the tow vehicle, measured like the joint limits: around the joint axes
+            let relative = (*tow.rotation() * joint.data.local_frame1.rotation).inverse() * (*trailer.rotation() * joint.data.local_frame2.rotation);
+            let relative = if relative.w < 0.0 { -relative } else { relative };
+            let angle = |imaginary: f32| 2.0 * imaginary.atan2(relative.w);
+            hitch.angles = Vector3::new(angle(relative.y), angle(relative.z), angle(relative.x));
+
+            let torn = (hitch.desc.break_force > 0.0 && hitch.force > hitch.desc.break_force) || (hitch.desc.break_roll > 0.0 && hitch.angles.z.abs() > hitch.desc.break_roll);
+
+            if torn
+            {
+                if let Some(joint) = self.impulse_joints.get_mut(handle, true)
+                {
+                    joint.data.set_enabled(false);
+                }
+
+                hitch.state = HitchState::Broken;
+                hitch.release_in = HITCH_RELEASE_TIME;
+            }
+        }
+    }
+
+    // a new run couples everything again, where it stands
+    fn reset_hitches(&mut self)
+    {
+        for hitch in self.hitches.values_mut()
+        {
+            if let Some(joint) = hitch.joint.take()
+            {
+                self.impulse_joints.remove(joint, true);
+            }
+
+            hitch.state = HitchState::Waiting;
+            hitch.anchor = None;
+            hitch.force = 0.0;
+            hitch.brake = 0.0;
+        }
     }
 
     // Mesh vertices of the given nodes, moved into a frame - e.g. the chassis space of a vehicle.
@@ -4687,6 +5267,55 @@ mod tests
 
 
     // a 1x1x1 box mesh, the usual dynamic prop
+    // 2000 boxes falling onto each other: ms per frame for the step and the write back
+    #[test]
+    #[ignore]
+    fn bench_many_bodies()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+        world.set_running(true);
+
+        let mut nodes = vec![];
+        for i in 0..2000
+        {
+            let node = box_node(2.0 + (i / 400) as f32 * 1.3, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+            {
+                let node_read = node.read().unwrap();
+                let instance = node_read.instances.get_ref().first().unwrap().clone();
+                let transformation = instance.read().unwrap().find_component::<Transformation>().unwrap();
+                component_downcast_mut!(transformation, Transformation);
+                transformation.set_translation(Vector3::new((i % 20) as f32 * 1.3 + (i / 400) as f32 * 0.4, 2.0 + (i / 400) as f32 * 1.3, ((i / 20) % 20) as f32 * 1.3));
+            }
+            refresh_instance_cache(&node);
+            nodes.push(node);
+        }
+
+        let (mut step, mut apply, mut frames) = (0.0, 0.0, 0);
+        for index in 0..180
+        {
+            if world.auto_add_nodes && world.scan_due() { world.scan_nodes(&nodes); }
+            for node in &nodes { refresh_instance_cache(node); }
+            world.sync_transformations(false);
+
+            let started = std::time::Instant::now();
+            world.step(1.0 / 60.0, false);
+            let stepped = started.elapsed().as_secs_f64();
+
+            let started = std::time::Instant::now();
+            world.apply_dynamic_bodies(false);
+            let applied = started.elapsed().as_secs_f64();
+
+            if index >= 30
+            {
+                step += stepped; apply += applied; frames += 1;
+            }
+        }
+
+        let awake = world.islands.active_bodies().count();
+        println!("2000 boxes, {} still awake at the end: step {:.2} ms, write back {:.2} ms per frame", awake, step / frames as f64 * 1000.0, apply / frames as f64 * 1000.0);
+    }
+
     fn box_node(y: f32, body_type: PhysicsBodyType, shape: PhysicsShape) -> NodeItem
     {
         let h = 0.5f32;
@@ -5195,9 +5824,10 @@ mod tests
 
         assert!((instance_y(&node) - 6.0).abs() < 0.001, "the box snapped back to {} instead of staying where it was put", instance_y(&node));
 
-        // and pressing play starts from there, not from where the body used to be
+        // and pressing play starts from there, not from where the body used to be - the scene shows the bodies a step behind, so two frames
         world.set_running(true);
 
+        frame(&mut world, &scene_nodes);
         frame(&mut world, &scene_nodes);
 
         assert!(instance_y(&node) < 6.0, "the box should start falling from its new spot");
@@ -5234,14 +5864,17 @@ mod tests
             frame_frozen(&mut world, &scene_nodes, true);
         }
 
+        // the body sits on the node, which fell with it - the drag lifts the instance from 4 to 6 above that
         move_instance_to_y(&node, 6.0);
+        let put = instance_y(&node);
+        assert!((put - fallen_to - 2.0).abs() < 0.001, "the drag should lift the box by 2 from {}, it is at {}", fallen_to, put);
 
         for _ in 0..60
         {
             frame_frozen(&mut world, &scene_nodes, true);
         }
 
-        assert!((instance_y(&node) - 6.0).abs() < 0.001, "the box snapped back to {} instead of staying where it was put while frozen", instance_y(&node));
+        assert!((instance_y(&node) - put).abs() < 0.001, "the box went to {} instead of staying where it was put ({}) while frozen", instance_y(&node), put);
 
         // resuming carries on from the new spot
         for _ in 0..300

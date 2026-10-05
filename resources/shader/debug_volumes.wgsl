@@ -47,7 +47,7 @@ struct CameraUniform
 struct DebugVolume
 {
     transform: mat4x4<f32>, // world from local (rigid)
-    params: vec4<f32>,      // box: xyz half extents / sphere: x radius / capsule: x radius, y half height / light: x spot angle, z kind / camera: xy half fov tangents or ortho half extents, z ortho / w: see through
+    params: vec4<f32>,      // box: xyz half extents / sphere: x radius / capsule: x radius, y half height / light: x spot angle, z kind / camera: xy half fov tangents or ortho half extents, z ortho / segment: xyz to its end / w: see through
     color: vec4<f32>,
 };
 
@@ -205,6 +205,13 @@ fn vs_box(@builtin(vertex_index) vertex_index: u32, @builtin(instance_index) ins
     let half = volumes[instance_index].params.xyz;
 
     return volume_line(instance_index, box_corner(half, edge.x), box_corner(half, edge.y), vertex_index % 6u);
+}
+
+// one line from the volume origin to params.xyz, e.g. an edge of a convex hull
+@vertex
+fn vs_segment(@builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput
+{
+    return volume_line(instance_index, vec3<f32>(0.0), volumes[instance_index].params.xyz, vertex_index % 6u);
 }
 
 // 3 great circles (x-z, x-y, y-z plane) with SPHERE_SEGMENTS quads each

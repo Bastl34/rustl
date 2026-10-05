@@ -5,7 +5,10 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- scripts/build.mjs replaces the title with the one of the project + description and link preview tags (open graph) -->
     <title>Rustl</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="apple-touch-icon" href="favicon.png">
     <script>
         // relative paths need the trailing slash (dist/web -> dist/web/)
         if (!location.pathname.endsWith("/") && !location.pathname.endsWith(".html"))
@@ -50,8 +53,22 @@
         })();
     </script>
     <style>
+        html, body
+        {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        /* full window - winit's resize observer follows the css size */
         canvas
         {
+            position: fixed;
+            inset: 0;
+            display: block;
+            width: 100%;
+            height: 100%;
             background-color: black;
         }
 

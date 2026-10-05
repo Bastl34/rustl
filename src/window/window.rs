@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use winit::application::ApplicationHandler;
+#[cfg(not(target_arch = "wasm32"))]
 use winit::dpi::LogicalSize;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
@@ -84,21 +85,18 @@ impl ApplicationHandler<CustomEvent> for AppState
 {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop)
     {
-        let width = 1920.0;
-        let height = 1080.0;
-
         match self
         {
             AppState::Uninitialized(event_loop_proxy) =>
             {
                 let mut window_attrs = Window::default_attributes();
                 window_attrs.title = "Rustl".to_string();
-                window_attrs.inner_size = Some(winit::dpi::Size::Logical(LogicalSize::new(width, height)));
                 window_attrs.resizable = true;
                 window_attrs.window_icon = get_icon();
 
                 #[cfg(not(target_arch = "wasm32"))]
                 {
+                    window_attrs.inner_size = Some(winit::dpi::Size::Logical(LogicalSize::new(1920.0, 1080.0)));
                     let window = Arc::new(event_loop.create_window(window_attrs).unwrap());
                     let app = pollster::block_on(WindowApp::new(window));
 
@@ -109,13 +107,11 @@ impl ApplicationHandler<CustomEvent> for AppState
 
                 #[cfg(target_arch = "wasm32")]
                 {
-                    use winit::dpi::PhysicalSize;
                     use winit::platform::web::WindowAttributesExtWebSys;
 
+                    // no inner_size: winit would pin it as inline style, the css in index.html sizes the canvas
                     let window_attrs = window_attrs.with_append(true);
                     let window = Arc::new(event_loop.create_window(window_attrs).unwrap());
-
-                    let _ = window.request_inner_size(PhysicalSize::new(width, height));
 
                     let event_loop_proxy = event_loop_proxy.clone();
                     wasm_bindgen_futures::spawn_local(async move

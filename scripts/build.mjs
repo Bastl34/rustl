@@ -77,7 +77,7 @@ function build()
 
         if (platformName === "web")
         {
-            writeWebFiles(target.dir, startProject);
+            writeWebFiles(target.dir, project ?? DEFAULT_PROJECT, startProject);
             buildWeb();
             console.log(`web build ready in dist/web, starts ${startProject} - http://localhost:1337/dist/web/ (npx serve -p 1337 in the repo root)`);
         }
@@ -129,21 +129,27 @@ function appName()
         return "rustl";
     }
 
-    let name = path.basename(project, path.extname(project));
+    return projectName(project).replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").replace(/[. ]+$/, "") || "rustl";
+}
+
+// the project section of a .project file - empty if it is broken (the packaging reports that)
+function projectInfo(file)
+{
     try
     {
-        const projectName = JSON.parse(readText(project)).project?.name?.trim();
-        if (projectName && projectName !== "Untitled")
-        {
-            name = projectName;
-        }
+        return JSON.parse(readText(file)).project ?? {};
     }
     catch
     {
-        // the packaging reports a broken project file
+        return {};
     }
+}
 
-    return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").replace(/[. ]+$/, "") || "rustl";
+// its name, else the file name
+function projectName(file)
+{
+    const name = projectInfo(file).name?.trim();
+    return name && name !== "Untitled" ? name : path.basename(file, path.extname(file));
 }
 
 // where the executable and the resources go
@@ -247,11 +253,63 @@ function watchAndBuild()
 
 // ******************** platform files ********************
 
-function writeWebFiles(dist, startProject)
+function writeWebFiles(dist, projectFile, startProject)
 {
     const template = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
-    fs.writeFileSync(path.join(dist, "index.html"), template.replace("/*project*/null", JSON.stringify(startProject)));
-    fs.copyFileSync(path.join(ROOT, "serve.json"), path.join(dist, "serve.json"));
+    const html = template.replace("<title>Rustl</title>", webHead(projectFile)).replace("/*project*/null", JSON.stringify(startProject));
+    fs.writeFileSync(path.join(dist, "index.html"), html);
+    fs.copyFileSync(APP_ICON, path.join(dist, "favicon.png"));
+}
+
+// title, description and the link preview of slack, discord, messengers (open graph + twitter card) - they need an absolute image url, project.url is where the build is hosted
+function webHead(projectFile)
+{
+    const info = projectInfo(projectFile);
+    const title = projectName(projectFile);
+    const description = (info.description ?? "").replace(/\s+/g, " ").trim();
+    const author = (info.author ?? "").trim();
+    const url = (info.url ?? "").trim();
+    const [width, height] = pngSize(APP_ICON);
+
+    let image = "favicon.png";
+    if (url)
+    {
+        try
+        {
+            image = new URL(image, /\/$|\.html?$/i.test(url) ? url : `${url}/`).href;
+        }
+        catch
+        {
+            console.warn(`warning: project url ${url} is not absolute - link previews will miss the image`);
+        }
+    }
+    else if (!dev)
+    {
+        console.warn("warning: the project has no url - link previews (slack, discord...) need it for the image");
+    }
+
+    const attr = (text) => text.replaceAll("&", "&amp;").replaceAll("\"", "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+
+    return [
+        `<title>${attr(title)}</title>`,
+        description && `<meta name="description" content="${attr(description)}">`,
+        author && `<meta name="author" content="${attr(author)}">`,
+        `<meta property="og:type" content="website">`,
+        `<meta property="og:title" content="${attr(title)}">`,
+        description && `<meta property="og:description" content="${attr(description)}">`,
+        url && `<meta property="og:url" content="${attr(url)}">`,
+        `<meta property="og:image" content="${attr(image)}">`,
+        `<meta property="og:image:width" content="${width}">`,
+        `<meta property="og:image:height" content="${height}">`,
+        `<meta name="twitter:card" content="summary">`,
+    ].filter(Boolean).join("\n    ");
+}
+
+// width and height from the IHDR chunk
+function pngSize(file)
+{
+    const data = fs.readFileSync(file);
+    return [data.readUInt32BE(16), data.readUInt32BE(20)];
 }
 
 // native builds read the project to start from resources/startup.json

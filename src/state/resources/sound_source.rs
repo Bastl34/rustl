@@ -31,6 +31,10 @@ pub struct SoundSource
     #[serde(skip, default)]
     pub delete_later_request: bool,
 
+    // loaded only to be played once (play_and_forget_sound) - removed when that is over, unlike a scene's sound resources
+    #[serde(skip, default)]
+    pub temporary: bool,
+
     // uuids other scenes gave the same file - they resolve to this one
     #[serde(skip, default)]
     pub uuid_aliases: Vec<String>,
@@ -84,6 +88,7 @@ impl SoundSource
             bytes: Arc::new(bytes),
 
             delete_later_request: false,
+            temporary: false,
             uuid_aliases: vec![],
         }
     }

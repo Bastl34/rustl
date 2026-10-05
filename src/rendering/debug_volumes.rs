@@ -15,10 +15,11 @@ pub const CAPSULE_VERTICES: u32 = (4 * CAPSULE_SEGMENTS + 4) * 6; // 2 rings + 2
 pub const LIGHT_SEGMENTS: u32 = 24;                               // lines per circle (keep in sync with debug_volumes.wgsl)
 pub const LIGHT_VERTICES: u32 = (2 * LIGHT_SEGMENTS + LIGHT_SEGMENTS / 2 + 22) * 6; // circle, 8 rays, arrow (5 lines), cone (8 sides + ring), half circle + divider
 pub const CAMERA_VERTICES: u32 = 15 * 6;                          // 4 sides, far + near rectangle, up triangle
+pub const SEGMENT_VERTICES: u32 = 6;                              // one line
 
-// groups in buffer order: boxes, spheres, capsules, lights, cameras
-const GROUP_VERTICES: [u32; 5] = [BOX_VERTICES, SPHERE_VERTICES, CAPSULE_VERTICES, LIGHT_VERTICES, CAMERA_VERTICES];
-const GROUP_ENTRY_POINTS: [&str; 5] = ["vs_box", "vs_sphere", "vs_capsule", "vs_light", "vs_camera"];
+// groups in buffer order: boxes, spheres, capsules, lights, cameras, segments
+const GROUP_VERTICES: [u32; 6] = [BOX_VERTICES, SPHERE_VERTICES, CAPSULE_VERTICES, LIGHT_VERTICES, CAMERA_VERTICES, SEGMENT_VERTICES];
+const GROUP_ENTRY_POINTS: [&str; 6] = ["vs_box", "vs_sphere", "vs_capsule", "vs_light", "vs_camera", "vs_segment"];
 const CAMERA_GROUP: usize = 4;
 
 pub const BOUNDING_BOX_COLOR: [f32; 4] = [1.0, 0.6, 0.1, 1.0];
@@ -47,7 +48,7 @@ const SEE_THROUGH: f32 = 1.0;
 pub struct DebugVolume
 {
     pub transform: [[f32; 4]; 4], // world from local (rigid)
-    pub params: [f32; 4],         // box: xyz half extents / sphere: x radius / capsule: x radius, y half height / light: x spot angle, z kind / camera: xy half fov tangents or ortho half extents, z ortho / w: see through
+    pub params: [f32; 4],         // box: xyz half extents / sphere: x radius / capsule: x radius, y half height / light: x spot angle, z kind / camera: xy half fov tangents or ortho half extents, z ortho / segment: xyz to its end / w: see through
     pub color: [f32; 4],
 }
 
@@ -135,6 +136,7 @@ pub struct DebugVolumeList
     pub capsules: Vec<DebugVolume>,
     pub lights: Vec<DebugVolume>,
     pub cameras: Vec<DebugVolume>,
+    pub segments: Vec<DebugVolume>,
 
     pub camera_ids: Vec<u32>, // one per camera volume, so a camera can leave out its own frustum
 }
@@ -163,6 +165,11 @@ impl DebugVolumeList
             PhysicsDebugShape::Capsule { half_height, radius } =>
             {
                 self.capsules.push(DebugVolume::new(&volume.transform, [radius, half_height, 0.0, SEE_THROUGH], color));
+            }
+            PhysicsDebugShape::Segment { a, b } =>
+            {
+                let to_end = b - a;
+                self.segments.push(DebugVolume::new(&(volume.transform * Matrix4::new_translation(&a)), [to_end.x, to_end.y, to_end.z, SEE_THROUGH], color));
             }
         }
     }
@@ -237,8 +244,8 @@ pub struct DebugVolumesBuffer
     pub buffer_size: usize, // capacity (entries)
     pub count: usize,       // used entries
 
-    groups: [(Range<u32>, bool); 5],                                      // instance range + any see through volume, per group
-    pipelines: [Option<(wgpu::RenderPipeline, wgpu::RenderPipeline)>; 5], // (visible, hidden behind geometry) per group
+    groups: [(Range<u32>, bool); 6],                                      // instance range + any see through volume, per group
+    pipelines: [Option<(wgpu::RenderPipeline, wgpu::RenderPipeline)>; 6], // (visible, hidden behind geometry) per group
     camera_ids: Vec<u32>,                                                 // camera id per instance of the camera group
 }
 
@@ -265,7 +272,7 @@ impl DebugVolumesBuffer
             count: 0,
 
             groups: Default::default(),
-            pipelines: [None, None, None, None, None],
+            pipelines: [None, None, None, None, None, None],
             camera_ids: vec![],
         };
 
@@ -277,7 +284,7 @@ impl DebugVolumesBuffer
     // returns true if the gpu buffer was recreated (bind groups have to be recreated)
     pub fn update(&mut self, wgpu: &mut WGpu, list: &DebugVolumeList) -> bool
     {
-        let groups = [&list.boxes, &list.spheres, &list.capsules, &list.lights, &list.cameras];
+        let groups = [&list.boxes, &list.spheres, &list.capsules, &list.lights, &list.cameras, &list.segments];
         let total: usize = groups.iter().map(|group| group.len()).sum();
 
         let new_buffer_size = total.next_power_of_two().max(MIN_SIZE);

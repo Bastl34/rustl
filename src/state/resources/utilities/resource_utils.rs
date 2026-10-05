@@ -165,7 +165,8 @@ pub fn play_and_forget_sound(path: &str, volume: f32, main_queue: ExecutionQueue
 
         execute_on_state_mut(main_queue.clone(), Box::new(move |state|
         {
-            let sound_source = SoundSource::from_file_bytes(&path, &bytes, state.io.audio_device.clone());
+            let mut sound_source = SoundSource::from_file_bytes(&path, &bytes, state.io.audio_device.clone());
+            sound_source.temporary = true;
             let sound_source = state.add_sound_source(sound_source);
 
             state.play_one_shot_sound_source(sound_source, volume);

@@ -274,6 +274,16 @@ impl Scene
         self.tags.contains(tag)
     }
 
+    pub fn is_engine_internal(&self) -> bool
+    {
+        if self.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+        {
+            return true;
+        }
+
+        false
+    }
+
     pub fn notify_run_mode_changed(&mut self, old: RunMode, new: RunMode)
     {
         // taken out so the controller can borrow the scene mutably

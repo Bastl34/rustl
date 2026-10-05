@@ -18,6 +18,9 @@ const CLUTCH_FOLLOW: f32 = 0.6;
 // below this wheel speed there is nothing to brake with the engine, m/s
 const ENGINE_BRAKE_MIN_SPEED: f32 = 1.0;
 
+// in the air an electric motor revs up to this share of its max rpm and holds it - it has no limiter to bounce on
+const ELECTRIC_FREE_REV: f32 = 0.85;
+
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug, Default)]
 pub enum EngineType
 {
@@ -187,8 +190,8 @@ impl EngineState
 
     // Advances the engine and returns the drive torque summed over the driven wheels, Nm.
     // Positive drives in the direction of the gear, negative is engine braking.
-    // speed: along the vehicle forward axis, m/s - wheel_radius: average of the driven wheels
-    pub fn update(&mut self, settings: &EngineSettings, throttle: f32, reverse: bool, speed: f32, wheel_radius: f32, dt: f32) -> f32
+    // speed: along the vehicle forward axis, m/s - wheel_radius: average of the driven wheels - airborne: no driven wheel touches the ground
+    pub fn update(&mut self, settings: &EngineSettings, throttle: f32, reverse: bool, speed: f32, wheel_radius: f32, airborne: bool, dt: f32) -> f32
     {
         let throttle = throttle.clamp(0.0, 1.0);
         let wheel_radius = wheel_radius.max(0.05);
@@ -212,7 +215,8 @@ impl EngineState
         let wheel_rpm = along_gear / wheel_radius * RAD_PER_SEC_TO_RPM;
         let coupled_rpm = |gear: i32| wheel_rpm * settings.gear_ratio(gear) * settings.final_drive;
 
-        if self.gear > 0 && self.shift_timer <= 0.0
+        // in the air the gear stays - nothing to shift for
+        if self.gear > 0 && self.shift_timer <= 0.0 && !airborne
         {
             if coupled_rpm(self.gear) > settings.shift_up_rpm && self.gear < settings.forward_gears()
             {
@@ -244,6 +248,13 @@ impl EngineState
         if self.shifting
         {
             target = coupled.max(settings.min_rpm()) + throttle * 300.0;
+        }
+
+        // nothing holds the engine back in the air: the throttle revs it toward the limiter, off the throttle it falls back to the wheels
+        if airborne
+        {
+            let top = if settings.engine_type == EngineType::Combustion { settings.max_rpm } else { settings.max_rpm * ELECTRIC_FREE_REV };
+            target = target.max(coupled + throttle * (top - coupled).max(0.0));
         }
 
         let rate = if target > self.rpm { RPM_RISE_RATE } else { RPM_FALL_RATE };
@@ -296,7 +307,7 @@ mod tests
 
         for _ in 0..steps
         {
-            torque = state.update(settings, 1.0, false, speed, 0.33, 1.0 / 60.0);
+            torque = state.update(settings, 1.0, false, speed, 0.33, false, 1.0 / 60.0);
         }
 
         torque
@@ -337,7 +348,7 @@ mod tests
         for step in 0..120
         {
             let speed = step as f32 / 60.0 * 5.0; // 0 to 10 m/s in 2 s
-            state.update(&settings, 1.0, false, speed, 0.33, 1.0 / 60.0);
+            state.update(&settings, 1.0, false, speed, 0.33, false, 1.0 / 60.0);
 
             if step % 15 == 0 && step >= 30
             {
@@ -356,7 +367,7 @@ mod tests
         let mut state = EngineState::default();
         state.reset(&settings);
 
-        let torque = state.update(&settings, 1.0, true, -20.0, 0.33, 1.0 / 60.0);
+        let torque = state.update(&settings, 1.0, true, -20.0, 0.33, false, 1.0 / 60.0);
         assert_eq!(torque, 0.0);
         assert_eq!(state.gear, -1);
     }
@@ -372,11 +383,43 @@ mod tests
         let mut torque = 0.0;
         for _ in 0..120
         {
-            torque = state.update(&settings, 0.0, false, -12.0, 0.33, 1.0 / 60.0);
+            torque = state.update(&settings, 0.0, false, -12.0, 0.33, false, 1.0 / 60.0);
         }
 
         assert_eq!(torque, 0.0);
         assert_eq!(state.gear, 1);
         assert!(state.rpm < settings.idle_rpm * 1.1, "rpm {}", state.rpm);
+    }
+
+    // a jump at 20 m/s: full throttle revs up to the limiter in the gear it took off in, letting go drops back to the wheels
+    #[test]
+    fn in_the_air_the_throttle_revs_freely_in_the_gear()
+    {
+        for engine_type in [EngineType::Combustion, EngineType::Electric]
+        {
+            let settings = EngineSettings { engine_type, ..EngineSettings::default() };
+            let mut state = EngineState::default();
+            state.reset(&settings);
+
+            run(&settings, &mut state, 20.0, 3.0);
+            let (gear, ground_rpm) = (state.gear, state.rpm);
+
+            let mut highest: f32 = 0.0;
+            for _ in 0..60
+            {
+                state.update(&settings, 1.0, false, 20.0, 0.33, true, 1.0 / 60.0);
+                highest = highest.max(state.rpm);
+            }
+            assert_eq!(state.gear, gear, "{:?} shifted in the air", engine_type);
+
+            let top = if engine_type == EngineType::Combustion { settings.max_rpm } else { settings.max_rpm * ELECTRIC_FREE_REV };
+            assert!(highest > top * 0.97 && highest <= settings.max_rpm * 1.02, "{:?}: {:.0} rpm on the ground, {:.0} in the air", engine_type, ground_rpm, highest);
+
+            for _ in 0..60
+            {
+                state.update(&settings, 0.0, false, 20.0, 0.33, true, 1.0 / 60.0);
+            }
+            assert!((state.rpm - ground_rpm).abs() < ground_rpm * 0.1 + 50.0, "{:?}: off the throttle {:.0} rpm, on the ground it was {:.0}", engine_type, state.rpm, ground_rpm);
+        }
     }
 }

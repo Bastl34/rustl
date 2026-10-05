@@ -7,7 +7,7 @@ use rapier3d::prelude::{ColliderHandle, Pose, Rotation, SharedShape, Vector};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_warning, helper::{math::{approx_zero, extract_rotation_quat_from_transform, extract_translation_from_transform, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::{gamepad::{GamepadAxis, GamepadButton}, input_binding::{gamepad_select_ui, input_action_ui, AxisDirection, GamepadSelect, InputAction, InputSource}, keyboard::Key, mouse::MouseButton}, scene_controller_impl_default, state::{scene::{camera_controller::{camera_controller::CameraControllerBox, follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, component::ComponentItem, mesh::Mesh, transformation::Transformation}, node::NodeItem, physics::{contacts::ContactTarget, physics_world::{PhysicsWorld, VehicleChassisDesc, VehicleWheelDesc}}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput, RunMode}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_warning, helper::{math::{approx_zero, extract_rotation_quat_from_transform, extract_translation_from_transform, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::{gamepad::{GamepadAxis, GamepadButton}, input_binding::{gamepad_select_ui, input_action_ui, AxisDirection, GamepadSelect, InputAction, InputSource}, keyboard::Key, mouse::MouseButton}, scene_controller_impl_default, state::{scene::{camera_controller::{camera_controller::CameraControllerBox, follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, component::ComponentItem, mesh::Mesh, transformation::Transformation}, node::NodeItem, physics::{contacts::ContactTarget, physics_world::{HitchDesc, HitchState, PhysicsWorld, VehicleChassisDesc, VehicleWheelDesc}}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput, RunMode}}};
 
 use rapier3d::control::WheelTuning;
 
@@ -28,6 +28,12 @@ const WHEEL_NAME_EXCLUDE_REGEX: &str = r"(?i)(steer|lenk|spare|reserve|ersatz)";
 const FRONT_NAME_REGEX: &str = r"(?i)(front|vorn|(^|[ _.:-])f[lr]([ _.:-]|$))";
 const BACK_NAME_REGEX: &str = r"(?i)(back|rear|hinten|(^|[ _.:-])r[lr]([ _.:-]|$))";
 const STEERING_NAME_REGEX: &str = r"(?i)(steering|lenkrad|handlebar|lenker)";
+
+// the coupling part of a trailer: the drawbar eye of a trailer, the kingpin of a semi trailer
+const HITCH_NAME_REGEX: &str = r"(?i)(hitch|coupling|kingpin|king pin|kupplung|zugöse|zugoese|königszapfen|koenigszapfen)";
+
+// without a coupling part the trailer couples at the middle of its front tip, this deep, m
+const HITCH_TIP_DEPTH: f32 = 0.03;
 
 // a node counts as a wheel by shape when it is round seen from the side and flat seen from the front
 const WHEEL_ROUNDNESS_MIN: f32 = 0.75;
@@ -56,6 +62,10 @@ const UPSIDE_DOWN_DOT: f32 = 0.3;
 
 // 1/s the wanted lean closes the rest of its way with, below the roll rate
 const LEAN_GOAL_RESPONSE: f32 = 3.0;
+
+// share of the wheel radius the collision bottom rises above the axle at the very front and back - bench_loop_entry, 12 entries at 50-80 km/h:
+// flat and hard 4 through, rounded 6, rounded + 0.5 8 with the smallest jolts, 1.0 lets low rails and cones slip under the nose
+const SLOPED_END_LIFT: f32 = 0.5;
 
 // how far the automatic center of mass may sit off the middle of the wheels, share of the wheelbase and track - 60/40 at most
 const COM_REACH: f32 = 0.1;
@@ -103,13 +113,14 @@ pub enum VehicleType
     Trike,
     Tank, // tracks: skid steering over many road wheels
     Kart, // light, stiff, no differential feel - quick steering and a high revving small engine
+    Trailer, // no engine and no driver - coupled to the hitch of another vehicle, brakes with it
 }
 
 impl VehicleType
 {
-    pub fn all() -> [VehicleType; 12]
+    pub fn all() -> [VehicleType; 13]
     {
-        [VehicleType::Car, VehicleType::SportsCar, VehicleType::ElectricCar, VehicleType::Bus, VehicleType::Truck, VehicleType::MultiAxle, VehicleType::Motorcycle, VehicleType::Bicycle, VehicleType::Scooter, VehicleType::Trike, VehicleType::Tank, VehicleType::Kart]
+        [VehicleType::Car, VehicleType::SportsCar, VehicleType::ElectricCar, VehicleType::Bus, VehicleType::Truck, VehicleType::MultiAxle, VehicleType::Motorcycle, VehicleType::Bicycle, VehicleType::Scooter, VehicleType::Trike, VehicleType::Tank, VehicleType::Kart, VehicleType::Trailer]
     }
 
     // a typical length of the type, m - the presets are made for it
@@ -129,12 +140,18 @@ impl VehicleType
             VehicleType::Trike => 2.5,
             VehicleType::Tank => 7.5,
             VehicleType::Kart => 1.9,
+            VehicleType::Trailer => 4.0,
         }
     }
 
     pub fn is_two_wheeler(&self) -> bool
     {
         matches!(self, VehicleType::Motorcycle | VehicleType::Bicycle | VehicleType::Scooter)
+    }
+
+    pub fn is_trailer(&self) -> bool
+    {
+        *self == VehicleType::Trailer
     }
 }
 
@@ -166,6 +183,7 @@ pub enum ChassisShape
     Box,
     #[default]
     ConvexHull, // rounded like the body - a box catches with its corners, e.g. in a loop
+    Compound, // one hull per mesh - an open frame or a car carrier keeps its gaps, e.g. for a load
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug, Default)]
@@ -278,9 +296,14 @@ pub struct VehicleChassisSettings
     // the bottom rises to the axle height in front of the front and behind the rear axle
     #[serde(default = "default_true")]
     pub sloped_ends: bool,
+
+    // m the edges of the collision body are rounded by - a hard edge catches on every ramp start and loop entry
+    #[serde(default = "default_rounding")]
+    pub rounding: f32,
 }
 
 fn default_min_clearance() -> f32 { 1.0 }
+fn default_rounding() -> f32 { 0.2 }
 
 impl Default for VehicleChassisSettings
 {
@@ -303,6 +326,7 @@ impl Default for VehicleChassisSettings
             min_clearance: default_min_clearance(),
             wheel_bumpers: false,
             sloped_ends: true,
+            rounding: default_rounding(),
         }
     }
 }
@@ -603,6 +627,47 @@ impl Default for VehicleRecoverSettings
     }
 }
 
+// The trailer on the hitch - a scene node outside the vehicle with its own vehicle controller of type Trailer.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct VehicleHitchSettings
+{
+    pub trailer_name: String, // empty = no trailer
+
+    // a part of the trailer named like 'hitch' or 'kingpin', otherwise the middle of its front tip - where the two stand at the run start
+    pub point_auto: bool,
+    pub point: Vector3<f32>, // the ball, chassis space, m
+
+    // degrees to each side from straight - 180 = free
+    pub yaw_limit: f32,
+    pub pitch_limit: f32,
+    pub roll_limit: f32,
+
+    pub break_roll: f32, // degrees the trailer rolls against the vehicle before it tears off, 0 = never
+    pub break_force: f32, // kN at the ball that tear the trailer off, 0 = never
+
+    pub trailer_brakes: bool, // the trailer brakes along with the vehicle
+}
+
+impl Default for VehicleHitchSettings
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            trailer_name: String::new(),
+            point_auto: true,
+            point: Vector3::zeros(),
+            yaw_limit: 85.0,
+            pitch_limit: 30.0,
+            roll_limit: 40.0,
+            break_roll: 0.0,
+            break_force: 0.0,
+            trailer_brakes: true,
+        }
+    }
+}
+
 // which keys and gamepad drive this vehicle - two vehicles with different ones make split screen
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
@@ -724,6 +789,19 @@ pub struct VehicleTelemetry
     pub wheels: Vec<VehicleWheelTelemetry>,
     pub touching: Vec<ContactTarget>, // what the body touches right now, the wheels are rays and never count
     pub last_hit: Option<(ContactTarget, f32)>, // with its impact speed in m/s
+    pub hitch: Option<VehicleHitchTelemetry>, // towing or towed
+}
+
+#[derive(Clone, Debug)]
+pub struct VehicleHitchTelemetry
+{
+    pub towing: bool, // false: this is the trailer
+    pub other: u32, // node id of the trailer or the tow vehicle
+    pub state: HitchState,
+    pub force: f32, // kN
+    pub angles: Vector3<f32>, // degrees: yaw, pitch, roll of the trailer against the tow vehicle
+    pub brake: f32,
+    pub load: f32, // what the springs carry against the own weight
 }
 
 // what the last physics step found under a wheel
@@ -830,15 +908,23 @@ pub struct VehicleController
     pub tire_marks: TireMarkSettings,
     #[serde(default)]
     pub controls: VehicleControls,
+    #[serde(default)]
+    pub hitch: VehicleHitchSettings,
 
     #[serde(serialize_with = "serialize_node", deserialize_with = "deserialize_node")]
     pub node: OptionOrId<NodeItem>,
+
+    #[serde(default, serialize_with = "serialize_node", deserialize_with = "deserialize_node")]
+    pub trailer: OptionOrId<NodeItem>,
 
     // ********** runtime **********
 
     // chassis space vertices of everything but the wheels and the driver
     #[serde(skip, default)]
     chassis_points: Vec<Vector3<f32>>,
+    // the same points by mesh, for the compound shape
+    #[serde(skip, default)]
+    chassis_parts: Vec<Vec<Vector3<f32>>>,
     #[serde(skip, default)]
     chassis_bounds: Option<(Vector3<f32>, Vector3<f32>)>,
     #[serde(skip, default)]
@@ -850,6 +936,8 @@ pub struct VehicleController
 
     #[serde(skip, default)]
     physics_dirty: bool,
+    #[serde(skip, default)]
+    hitch_dirty: bool, // the coupling is measured and handed to the physics again
 
     // how far the springs compress under the vehicle's own weight, m
     #[serde(skip, default)]
@@ -934,14 +1022,18 @@ impl VehicleController
             sound: VehicleSoundSettings::default(),
             tire_marks: TireMarkSettings::default(),
             controls: VehicleControls::default(),
+            hitch: VehicleHitchSettings::default(),
 
             node: OptionOrId::None,
+            trailer: OptionOrId::None,
 
             chassis_points: vec![],
+            chassis_parts: vec![],
             chassis_bounds: None,
             principal_inertia: Vector3::zeros(),
             excluded_node_ids: HashSet::new(),
             physics_dirty: false,
+            hitch_dirty: false,
             sag: 0.0,
 
             engine_state: EngineState::default(),
@@ -1084,7 +1176,15 @@ impl VehicleController
         // a rider on top counts - the chase cam looks over the helmet like over the roof of a car
         let (top_min, top_max) = Self::bounds_of(&rider_points).map(|(low, high)| (min.inf(&low), max.sup(&high))).unwrap_or((min, max));
         let height = (top_max - top_min).dot(&up.abs());
-        let length = (max - min).dot(&forward.abs());
+        let mut length = (max - min).dot(&forward.abs());
+
+        // the chase camera looks over the trailer too
+        if let Some(trailer) = self.trailer.as_ref()
+        {
+            let along: Vec<f32> = PhysicsWorld::collect_points(&[trailer.clone()], &to_chassis).iter().map(|point| point.dot(&forward)).collect();
+            let rear = along.iter().copied().fold(min.dot(&forward).min(max.dot(&forward)), f32::min);
+            length = length.max(min.dot(&forward).max(max.dot(&forward)) - rear);
+        }
 
         if self.camera.distance_auto
         {
@@ -1105,10 +1205,14 @@ impl VehicleController
             };
         }
 
-        match self.setup_camera(scene, &node, cam_name)
+        // a trailer has no camera of its own - an empty name would take the main camera
+        if !self.vehicle_type.is_trailer()
         {
-            Some(error) => return Some(error),
-            None => {}
+            match self.setup_camera(scene, &node, cam_name)
+            {
+                Some(error) => return Some(error),
+                None => {}
+            }
         }
 
         self.setup_runtime(scene);
@@ -1293,6 +1397,7 @@ impl VehicleController
         }
 
         self.engine_state.reset(&self.engine);
+        self.hitch_dirty = true;
         self.build_physics(scene);
     }
 
@@ -1441,7 +1546,8 @@ impl VehicleController
         let skip: HashSet<u32> = wheel_ids.union(driver_ids).copied().collect();
         let meshes = Self::mesh_bounds(node, to_chassis, &skip);
 
-        self.chassis_points = meshes.into_values().flat_map(|(_, points)| points).collect();
+        self.chassis_parts = meshes.into_values().map(|(_, points)| points).collect();
+        self.chassis_points = self.chassis_parts.concat();
         self.chassis_bounds = Self::bounds_of(&self.chassis_points);
     }
 
@@ -1616,6 +1722,9 @@ impl VehicleController
             seat.seat_position *= factor;
         }
         self.recover.lift *= factor;
+        self.chassis.rounding *= factor;
+        self.hitch.point *= factor;
+        self.hitch_dirty = true;
 
         self.scale_physics(factor);
     }
@@ -1704,7 +1813,7 @@ impl VehicleController
 
             wheel.steer = match (vehicle_type, drive)
             {
-                (_, VehicleDrive::Tracked) | (VehicleType::Tank, _) => 0.0,
+                (_, VehicleDrive::Tracked) | (VehicleType::Tank, _) | (VehicleType::Trailer, _) => 0.0,
                 (VehicleType::MultiAxle, _) if axle_amount >= 3 && axle == 1 => 0.6,
                 _ if front && axle_amount > 1 => 1.0,
                 _ => 0.0,
@@ -1712,14 +1821,17 @@ impl VehicleController
 
             wheel.driven = match drive
             {
+                _ if vehicle_type.is_trailer() => false,
                 _ if axle_amount <= 1 => true,
                 VehicleDrive::Front => front,
                 VehicleDrive::Rear => rear,
                 VehicleDrive::All | VehicleDrive::Tracked => true,
             };
 
+            // a trailer parks on all its wheels
             wheel.handbrake = match drive
             {
+                _ if vehicle_type.is_trailer() => true,
                 VehicleDrive::Tracked => true,
                 _ => rear || axle_amount <= 1,
             };
@@ -1748,10 +1860,35 @@ impl VehicleController
         let center = (min + max) * 0.5;
         let extent = (max - min).map(|e| e.max(0.05));
 
-        let box_shape = || SharedShape::compound(vec![(Pose::from_translation(Vector::new(center.x, center.y, center.z)), SharedShape::cuboid(extent.x * 0.5, extent.y * 0.5, extent.z * 0.5))]);
+        // rounded edges slide up a ramp start or a loop entry instead of catching on it - at most half the smallest half extent
+        let rounding = self.chassis.rounding.clamp(0.0, extent.min() * 0.25);
+        let to_vector = |p: &Vector3<f32>| Vector::new(p.x, p.y, p.z);
+
+        let box_shape = ||
+        {
+            let half = extent * 0.5 - Vector3::repeat(rounding);
+            let cuboid = if rounding > 0.0 { SharedShape::round_cuboid(half.x, half.y, half.z, rounding) } else { SharedShape::cuboid(half.x, half.y, half.z) };
+            SharedShape::compound(vec![(Pose::from_translation(to_vector(&center)), cuboid)])
+        };
+
+        // the points are pulled in by the radius first, so the rounded body keeps its outer size
+        let hull = |points: &[Vector3<f32>]| -> Option<SharedShape>
+        {
+            if rounding <= 0.0
+            {
+                return SharedShape::convex_hull(&points.iter().map(to_vector).collect::<Vec<_>>());
+            }
+
+            let (low, high) = Self::bounds_of(points)?;
+            let middle = (low + high) * 0.5;
+            let pull = ((high - low) * 0.5).map(|half| (half - rounding).max(0.0) / half.max(rounding * 2.0));
+            let pulled: Vec<Vector> = points.iter().map(|p| middle + (p - middle).component_mul(&pull)).map(|p| to_vector(&p)).collect();
+
+            SharedShape::round_convex_hull(&pulled, rounding)
+        };
 
         // ********** approach and departure angle **********
-        // in front of the front axle and behind the rear axle the bottom rises to the axle height, like a real body does
+        // in front of the front axle and behind the rear axle the bottom rises above the axles, like a real body does
         let along: Vec<f32> = self.wheels.iter().map(|wheel| wheel.center.dot(&frame.forward)).collect();
         let axle_height = if self.wheels.is_empty() { f32::MIN } else { self.wheels.iter().map(|wheel| wheel.center.dot(&frame.up)).sum::<f32>() / self.wheels.len() as f32 };
         let (front_axle, rear_axle) = (along.iter().copied().fold(f32::MIN, f32::max), along.iter().copied().fold(f32::MAX, f32::min));
@@ -1759,11 +1896,14 @@ impl VehicleController
         let bottom = min.dot(&frame.up.abs()).min(max.dot(&frame.up.abs()));
         let (front_end, rear_end) = (max.dot(&frame.forward).max(min.dot(&frame.forward)), max.dot(&frame.forward).min(min.dot(&frame.forward)));
 
+        let wheel_radius = if self.wheels.is_empty() { 0.0 } else { self.wheels.iter().map(|wheel| wheel.radius).sum::<f32>() / self.wheels.len() as f32 };
+        let end_bottom = axle_height.max(bottom) + wheel_radius * SLOPED_END_LIFT;
+
         let bevel = |point: Vector3<f32>| -> Vector3<f32>
         {
             let point = raise(point);
 
-            if !self.chassis.sloped_ends || self.wheels.is_empty() || axle_height <= bottom
+            if !self.chassis.sloped_ends || self.wheels.is_empty() || end_bottom <= bottom
             {
                 return point;
             }
@@ -1773,7 +1913,7 @@ impl VehicleController
                 else if position < rear_axle && rear_end < rear_axle { (rear_axle - position) / (rear_axle - rear_end) }
                 else { 0.0 };
 
-            let lowest = bottom + (axle_height - bottom) * share.clamp(0.0, 1.0);
+            let lowest = bottom + (end_bottom - bottom) * share.clamp(0.0, 1.0);
             point + frame.up * (lowest - point.dot(&frame.up)).max(0.0)
         };
 
@@ -1792,8 +1932,8 @@ impl VehicleController
                 }
             }
 
-            let points: Vec<Vector> = corners.into_iter().map(|p| bevel(p)).map(|p| Vector::new(p.x, p.y, p.z)).collect();
-            SharedShape::convex_hull(&points).unwrap_or_else(box_shape)
+            let points: Vec<Vector3<f32>> = corners.into_iter().map(|p| bevel(p)).collect();
+            hull(&points).unwrap_or_else(box_shape)
         };
 
         let shape = match self.chassis.shape
@@ -1802,18 +1942,48 @@ impl VehicleController
             ChassisShape::Box => box_shape(),
             ChassisShape::ConvexHull =>
             {
-                let points: Vec<Vector> = self.chassis_points.iter().map(|p| bevel(*p)).map(|p| Vector::new(p.x, p.y, p.z)).collect();
-                SharedShape::convex_hull(&points).unwrap_or_else(||
+                let points: Vec<Vector3<f32>> = self.chassis_points.iter().map(|p| bevel(*p)).collect();
+                hull(&points).unwrap_or_else(||
                 {
                     console_warning!("vehicle: convex hull failed, using a box");
                     if self.chassis.sloped_ends && !self.wheels.is_empty() { sloped_box() } else { box_shape() }
                 })
             }
+            ChassisShape::Compound =>
+            {
+                // sharp hulls: rounding would flatten thin parts like a deck or a post to nothing
+                let parts: Vec<(Pose, SharedShape)> = self.chassis_parts.iter()
+                    .filter_map(|points| SharedShape::convex_hull(&points.iter().map(|p| to_vector(&bevel(*p))).collect::<Vec<_>>()))
+                    .map(|shape| (Pose::IDENTITY, shape))
+                    .collect();
+
+                if parts.is_empty()
+                {
+                    console_warning!("vehicle: no convex part for the compound, using a box");
+                    if self.chassis.sloped_ends && !self.wheels.is_empty() { sloped_box() } else { box_shape() }
+                }
+                else
+                {
+                    SharedShape::compound(parts)
+                }
+            }
         };
 
         let mass = self.chassis.mass.max(1.0);
 
-        if self.chassis.center_of_mass_auto
+        if self.chassis.center_of_mass_auto && self.vehicle_type.is_trailer()
+        {
+            // a trailer leans on its hitch: along it the middle of the body volume, not of the wheels - a light drawbar barely counts
+            // a compound counts its whole outline like a hull - its thin walls alone would shift the middle to the drawbar
+            let outline = if self.chassis.shape == ChassisShape::Compound { hull(&self.chassis_points.iter().map(|p| bevel(*p)).collect::<Vec<_>>()) } else { None };
+            let centroid = outline.as_ref().unwrap_or(&shape).mass_properties(1.0).local_com;
+            let centroid = Vector3::new(centroid.x, centroid.y, centroid.z);
+            let height = extent.dot(&frame.up.abs());
+            let com = center + frame.up * (height * (self.chassis.center_of_mass_height - 0.5));
+
+            self.chassis.center_of_mass = centroid + frame.up * (com - centroid).dot(&frame.up);
+        }
+        else if self.chassis.center_of_mass_auto
         {
             let height = extent.dot(&frame.up.abs());
             let com = center + frame.up * (height * (self.chassis.center_of_mass_height - 0.5));
@@ -1856,6 +2026,8 @@ impl VehicleController
             linear_damping: self.chassis.linear_damping,
             angular_damping: self.chassis.angular_damping,
             bumpers: if self.chassis.wheel_bumpers { self.bumpers(&frame) } else { vec![] },
+            forward: frame.forward,
+            up: frame.up,
         };
 
         let wheel_amount = self.wheels.len().max(1) as f32;
@@ -1926,6 +2098,91 @@ impl VehicleController
         let rotation = UnitQuaternion::from_axis_angle(&Unit::new_normalize(frame.up), rotation_deg.to_radians()) * UnitQuaternion::from_rotation_matrix(&Rotation3::from_matrix_unchecked(basis));
 
         Pose::from_parts(Vector::new(position.x, position.y, position.z), Rotation::from_xyzw(rotation.i, rotation.j, rotation.k, rotation.w))
+    }
+
+    // ********** hitch **********
+
+    // Where the trailer couples, chassis space: its part named like 'hitch' or 'kingpin', else the middle of its front tip - as the two stand.
+    fn measure_hitch_point(&self) -> Option<Vector3<f32>>
+    {
+        let node = self.node.as_ref()?;
+        let trailer = self.trailer.as_ref()?;
+        let frame = self.frame?;
+
+        let to_chassis = Self::chassis_inverse(&node.read().unwrap().get_full_transform());
+        let regex = Regex::new(HITCH_NAME_REGEX).unwrap();
+
+        let part = Scene::list_all_child_nodes(&trailer.read().unwrap().nodes).into_iter().find(|child| Self::names_of(child).iter().any(|name| regex.is_match(name)));
+        if let Some(part) = part
+        {
+            return Some(Self::subtree_bounds(&part, &to_chassis).map(|(min, max)| (min + max) * 0.5).unwrap_or_else(|| (to_chassis * part.read().unwrap().get_full_transform().column(3)).xyz()));
+        }
+
+        // the trailer stands behind the vehicle, so its tip points along the vehicle's forward
+        let points = PhysicsWorld::collect_points(&[trailer.clone()], &to_chassis);
+        let tip = points.iter().map(|point| point.dot(&frame.forward)).fold(f32::MIN, f32::max);
+        let front: Vec<Vector3<f32>> = points.iter().filter(|point| point.dot(&frame.forward) > tip - HITCH_TIP_DEPTH).copied().collect();
+
+        Self::bounds_of(&front).map(|(min, max)| (min + max) * 0.5)
+    }
+
+    // Hands the coupling to the physics - after a change, or if the physics has none. No trailer: none.
+    fn sync_hitch(&mut self, scene: &mut Scene, node_id: u32)
+    {
+        if self.hitch_dirty && self.trailer.is_none() && !self.hitch.trailer_name.is_empty()
+        {
+            self.trailer = scene.find_node_by_name(&self.hitch.trailer_name).map(OptionOrId::Some).unwrap_or(OptionOrId::None);
+        }
+
+        let trailer_id = self.trailer.as_ref().map(|trailer| trailer.read().unwrap().id).filter(|id| *id != node_id);
+
+        let Some(trailer_id) = trailer_id else
+        {
+            self.hitch_dirty = false;
+            scene.physics.remove_hitches_of(node_id);
+            return;
+        };
+
+        if !self.hitch_dirty && scene.physics.has_hitch(node_id, trailer_id)
+        {
+            return;
+        }
+
+        self.hitch_dirty = false;
+
+        // measured where the two stand - not while coupled, a jackknifed trailer has another tip
+        if self.hitch.point_auto && scene.physics.hitch_of(trailer_id).map_or(true, |hitch| hitch.state != HitchState::Coupled)
+        {
+            if let Some(point) = self.measure_hitch_point()
+            {
+                self.hitch.point = point;
+            }
+        }
+
+        let degrees = |value: f32| if value >= 180.0 { PI } else { value.max(0.0).to_radians() };
+
+        scene.physics.set_hitch(node_id, trailer_id, HitchDesc
+        {
+            point: Vector::new(self.hitch.point.x, self.hitch.point.y, self.hitch.point.z),
+            yaw_limit: degrees(self.hitch.yaw_limit),
+            pitch_limit: degrees(self.hitch.pitch_limit),
+            roll_limit: degrees(self.hitch.roll_limit),
+            break_roll: degrees(self.hitch.break_roll),
+            break_force: self.hitch.break_force.max(0.0) * 1000.0,
+        });
+    }
+
+    // what the hitch telemetry shows - towing comes first, a trailer in the middle of a train shows its tow vehicle
+    fn hitch_telemetry(physics: &PhysicsWorld, node_id: u32) -> Option<VehicleHitchTelemetry>
+    {
+        let (other, hitch, towing) = match (physics.hitch_from(node_id), physics.hitch_of(node_id))
+        {
+            (Some((trailer, hitch)), _) => (trailer, hitch, true),
+            (None, Some(hitch)) => (hitch.tow, hitch, false),
+            (None, None) => return None,
+        };
+
+        Some(VehicleHitchTelemetry { towing, other, state: hitch.state, force: hitch.force / 1000.0, angles: hitch.angles.map(|angle| angle.to_degrees()), brake: hitch.brake, load: physics.vehicle_load_factor(node_id) })
     }
 
     // ********** input **********
@@ -2022,6 +2279,7 @@ impl VehicleController
         self.steering_runtime = None;
         self.seat_runtime.clear();
         self.chassis_points.clear();
+        self.chassis_parts.clear();
         self.pending = None;
     }
 
@@ -2206,10 +2464,12 @@ impl VehicleController
         let input = VehicleSoundInput
         {
             rpm: self.engine_state.rpm,
-            engine_load: self.engine_state.load.max(idling),
+            engine_load: self.engine_state.load,
+            idling,
             squeal,
             speed,
             limiter: self.engine_state.rpm >= self.engine.max_rpm * 0.99,
+            electric: self.engine.engine_type == super::vehicle::engine::EngineType::Electric,
         };
 
         if let Some(player) = self.sound_player.as_mut()
@@ -2402,7 +2662,16 @@ impl SceneController for VehicleController
             self.set_cockpit_visibility(false);
 
             // the editor gets the upright chase camera back, play puts the cockpit on again
-            self.put_chase_controller(scene);
+            if !self.vehicle_type.is_trailer()
+            {
+                self.put_chase_controller(scene);
+            }
+        }
+
+        // the trailer is coupled where it stands when the run starts
+        if !old.runs_game_logic() && new.runs_game_logic()
+        {
+            self.hitch_dirty = true;
         }
     }
 
@@ -2441,6 +2710,12 @@ impl SceneController for VehicleController
             }
         }
 
+        // the hitch in the physics goes with the next update
+        if self.trailer.as_ref().is_some_and(is_or_below)
+        {
+            self.trailer = OptionOrId::None;
+        }
+
         false
     }
 
@@ -2448,11 +2723,16 @@ impl SceneController for VehicleController
     {
         if let Some(id) = self.node_id()
         {
+            scene.physics.remove_hitches_of(id);
             scene.physics.remove_vehicle(id);
         }
 
         self.release_exclusions(scene);
-        self.put_chase_controller(scene);
+
+        if !self.vehicle_type.is_trailer()
+        {
+            self.put_chase_controller(scene);
+        }
 
         self.stop_sound();
         self.reset_visuals();
@@ -2496,6 +2776,18 @@ impl SceneController for VehicleController
             }
         }
 
+        // the trailer by its uuid, else by its name
+        if self.trailer.is_ref()
+        {
+            let uuid = self.trailer.id().unwrap().to_string();
+            self.trailer = context.nodes.iter().find(|node| node.read().unwrap().uuid == uuid).cloned().map(OptionOrId::Some).unwrap_or(OptionOrId::None);
+        }
+
+        if self.trailer.is_none() && !self.hitch.trailer_name.is_empty()
+        {
+            self.trailer = context.scene.find_node_by_name(&self.hitch.trailer_name).map(OptionOrId::Some).unwrap_or(OptionOrId::None);
+        }
+
         // the saved wheel list and settings win - only the runtime is rebuilt
         if self.node.is_some() && self.frame.is_some()
         {
@@ -2531,7 +2823,10 @@ impl SceneController for VehicleController
             }
         }
 
-        let input = self.read_input(io);
+        self.sync_hitch(scene, node_id);
+
+        // a trailer has no driver - it brakes with its tow vehicle
+        let input = if self.vehicle_type.is_trailer() { VehicleInput::default() } else { self.read_input(io) };
 
         let Some(state) = self.drive(&mut scene.physics, node_id, &frame, &input, dt) else { return false; };
         self.pending = Some(PendingFrame { input, state });
@@ -2583,7 +2878,10 @@ impl SceneController for VehicleController
         self.start_sit_animations();
 
         // ********** camera **********
-        self.update_camera(scene, io, &rotation, speed, lateral_left, &input, dt);
+        if !self.vehicle_type.is_trailer()
+        {
+            self.update_camera(scene, io, &rotation, speed, lateral_left, &input, dt);
+        }
 
         // ********** sound **********
         // the tires squeal sliding sideways (the wheel sliding most), locked (the handbrake, or a full stop from speed) or spinning - only as far as they touch the ground
@@ -2630,6 +2928,7 @@ impl SceneController for VehicleController
             wheels: telemetry_wheels,
             touching,
             last_hit,
+            hitch: Self::hitch_telemetry(&scene.physics, node_id),
         };
     }
 
@@ -2722,10 +3021,20 @@ impl VehicleController
         let counter_steer = (slide * self.drift.counter_steer).clamp(-max_angle, max_angle);
 
         // ********** throttle / brake / reverse **********
+        let trailer = self.vehicle_type.is_trailer();
         let reversing = self.engine_state.gear < 0;
         let (mut throttle, mut brake, mut reverse) = (0.0, 0.0, reversing);
 
-        if reversing
+        if trailer
+        {
+            // coupled it brakes with the tow vehicle, alone it stands - and torn off the breakaway cable pulls the brake
+            brake = match physics.hitch_of(node_id)
+            {
+                Some(hitch) if hitch.state != HitchState::Broken => hitch.brake,
+                _ => 1.0,
+            };
+        }
+        else if reversing
         {
             if input.throttle > 0.0
             {
@@ -2745,11 +3054,16 @@ impl VehicleController
             throttle = input.throttle;
         }
 
+        // the trailer behind brakes along - a trailer passes it on down the train
+        physics.set_hitch_brake(node_id, if self.hitch.trailer_brakes { brake } else { 0.0 });
+
         // ********** engine **********
         let driven: Vec<usize> = (0..self.wheels.len()).filter(|index| self.wheels[*index].driven).collect();
         let driven_radius = if driven.is_empty() { 0.35 } else { driven.iter().map(|index| self.wheels[*index].radius).sum::<f32>() / driven.len() as f32 };
 
-        let torque = self.engine_state.update(&self.engine, throttle, reverse, speed, driven_radius, dt);
+        // no driven wheel on the ground: the engine revs freely
+        let airborne = !driven.is_empty() && driven.iter().all(|index| !contacts.get(*index).is_some_and(|contact| contact.contact));
+        let torque = if trailer { 0.0 } else { self.engine_state.update(&self.engine, throttle, reverse, speed, driven_radius, airborne, dt) };
         let direction = if self.engine_state.gear < 0 { -1.0 } else { 1.0 };
         let mut drive_force = torque / driven_radius * direction;
 
@@ -2936,6 +3250,9 @@ impl VehicleController
         {
             let tuning = self.wheel_tuning(mass);
 
+            // the springs carry what rests on them through the couplings too - same ride height and damping as alone
+            let load = physics.vehicle_load_factor(node_id);
+
             if let Some((vehicle, body)) = physics.vehicle_mut(node_id)
             {
                 for (wheel, command) in vehicle.controller.wheels_mut().iter_mut().zip(commands.iter())
@@ -2947,14 +3264,15 @@ impl VehicleController
                     wheel.side_friction_stiffness = command.side_grip;
 
                     // live tuning, no rebuild needed
-                    wheel.suspension_stiffness = tuning.suspension_stiffness;
-                    wheel.damping_compression = tuning.suspension_compression;
-                    wheel.damping_relaxation = tuning.suspension_damping;
+                    wheel.suspension_stiffness = tuning.suspension_stiffness * load;
+                    wheel.damping_compression = tuning.suspension_compression * load;
+                    wheel.damping_relaxation = tuning.suspension_damping * load;
                     wheel.max_suspension_travel = tuning.max_suspension_travel;
-                    wheel.max_suspension_force = tuning.max_suspension_force;
+                    wheel.max_suspension_force = tuning.max_suspension_force * load;
                 }
 
-                let active = throttle > 0.0 || brake > 0.0 || !approx_zero(self.steer) || input.handbrake || recover;
+                // a trailer is woken by its tow vehicle through the hitch - its parking brake must not keep it awake
+                let active = !trailer && (throttle > 0.0 || brake > 0.0 || !approx_zero(self.steer) || input.handbrake || recover);
 
                 body.reset_forces(false);
                 body.reset_torques(false);
@@ -3090,12 +3408,17 @@ impl VehicleController
             ui.text_edit_singleline(&mut self.node_name);
         });
 
-        ui.horizontal(|ui|
+        let trailer = self.vehicle_type.is_trailer();
+
+        if !trailer
         {
-            ui.label("Camera Target Name: ");
-            ui.label("ℹ").on_hover_text("leave empty for main active camera");
-            ui.text_edit_singleline(&mut self.cam_name);
-        });
+            ui.horizontal(|ui|
+            {
+                ui.label("Camera Target Name: ");
+                ui.label("ℹ").on_hover_text("leave empty for main active camera");
+                ui.text_edit_singleline(&mut self.cam_name);
+            });
+        }
 
         ui.horizontal(|ui|
         {
@@ -3120,7 +3443,11 @@ impl VehicleController
 
         combo(ui, "vehicle_forward", "Forward", "where the vehicle faces as it stands in the editor - Auto reads it from wheel names like 'front left', otherwise from the axis the wheels spread along (+z of the model). Re-run the auto setup after a change", &mut self.forward_axis, &[VehicleForward::Auto, VehicleForward::WorldNegZ, VehicleForward::WorldPosZ, VehicleForward::WorldNegX, VehicleForward::WorldPosX]);
 
-        if combo(ui, "vehicle_drive", "Drive", "which axles are driven - Tracked drives the sides against each other instead of steering", &mut self.drive, &[VehicleDrive::Front, VehicleDrive::Rear, VehicleDrive::All, VehicleDrive::Tracked])
+        if trailer
+        {
+            ui.label(RichText::new("a trailer has no engine, driver or camera - couple it in the Trailer Hitch section of the vehicle that tows it").color(Color32::GRAY));
+        }
+        else if combo(ui, "vehicle_drive", "Drive", "which axles are driven - Tracked drives the sides against each other instead of steering", &mut self.drive, &[VehicleDrive::Front, VehicleDrive::Rear, VehicleDrive::All, VehicleDrive::Tracked])
         {
             self.assign_wheel_roles();
         }
@@ -3202,7 +3529,7 @@ impl VehicleController
         // ********** chassis **********
         egui::CollapsingHeader::new("Chassis").id_salt("vehicle_chassis").show(ui, |ui|
         {
-            dirty |= combo(ui, "vehicle_chassis_shape", "Shape", "the collision shape of the body - the wheels are rays and never collide themselves", &mut self.chassis.shape, &[ChassisShape::Box, ChassisShape::ConvexHull]);
+            dirty |= combo(ui, "vehicle_chassis_shape", "Shape", "the collision shape of the body - the wheels are rays and never collide themselves", &mut self.chassis.shape, &[ChassisShape::Box, ChassisShape::ConvexHull, ChassisShape::Compound]);
             dirty |= slider(ui, "Mass", "kg", &mut self.chassis.mass, 10.0..=80000.0, 0);
 
             dirty |= ui.checkbox(&mut self.chassis.center_of_mass_auto, "Auto Center Of Mass").changed();
@@ -3221,7 +3548,8 @@ impl VehicleController
             dirty |= slider(ui, "Linear Damping", "", &mut self.chassis.linear_damping, 0.0..=2.0, 2);
             dirty |= slider(ui, "Angular Damping", "", &mut self.chassis.angular_damping, 0.0..=5.0, 2);
             dirty |= slider(ui, "Min Ground Clearance", "share of the wheel radius the collision body stays above the wheel bottom - a body reaching down to the ground catches on every ramp edge", &mut self.chassis.min_clearance, 0.0..=2.0, 2);
-            dirty |= ui.checkbox(&mut self.chassis.sloped_ends, "Sloped Ends").on_hover_text("the collision bottom rises to the axle height in front of the front and behind the rear axle - the approach and departure angle of a real car, so the nose does not catch on ramps").changed();
+            dirty |= slider(ui, "Edge Rounding", "m the edges of the collision body are rounded by - they slide up a ramp start or a loop entry instead of catching on it. The body keeps its outer size", &mut self.chassis.rounding, 0.0..=1.0, 2);
+            dirty |= ui.checkbox(&mut self.chassis.sloped_ends, "Sloped Ends").on_hover_text("the collision bottom rises above the axles in front of the front and behind the rear axle - the approach and departure angle of a real car, so the nose does not catch on ramps and loop entries").changed();
             dirty |= ui.checkbox(&mut self.chassis.wheel_bumpers, "Wheel Bumpers").on_hover_text("frictionless balls at the wheels - the wheel rays only see an edge once the wheel is above it, the balls slide the vehicle up over curbs and ramps").changed();
         });
 
@@ -3246,28 +3574,31 @@ impl VehicleController
         });
 
         // ********** steering **********
-        egui::CollapsingHeader::new("Steering").id_salt("vehicle_steering").show(ui, |ui|
+        if !trailer
         {
-            slider(ui, "Max Angle", "degrees", &mut self.steering.max_angle, 0.0..=70.0, 1);
-            slider(ui, "Steer Speed", "keyboard, 1/s", &mut self.steering.speed, 0.5..=15.0, 1);
-            slider(ui, "Return Speed", "keyboard, 1/s", &mut self.steering.return_speed, 0.5..=20.0, 1);
-            slider(ui, "High Speed", "km/h at which the lock is reduced to the factor below", &mut self.steering.high_speed, 10.0..=300.0, 0);
-            slider(ui, "High Speed Factor", "", &mut self.steering.high_speed_factor, 0.05..=1.0, 2);
-
-            ui.horizontal(|ui|
+            egui::CollapsingHeader::new("Steering").id_salt("vehicle_steering").show(ui, |ui|
             {
-                ui.label("Steering Node: ");
-                ui.label("ℹ").on_hover_text("steering wheel or handlebar that turns with the steering");
-                runtime_dirty |= part_combo(ui, "vehicle_steering_node", &mut self.steering.node_name, &mut self.steering.node_uuid, &parts);
+                slider(ui, "Max Angle", "degrees", &mut self.steering.max_angle, 0.0..=70.0, 1);
+                slider(ui, "Steer Speed", "keyboard, 1/s", &mut self.steering.speed, 0.5..=15.0, 1);
+                slider(ui, "Return Speed", "keyboard, 1/s", &mut self.steering.return_speed, 0.5..=20.0, 1);
+                slider(ui, "High Speed", "km/h at which the lock is reduced to the factor below", &mut self.steering.high_speed, 10.0..=300.0, 0);
+                slider(ui, "High Speed Factor", "", &mut self.steering.high_speed_factor, 0.05..=1.0, 2);
+
+                ui.horizontal(|ui|
+                {
+                    ui.label("Steering Node: ");
+                    ui.label("ℹ").on_hover_text("steering wheel or handlebar that turns with the steering");
+                    runtime_dirty |= part_combo(ui, "vehicle_steering_node", &mut self.steering.node_name, &mut self.steering.node_uuid, &parts);
+                });
+
+                runtime_dirty |= combo(ui, "vehicle_steering_axis", "Steering Axis", "Column: a steering wheel, Handlebar: turns around the vehicle up axis", &mut self.steering.axis, &[SteeringAxis::Column, SteeringAxis::Handlebar]);
+
+                if self.steering.axis == SteeringAxis::Column
+                {
+                    slider(ui, "Ratio", "steering wheel turn per wheel turn", &mut self.steering.ratio, 1.0..=30.0, 1);
+                }
             });
-
-            runtime_dirty |= combo(ui, "vehicle_steering_axis", "Steering Axis", "Column: a steering wheel, Handlebar: turns around the vehicle up axis", &mut self.steering.axis, &[SteeringAxis::Column, SteeringAxis::Handlebar]);
-
-            if self.steering.axis == SteeringAxis::Column
-            {
-                slider(ui, "Ratio", "steering wheel turn per wheel turn", &mut self.steering.ratio, 1.0..=30.0, 1);
-            }
-        });
+        }
 
         // ********** brakes **********
         egui::CollapsingHeader::new("Brakes & Drag").id_salt("vehicle_brakes").show(ui, |ui|
@@ -3279,24 +3610,30 @@ impl VehicleController
         });
 
         // ********** drift **********
-        egui::CollapsingHeader::new("Drift").id_salt("vehicle_drift").show(ui, |ui|
+        if !trailer
         {
-            slider(ui, "Handbrake Grip", "grip of the handbrake wheels while it is pulled", &mut self.drift.handbrake_grip, 0.0..=1.0, 2);
-            slider(ui, "Handbrake Side Grip", "", &mut self.drift.handbrake_side_grip, 0.0..=1.0, 2);
-            slider(ui, "Grip Recovery", "1/s after the handbrake is released", &mut self.drift.grip_recovery, 0.1..=10.0, 2);
-            slider(ui, "Throttle Hold", "share of the recovery left while on throttle and sliding - keeps the drift going", &mut self.drift.throttle_hold, 0.0..=1.0, 2);
-            slider(ui, "Counter Steer", "steers into the slide by this share of the slip angle", &mut self.drift.counter_steer, 0.0..=1.5, 2);        });
+            egui::CollapsingHeader::new("Drift").id_salt("vehicle_drift").show(ui, |ui|
+            {
+                slider(ui, "Handbrake Grip", "grip of the handbrake wheels while it is pulled", &mut self.drift.handbrake_grip, 0.0..=1.0, 2);
+                slider(ui, "Handbrake Side Grip", "", &mut self.drift.handbrake_side_grip, 0.0..=1.0, 2);
+                slider(ui, "Grip Recovery", "1/s after the handbrake is released", &mut self.drift.grip_recovery, 0.1..=10.0, 2);
+                slider(ui, "Throttle Hold", "share of the recovery left while on throttle and sliding - keeps the drift going", &mut self.drift.throttle_hold, 0.0..=1.0, 2);
+                slider(ui, "Counter Steer", "steers into the slide by this share of the slip angle", &mut self.drift.counter_steer, 0.0..=1.5, 2);        });
+        }
 
         // ********** balance **********
-        egui::CollapsingHeader::new("Balance (Two Wheelers)").id_salt("vehicle_balance").show(ui, |ui|
+        if !trailer
         {
-            ui.checkbox(&mut self.balance.enabled, "Enabled").on_hover_text("keeps the vehicle upright and leans it into curves");
-            slider(ui, "Max Lean", "degrees", &mut self.balance.max_lean, 0.0..=70.0, 1);
-            slider(ui, "Lean Factor", "share of the physically right lean angle", &mut self.balance.lean_factor, 0.0..=1.5, 2);
-            slider(ui, "Stiffness", "1/s²", &mut self.balance.stiffness, 1.0..=300.0, 1);
-            slider(ui, "Damping", "1/s", &mut self.balance.damping, 0.0..=60.0, 1);
-            slider(ui, "Roll Rate", "degrees/s the wanted lean changes by at most - lower is a calmer flick from one side to the other", &mut self.balance.roll_rate, 10.0..=400.0, 0);
-        });
+            egui::CollapsingHeader::new("Balance (Two Wheelers)").id_salt("vehicle_balance").show(ui, |ui|
+            {
+                ui.checkbox(&mut self.balance.enabled, "Enabled").on_hover_text("keeps the vehicle upright and leans it into curves");
+                slider(ui, "Max Lean", "degrees", &mut self.balance.max_lean, 0.0..=70.0, 1);
+                slider(ui, "Lean Factor", "share of the physically right lean angle", &mut self.balance.lean_factor, 0.0..=1.5, 2);
+                slider(ui, "Stiffness", "1/s²", &mut self.balance.stiffness, 1.0..=300.0, 1);
+                slider(ui, "Damping", "1/s", &mut self.balance.damping, 0.0..=60.0, 1);
+                slider(ui, "Roll Rate", "degrees/s the wanted lean changes by at most - lower is a calmer flick from one side to the other", &mut self.balance.roll_rate, 10.0..=400.0, 0);
+            });
+        }
 
         // ********** tracks **********
         if self.drive == VehicleDrive::Tracked
@@ -3311,131 +3648,140 @@ impl VehicleController
         }
 
         // ********** engine **********
-        egui::CollapsingHeader::new("Engine & Gearbox").id_salt("vehicle_engine").show(ui, |ui|
+        if !trailer
         {
-            use super::vehicle::engine::EngineType;
-
-            combo(ui, "vehicle_engine_type", "Engine Type", "Electric: full torque from zero, one gear - Pedal: a rider, the rpm is the cadence", &mut self.engine.engine_type, &[EngineType::Combustion, EngineType::Electric, EngineType::Pedal]);
-            slider(ui, "Idle RPM", "", &mut self.engine.idle_rpm, 0.0..=3000.0, 0);
-            slider(ui, "Max RPM", "rev limiter", &mut self.engine.max_rpm, 100.0..=20000.0, 0);
-            slider(ui, "Max Torque", "Nm", &mut self.engine.max_torque, 1.0..=10000.0, 0);
-            slider(ui, "Peak Torque RPM", "electric: above this the power stays constant", &mut self.engine.peak_torque_rpm, 10.0..=15000.0, 0);
-
-            ui.horizontal(|ui|
+            egui::CollapsingHeader::new("Engine & Gearbox").id_salt("vehicle_engine").show(ui, |ui|
             {
-                ui.label("Gears: ");
-                ui.label("ℹ").on_hover_text("forward gear ratios, first gear first - automatic gearbox");
+                use super::vehicle::engine::EngineType;
 
-                let mut text = self.engine.gear_ratios.iter().map(|ratio| format!("{}", ratio)).collect::<Vec<_>>().join(", ");
-                if ui.text_edit_singleline(&mut text).changed()
+                combo(ui, "vehicle_engine_type", "Engine Type", "Electric: full torque from zero, one gear - Pedal: a rider, the rpm is the cadence", &mut self.engine.engine_type, &[EngineType::Combustion, EngineType::Electric, EngineType::Pedal]);
+                slider(ui, "Idle RPM", "", &mut self.engine.idle_rpm, 0.0..=3000.0, 0);
+                slider(ui, "Max RPM", "rev limiter", &mut self.engine.max_rpm, 100.0..=20000.0, 0);
+                slider(ui, "Max Torque", "Nm", &mut self.engine.max_torque, 1.0..=10000.0, 0);
+                slider(ui, "Peak Torque RPM", "electric: above this the power stays constant", &mut self.engine.peak_torque_rpm, 10.0..=15000.0, 0);
+
+                ui.horizontal(|ui|
                 {
-                    let ratios: Vec<f32> = text.split(',').filter_map(|part| part.trim().parse::<f32>().ok()).filter(|ratio| *ratio > 0.0).collect();
-                    if !ratios.is_empty()
-                    {
-                        self.engine.gear_ratios = ratios;
-                    }
-                }
-            });
+                    ui.label("Gears: ");
+                    ui.label("ℹ").on_hover_text("forward gear ratios, first gear first - automatic gearbox");
 
-            slider(ui, "Reverse Ratio", "", &mut self.engine.reverse_ratio, 0.1..=20.0, 2);
-            slider(ui, "Final Drive", "", &mut self.engine.final_drive, 0.1..=20.0, 2);
-            slider(ui, "Efficiency", "", &mut self.engine.efficiency, 0.1..=1.0, 2);
-            slider(ui, "Shift Up RPM", "", &mut self.engine.shift_up_rpm, 10.0..=20000.0, 0);
-            slider(ui, "Shift Down RPM", "", &mut self.engine.shift_down_rpm, 10.0..=20000.0, 0);
-            slider(ui, "Shift Time", "s without drive while shifting", &mut self.engine.shift_time, 0.0..=1.5, 2);
-            slider(ui, "Engine Braking", "share of the max torque that drags while off throttle", &mut self.engine.engine_braking, 0.0..=1.0, 2);
-            slider(ui, "Top Speed", "km/h, 0 = only drag and gearing limit it", &mut self.engine.top_speed, 0.0..=400.0, 0);
-            slider(ui, "Max Reverse Speed", "km/h", &mut self.engine.max_reverse_speed, 0.0..=100.0, 0);
-        });
+                    let mut text = self.engine.gear_ratios.iter().map(|ratio| format!("{}", ratio)).collect::<Vec<_>>().join(", ");
+                    if ui.text_edit_singleline(&mut text).changed()
+                    {
+                        let ratios: Vec<f32> = text.split(',').filter_map(|part| part.trim().parse::<f32>().ok()).filter(|ratio| *ratio > 0.0).collect();
+                        if !ratios.is_empty()
+                        {
+                            self.engine.gear_ratios = ratios;
+                        }
+                    }
+                });
+
+                slider(ui, "Reverse Ratio", "", &mut self.engine.reverse_ratio, 0.1..=20.0, 2);
+                slider(ui, "Final Drive", "", &mut self.engine.final_drive, 0.1..=20.0, 2);
+                slider(ui, "Efficiency", "", &mut self.engine.efficiency, 0.1..=1.0, 2);
+                slider(ui, "Shift Up RPM", "", &mut self.engine.shift_up_rpm, 10.0..=20000.0, 0);
+                slider(ui, "Shift Down RPM", "", &mut self.engine.shift_down_rpm, 10.0..=20000.0, 0);
+                slider(ui, "Shift Time", "s without drive while shifting", &mut self.engine.shift_time, 0.0..=1.5, 2);
+                slider(ui, "Engine Braking", "share of the max torque that drags while off throttle", &mut self.engine.engine_braking, 0.0..=1.0, 2);
+                slider(ui, "Top Speed", "km/h, 0 = only drag and gearing limit it", &mut self.engine.top_speed, 0.0..=400.0, 0);
+                slider(ui, "Max Reverse Speed", "km/h", &mut self.engine.max_reverse_speed, 0.0..=100.0, 0);
+            });
+        }
 
         // ********** camera **********
-        egui::CollapsingHeader::new("Camera").id_salt("vehicle_camera").show(ui, |ui|
+        if !trailer
         {
-            combo(ui, "vehicle_camera_mode", "Mode", "C or the right stick switches while driving", &mut self.camera.mode, &[VehicleCameraMode::Chase, VehicleCameraMode::Cockpit]);
-            ui.checkbox(&mut self.camera.distance_auto, "Auto Distance").on_hover_text("from the vehicle size, on the next auto setup");
-            slider(ui, "Distance", "chase camera, used by the setup - scroll to change it while driving", &mut self.camera.distance, 1.0..=50.0, 1);
-            slider(ui, "Height", "above the chassis center", &mut self.camera.height, -2.0..=10.0, 2);
-            ui.checkbox(&mut self.camera.follow, "Swing In Behind").on_hover_text("the camera turns behind the vehicle while driving forward");
-            slider(ui, "Follow Speed", "1/s", &mut self.camera.follow_speed, 0.1..=15.0, 1);
-            slider(ui, "Follow Delay", "s after orbiting with the mouse or stick", &mut self.camera.follow_delay, 0.0..=10.0, 1);
-            slider(ui, "Slide Follow", "0 = behind the nose, 1 = behind where the vehicle actually goes - a drift then shows the car sliding out", &mut self.camera.slide_follow, 0.0..=1.0, 2);
-            ui.checkbox(&mut self.camera.cockpit_auto, "Auto Cockpit Position").on_hover_text("above the seat, on the next auto setup");
-            vector_edit(ui, "Cockpit Position", "eye point, chassis space, m", &mut self.camera.cockpit_offset);
-        });
+            egui::CollapsingHeader::new("Camera").id_salt("vehicle_camera").show(ui, |ui|
+            {
+                combo(ui, "vehicle_camera_mode", "Mode", "C or the right stick switches while driving", &mut self.camera.mode, &[VehicleCameraMode::Chase, VehicleCameraMode::Cockpit]);
+                ui.checkbox(&mut self.camera.distance_auto, "Auto Distance").on_hover_text("from the vehicle size, on the next auto setup");
+                slider(ui, "Distance", "chase camera, used by the setup - scroll to change it while driving", &mut self.camera.distance, 1.0..=50.0, 1);
+                slider(ui, "Height", "above the chassis center", &mut self.camera.height, -2.0..=10.0, 2);
+                ui.checkbox(&mut self.camera.follow, "Swing In Behind").on_hover_text("the camera turns behind the vehicle while driving forward");
+                slider(ui, "Follow Speed", "1/s", &mut self.camera.follow_speed, 0.1..=15.0, 1);
+                slider(ui, "Follow Delay", "s after orbiting with the mouse or stick", &mut self.camera.follow_delay, 0.0..=10.0, 1);
+                slider(ui, "Slide Follow", "0 = behind the nose, 1 = behind where the vehicle actually goes - a drift then shows the car sliding out", &mut self.camera.slide_follow, 0.0..=1.0, 2);
+                ui.checkbox(&mut self.camera.cockpit_auto, "Auto Cockpit Position").on_hover_text("above the seat, on the next auto setup");
+                vector_edit(ui, "Cockpit Position", "eye point, chassis space, m", &mut self.camera.cockpit_offset);
+            });
+        }
 
         // ********** seats **********
-        egui::CollapsingHeader::new(format!("Seats ({})", self.seats.len())).id_salt("vehicle_seats").show(ui, |ui|
+        if !trailer
         {
-            ui.label("the first driver seat gives the cockpit view its head - nodes outside the vehicle are put on their seats and carried along");
-
-            let mut remove = None;
-
-            for (index, seat) in self.seats.iter_mut().enumerate()
+            egui::CollapsingHeader::new(format!("Seats ({})", self.seats.len())).id_salt("vehicle_seats").show(ui, |ui|
             {
-                ui.push_id(("vehicle_seat", index), |ui|
+                ui.label("the first driver seat gives the cockpit view its head - nodes outside the vehicle are put on their seats and carried along");
+
+                let mut remove = None;
+
+                for (index, seat) in self.seats.iter_mut().enumerate()
                 {
-                    ui.horizontal(|ui|
+                    ui.push_id(("vehicle_seat", index), |ui|
                     {
-                        ui.label(RichText::new(format!("Seat {}", index + 1)).strong());
-                        if ui.button("🗑").on_hover_text("remove this seat").clicked()
+                        ui.horizontal(|ui|
                         {
-                            remove = Some(index);
-                        }
+                            ui.label(RichText::new(format!("Seat {}", index + 1)).strong());
+                            if ui.button("🗑").on_hover_text("remove this seat").clicked()
+                            {
+                                remove = Some(index);
+                            }
+                        });
+
+                        combo(ui, &format!("vehicle_seat_role_{}", index), "Role", "", &mut seat.role, &[SeatRole::Driver, SeatRole::Passenger]);
+
+                        ui.horizontal(|ui|
+                        {
+                            ui.label("Node: ");
+                            ui.label("ℹ").on_hover_text("any node in the scene - one outside the vehicle is put on the seat and carried along");
+                            runtime_dirty |= ui.text_edit_singleline(&mut seat.node_name).lost_focus();
+                        });
+
+                        ui.horizontal(|ui|
+                        {
+                            ui.label("Sit Animation: ");
+                            ui.label("ℹ").on_hover_text("regex of the clip name, played looped");
+                            runtime_dirty |= ui.text_edit_singleline(&mut seat.animation).lost_focus();
+                        });
+
+                        ui.checkbox(&mut seat.seat_auto, "Auto Seat").on_hover_text("the auto setup takes where the node currently is as the seat");
+                        runtime_dirty |= vector_edit(ui, "Seat Position", "chassis space, m - where the node origin goes", &mut seat.seat_position);
+                        runtime_dirty |= slider(ui, "Seat Rotation", "degrees around the vehicle up axis - 0 turns the node to look along its -z", &mut seat.seat_rotation, -180.0..=180.0, 1);
+                        ui.checkbox(&mut seat.hide_in_cockpit, "Hide In Cockpit View");
+                        ui.separator();
                     });
+                }
 
-                    combo(ui, &format!("vehicle_seat_role_{}", index), "Role", "", &mut seat.role, &[SeatRole::Driver, SeatRole::Passenger]);
-
-                    ui.horizontal(|ui|
-                    {
-                        ui.label("Node: ");
-                        ui.label("ℹ").on_hover_text("any node in the scene - one outside the vehicle is put on the seat and carried along");
-                        runtime_dirty |= ui.text_edit_singleline(&mut seat.node_name).lost_focus();
-                    });
-
-                    ui.horizontal(|ui|
-                    {
-                        ui.label("Sit Animation: ");
-                        ui.label("ℹ").on_hover_text("regex of the clip name, played looped");
-                        runtime_dirty |= ui.text_edit_singleline(&mut seat.animation).lost_focus();
-                    });
-
-                    ui.checkbox(&mut seat.seat_auto, "Auto Seat").on_hover_text("the auto setup takes where the node currently is as the seat");
-                    runtime_dirty |= vector_edit(ui, "Seat Position", "chassis space, m - where the node origin goes", &mut seat.seat_position);
-                    runtime_dirty |= slider(ui, "Seat Rotation", "degrees around the vehicle up axis - 0 turns the node to look along its -z", &mut seat.seat_rotation, -180.0..=180.0, 1);
-                    ui.checkbox(&mut seat.hide_in_cockpit, "Hide In Cockpit View");
-                    ui.separator();
-                });
-            }
-
-            if let Some(index) = remove
-            {
-                self.set_cockpit_visibility(false);
-                self.seats.remove(index);
-                runtime_dirty = true;
-            }
-
-            if ui.button("➕ Add Seat").clicked()
-            {
-                // the first one drives, the next sits beside the driver
-                let seat = match self.driver_seat().map(|index| self.seats[index].clone())
+                if let Some(index) = remove
                 {
-                    Some(driver) =>
-                    {
-                        let mut seat = VehicleSeat::new(SeatRole::Passenger);
-                        seat.seat_rotation = driver.seat_rotation;
-                        seat.seat_position = driver.seat_position;
-                        if let Some(frame) = self.frame
-                        {
-                            seat.seat_position -= frame.right() * (driver.seat_position.dot(&frame.right()) * 2.0);
-                        }
-                        seat
-                    }
-                    None => VehicleSeat::new(SeatRole::Driver),
-                };
+                    self.set_cockpit_visibility(false);
+                    self.seats.remove(index);
+                    runtime_dirty = true;
+                }
 
-                self.seats.push(seat);
-            }
-        });
+                if ui.button("➕ Add Seat").clicked()
+                {
+                    // the first one drives, the next sits beside the driver
+                    let seat = match self.driver_seat().map(|index| self.seats[index].clone())
+                    {
+                        Some(driver) =>
+                        {
+                            let mut seat = VehicleSeat::new(SeatRole::Passenger);
+                            seat.seat_rotation = driver.seat_rotation;
+                            seat.seat_position = driver.seat_position;
+                            if let Some(frame) = self.frame
+                            {
+                                seat.seat_position -= frame.right() * (driver.seat_position.dot(&frame.right()) * 2.0);
+                            }
+                            seat
+                        }
+                        None => VehicleSeat::new(SeatRole::Driver),
+                    };
+
+                    self.seats.push(seat);
+                }
+            });
+        }
 
         // ********** recover **********
         egui::CollapsingHeader::new("Recover").id_salt("vehicle_recover").show(ui, |ui|
@@ -3446,104 +3792,158 @@ impl VehicleController
             slider(ui, "Lift", "m", &mut self.recover.lift, 0.0..=5.0, 2);
         });
 
-        // ********** controls **********
-        egui::CollapsingHeader::new("Controls").id_salt("vehicle_controls").show(ui, |ui|
+        // ********** hitch **********
+        let mut hitch_dirty = false;
+
+        egui::CollapsingHeader::new("Trailer Hitch").id_salt("vehicle_hitch").show(ui, |ui|
         {
-            let id = format!("vehicle_controls_{}", self.node_name);
-            gamepad_select_ui(ui, &id, &mut self.controls.gamepad);
-
-            let controls = &mut self.controls;
-            for (label, action) in [("Throttle", &mut controls.throttle), ("Brake / Reverse", &mut controls.brake), ("Steer Left", &mut controls.steer_left), ("Steer Right", &mut controls.steer_right), ("Handbrake", &mut controls.handbrake), ("Recover", &mut controls.recover), ("Camera", &mut controls.camera), ("Look Left", &mut controls.look_left), ("Look Right", &mut controls.look_right), ("Look Up", &mut controls.look_up), ("Look Down", &mut controls.look_down), ("Zoom In", &mut controls.zoom_in), ("Zoom Out", &mut controls.zoom_out)]
-            {
-                input_action_ui(ui, &id, label, action);
-            }
-            slider(ui, "Look Speed", "deg/s at full stick, chase camera", &mut self.controls.look_speed, 10.0..=500.0, 0);
-            slider(ui, "Zoom Speed", "1/s, chase camera - the distance changes by this factor per second, as e^speed", &mut self.controls.zoom_speed, 0.1..=5.0, 1);
-
-            if ui.button("Reset to Default").clicked()
-            {
-                self.controls = VehicleControls::default();
-            }
-        });
-
-        // ********** sound **********
-        egui::CollapsingHeader::new("Sound").id_salt("vehicle_sound").show(ui, |ui|
-        {
-            use super::vehicle::engine_sound::EngineSoundLayer;
-
-            // the sound components of the vehicle node - volume, spatial and distance are set on them
-            let node = self.node.as_ref().cloned();
-            let components = match node.as_ref()
-            {
-                Some(node) =>
-                {
-                    self.release_detached_sounds(node);
-                    node.read().unwrap().find_components::<Sound>()
-                },
-                None => vec![],
-            };
-            let sources = &context.sound_sources;
-
-            ui.checkbox(&mut self.sound.enabled, "Enabled");
-
-            if sources.is_empty() && components.is_empty()
-            {
-                ui.label(RichText::new("no sound resources - drop sound files into the scene, or add them under Resources > Sound Sources (right click)").color(Color32::GRAY));
-            }
-            else if components.is_empty()
-            {
-                ui.label(RichText::new("pick a sound resource below - it becomes a Sound component of the vehicle node, with its volume and spatial settings").color(Color32::GRAY));
-            }
-
-            slider(ui, "Pitch Variation", "random rpm wobble as a share of the rpm - keeps full throttle from sounding like one flat tone", &mut self.sound.pitch_variation, 0.0..=0.1, 3);
+            ui.label("the trailer is a scene node outside this vehicle with its own vehicle controller of the type Trailer - it is coupled where it stands when the run starts, and a recover puts it back behind the vehicle");
 
             ui.horizontal(|ui|
             {
-                ui.label("Engine Layers");
-                ui.label("ℹ").on_hover_text("looped sound components of the vehicle node, each with the rpm it was recorded at - they are crossfaded and pitched by the engine rpm. Layers with 'on throttle' off are the overrun sound, blended in when letting go of the throttle");
+                ui.label("Trailer Node: ");
+                ui.label("ℹ").on_hover_text("empty = no trailer");
+
+                if ui.text_edit_singleline(&mut self.hitch.trailer_name).lost_focus()
+                {
+                    self.trailer = if self.hitch.trailer_name.is_empty() { OptionOrId::None } else { scene.find_node_by_name(&self.hitch.trailer_name).map(OptionOrId::Some).unwrap_or(OptionOrId::None) };
+                    hitch_dirty = true;
+                }
             });
 
-            let mut remove = None;
-            for (index, layer) in self.sound.engine_layers.iter_mut().enumerate()
+            if !self.hitch.trailer_name.is_empty() && self.trailer.is_none()
             {
-                ui.horizontal(|ui|
-                {
-                    sound_component_combo(ui, format!("vehicle_sound_layer_{}", index), &mut layer.sound, &components, sources, node.as_ref(), "Engine ");
-                    ui.label("rpm:");
-                    ui.add(egui::DragValue::new(&mut layer.rpm).speed(10.0).range(1.0..=30000.0));
-
-                    let mut on_throttle = layer.load >= 0.5;
-                    if ui.checkbox(&mut on_throttle, "on throttle").changed()
-                    {
-                        layer.load = if on_throttle { 1.0 } else { 0.0 };
-                    }
-
-                    if ui.button("🗑").clicked()
-                    {
-                        remove = Some(index);
-                    }
-                });
+                ui.colored_label(Color32::from_rgb(220, 160, 60), "trailer node not found");
             }
 
-            if let Some(index) = remove
+            hitch_dirty |= ui.checkbox(&mut self.hitch.point_auto, "Auto Hitch Point").on_hover_text("a part of the trailer named like 'hitch', 'coupling' or 'kingpin', otherwise the middle of its front tip - measured at the run start").changed();
+
+            if self.hitch.point_auto
             {
-                self.sound.engine_layers.remove(index);
+                ui.label(RichText::new(format!("hitch point: {:.2} / {:.2} / {:.2}", self.hitch.point.x, self.hitch.point.y, self.hitch.point.z)).color(Color32::GRAY));
+            }
+            else
+            {
+                hitch_dirty |= vector_edit(ui, "Hitch Point", "the ball, chassis space, m", &mut self.hitch.point);
             }
 
-            if ui.button("Add Layer").clicked()
-            {
-                self.sound.engine_layers.push(EngineSoundLayer { sound: OptionOrId::None, rpm: 3000.0, load: 1.0 });
-            }
-
-            for (label, hint, sound, prefix) in [("Squeal: ", "the tires sliding sideways or locked by the brakes", &mut self.sound.squeal, "Squeal "), ("Road: ", "rolling noise, rises with the speed", &mut self.sound.road, "Road ")]
-            {
-                ui.horizontal(|ui|
-                {
-                    ui.label(label).on_hover_text(hint);
-                    sound_component_combo(ui, format!("vehicle_sound_{}", label), sound, &components, sources, node.as_ref(), prefix);
-                });
-            }
+            hitch_dirty |= slider(ui, "Yaw Limit", "degrees to each side the trailer swings around the ball - 180 = free", &mut self.hitch.yaw_limit, 1.0..=180.0, 0);
+            hitch_dirty |= slider(ui, "Pitch Limit", "degrees up and down - over crests and through dips", &mut self.hitch.pitch_limit, 1.0..=180.0, 0);
+            hitch_dirty |= slider(ui, "Roll Limit", "degrees the trailer rolls against the vehicle - at the limit a falling trailer pulls the vehicle along", &mut self.hitch.roll_limit, 1.0..=180.0, 0);
+            hitch_dirty |= slider(ui, "Tear Off Roll", "degrees of roll against the vehicle that tear the trailer off - 0 = never, keep it below the roll limit", &mut self.hitch.break_roll, 0.0..=180.0, 0);
+            hitch_dirty |= slider(ui, "Tear Off Force", "kN at the ball that tear the trailer off, e.g. in a crash - 0 = never", &mut self.hitch.break_force, 0.0..=2000.0, 0);
+            ui.checkbox(&mut self.hitch.trailer_brakes, "Trailer Brakes").on_hover_text("the trailer brakes along with the vehicle, a train passes it on");
         });
+
+        if hitch_dirty
+        {
+            self.hitch_dirty = true;
+        }
+
+        // ********** controls **********
+        if !trailer
+        {
+            egui::CollapsingHeader::new("Controls").id_salt("vehicle_controls").show(ui, |ui|
+            {
+                let id = format!("vehicle_controls_{}", self.node_name);
+                gamepad_select_ui(ui, &id, &mut self.controls.gamepad);
+
+                let controls = &mut self.controls;
+                for (label, action) in [("Throttle", &mut controls.throttle), ("Brake / Reverse", &mut controls.brake), ("Steer Left", &mut controls.steer_left), ("Steer Right", &mut controls.steer_right), ("Handbrake", &mut controls.handbrake), ("Recover", &mut controls.recover), ("Camera", &mut controls.camera), ("Look Left", &mut controls.look_left), ("Look Right", &mut controls.look_right), ("Look Up", &mut controls.look_up), ("Look Down", &mut controls.look_down), ("Zoom In", &mut controls.zoom_in), ("Zoom Out", &mut controls.zoom_out)]
+                {
+                    input_action_ui(ui, &id, label, action);
+                }
+                slider(ui, "Look Speed", "deg/s at full stick, chase camera", &mut self.controls.look_speed, 10.0..=500.0, 0);
+                slider(ui, "Zoom Speed", "1/s, chase camera - the distance changes by this factor per second, as e^speed", &mut self.controls.zoom_speed, 0.1..=5.0, 1);
+
+                if ui.button("Reset to Default").clicked()
+                {
+                    self.controls = VehicleControls::default();
+                }
+            });
+        }
+
+        // ********** sound **********
+        if !trailer
+        {
+            egui::CollapsingHeader::new("Sound").id_salt("vehicle_sound").show(ui, |ui|
+            {
+                use super::vehicle::engine_sound::EngineSoundLayer;
+
+                // the sound components of the vehicle node - volume, spatial and distance are set on them
+                let node = self.node.as_ref().cloned();
+                let components = match node.as_ref()
+                {
+                    Some(node) =>
+                    {
+                        self.release_detached_sounds(node);
+                        node.read().unwrap().find_components::<Sound>()
+                    },
+                    None => vec![],
+                };
+                let sources = &context.sound_sources;
+
+                ui.checkbox(&mut self.sound.enabled, "Enabled");
+
+                if sources.is_empty() && components.is_empty()
+                {
+                    ui.label(RichText::new("no sound resources - drop sound files into the scene, or add them under Resources > Sound Sources (right click)").color(Color32::GRAY));
+                }
+                else if components.is_empty()
+                {
+                    ui.label(RichText::new("pick a sound resource below - it becomes a Sound component of the vehicle node, with its volume and spatial settings").color(Color32::GRAY));
+                }
+
+                slider(ui, "Pitch Variation", "random rpm wobble as a share of the rpm - keeps full throttle from sounding like one flat tone", &mut self.sound.pitch_variation, 0.0..=0.1, 3);
+
+                ui.horizontal(|ui|
+                {
+                    ui.label("Engine Layers");
+                    ui.label("ℹ").on_hover_text("looped sound components of the vehicle node, each with the rpm it was recorded at - they are crossfaded and pitched by the engine rpm. Layers with 'on throttle' off are the overrun sound, blended in when letting go of the throttle");
+                });
+
+                let mut remove = None;
+                for (index, layer) in self.sound.engine_layers.iter_mut().enumerate()
+                {
+                    ui.horizontal(|ui|
+                    {
+                        sound_component_combo(ui, format!("vehicle_sound_layer_{}", index), &mut layer.sound, &components, sources, node.as_ref(), "Engine ");
+                        ui.label("rpm:");
+                        ui.add(egui::DragValue::new(&mut layer.rpm).speed(10.0).range(1.0..=30000.0));
+
+                        let mut on_throttle = layer.load >= 0.5;
+                        if ui.checkbox(&mut on_throttle, "on throttle").changed()
+                        {
+                            layer.load = if on_throttle { 1.0 } else { 0.0 };
+                        }
+
+                        if ui.button("🗑").clicked()
+                        {
+                            remove = Some(index);
+                        }
+                    });
+                }
+
+                if let Some(index) = remove
+                {
+                    self.sound.engine_layers.remove(index);
+                }
+
+                if ui.button("Add Layer").clicked()
+                {
+                    self.sound.engine_layers.push(EngineSoundLayer { sound: OptionOrId::None, rpm: 3000.0, load: 1.0 });
+                }
+
+                for (label, hint, sound, prefix) in [("Squeal: ", "the tires sliding sideways or locked by the brakes", &mut self.sound.squeal, "Squeal "), ("Road: ", "rolling noise, rises with the speed", &mut self.sound.road, "Road ")]
+                {
+                    ui.horizontal(|ui|
+                    {
+                        ui.label(label).on_hover_text(hint);
+                        sound_component_combo(ui, format!("vehicle_sound_{}", label), sound, &components, sources, node.as_ref(), prefix);
+                    });
+                }
+            });
+        }
 
         // ********** tire marks **********
         egui::CollapsingHeader::new("Tire Marks").id_salt("vehicle_tire_marks").show(ui, |ui|
@@ -3612,6 +4012,16 @@ impl VehicleController
             {
                 ui.label(format!("last hit: {} at {:.1} m/s", name(other), speed));
             }
+
+            if let Some(hitch) = &t.hitch
+            {
+                let other = scene.find_node_by_id(hitch.other).map(|node| node.read().unwrap().name.clone()).unwrap_or(format!("#{}", hitch.other));
+                let role = if hitch.towing { "towing" } else { "towed by" };
+
+                ui.label(format!("{} {}: {:?}, {:.1} kN, brake {:.2}", role, other, hitch.state, hitch.force, hitch.brake));
+                ui.label(format!("trailer angle: yaw {:.0}°, pitch {:.0}°, roll {:.0}°", hitch.angles.x, hitch.angles.y, hitch.angles.z));
+                ui.label(format!("springs carry {:.2}x the own weight", hitch.load)).on_hover_text("what rests on this vehicle through its couplings, or what its tow vehicle takes off it - the suspension is scaled by it");
+            }
         });
 
         ui.separator();
@@ -3634,6 +4044,7 @@ impl VehicleController
             self.reset_visuals();
             self.remeasure_wheels(&picked_wheels);
             self.chassis_points.clear();
+            self.chassis_parts.clear();
             self.setup_runtime(scene);
         }
         else if dirty
@@ -3811,7 +4222,8 @@ mod tests
                 obstacle(&mut scene, height, tilt);
                 settle(&mut scene, &mut car, id);
 
-                run(&mut scene, &mut car, id, VehicleInput { throttle: 0.4, ..Default::default() }, 8.0);
+                // 0.36 and 0.4 can stall on the 30 cm step with bumpers, from 0.42 up all get over
+                run(&mut scene, &mut car, id, VehicleInput { throttle: 0.5, ..Default::default() }, 8.0);
                 let z = position(&scene, id).z;
 
                 println!("bumpers {} clearance {:.1} | {}: z {:.1}", bumpers, clearance, name, z);
@@ -4097,6 +4509,61 @@ mod tests
 
         assert!(looped.max_height > 10.0, "did not get over the top of the loop");
         assert!(looped.end.x > LOOP.0 + LOOP.3 * 0.7 && looped.end.z > LOOP.1 + 10.0 && upright > 0.8, "did not come out of the loop on its wheels (end {:?})", looped.end);
+    }
+
+    // into the loop of the test course, centered and off to the side: the hardest jolt per frame, over the top or not - with and without rounded body edges
+    #[test]
+    #[ignore]
+    fn bench_loop_entry()
+    {
+        for rounding in [0.0, 0.2]
+        {
+            let (mut through, mut runs, mut jolts) = (0, 0, 0.0);
+
+            for offset in [0.0, 0.75, 1.5]
+            {
+                for speed in [50.0, 60.0, 70.0, 80.0]
+                {
+                    let Some((mut scene, mut car, id)) = offroad_car(Vector3::new(LOOP.0 + offset, 0.1, -75.0), ChassisShape::ConvexHull) else { println!("course files missing"); return; };
+                    car.chassis.rounding = rounding;
+                    car.build_physics(&mut scene);
+                    settle(&mut scene, &mut car, id);
+
+                    let progress = std::cell::Cell::new(0.0);
+                    let start_y = position(&scene, id).y;
+                    let (mut jolt, mut height, mut flipped): (f32, f32, bool) = (0.0, 0.0, false);
+                    let mut previous = Vector3::zeros();
+                    let (mut touching_frames, mut jolt_touch): (usize, Option<Vector3<f32>>) = (0, None);
+
+                    for _ in 0..(13.0 / FRAME_DT) as usize
+                    {
+                        ride_traced(&mut scene, &mut car, id, speed, &|at| loop_lane(at, &progress), FRAME_DT, false);
+                        let (_, body) = scene.physics.vehicle(id).unwrap();
+                        let angvel = Vector3::new(body.angvel().x, body.angvel().y, body.angvel().z);
+                        // where the body touches the course, in body space: x right, y up, z forward
+                        let touch = scene.physics.contacts_of(id).filter(|contact| !contact.stopped()).map(|contact| contact.point).next();
+                        let touch_local = touch.map(|point| { let p = body.position().inverse_transform_point(Vector::new(point.x, point.y, point.z)); Vector3::new(p.x, p.y, p.z) });
+                        touching_frames += touch.is_some() as usize;
+                        if (angvel - previous).norm() > jolt
+                        {
+                            jolt = (angvel - previous).norm();
+                            jolt_touch = touch_local;
+                        }
+                        previous = angvel;
+                        height = height.max(body.translation().y - start_y);
+                        flipped |= (car_rotation(&scene, id) * Vector3::y()).y < -0.5 && body.translation().y - start_y < 1.0;
+                    }
+
+                    let end = position(&scene, id);
+                    runs += 1;
+                    jolts += jolt;
+                    through += (!flipped && height > 10.0 && end.z > LOOP.1 + 10.0) as usize;
+                    println!("rounding {:.1} offset {:.1} {:>3} km/h: hardest jolt {:5.2} rad/s in a frame (body touching there: {}), top {:5.1} m, {} (end z {:.0}) | body touched the course in {} frames", rounding, offset, speed, jolt, jolt_touch.map_or("no".to_string(), |p| format!("at {:.2?}", p)), height, if flipped { "ROLLED OVER" } else if height > 10.0 && end.z > LOOP.1 + 10.0 { "through" } else { "not through" }, end.z, touching_frames);
+                }
+            }
+
+            println!("rounding {:.1}: through {}/{}, average hardest jolt {:.2}", rounding, through, runs, jolts / runs as f32);
+        }
     }
 
     fn car_rotation(scene: &Scene, id: u32) -> UnitQuaternion<f32>
@@ -5227,5 +5694,430 @@ mod tests
         turn(1.0, 0.0, 1.0, "full throttle, left");
         turn(0.4, 0.0, 1.0, "40% throttle, left");
         turn(0.0, 1.0, 1.0, "reversing, left");
+    }
+
+    // the test car with a single axle box trailer behind it, coupled at the rear bumper
+    fn car_with_trailer(height: f32, break_roll: f32, break_force: f32) -> (Scene, VehicleController, u32, VehicleController, u32)
+    {
+        let (mut scene, mut car, car_id) = test_car(VehicleType::Car);
+
+        let node = Node::new("trailer");
+        let mut transformation = Transformation::identity("trans");
+        transformation.set_local_transform(Matrix4::new_translation(&Vector3::new(0.0, 0.0, 4.6)));
+        node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transformation))));
+
+        let mut trailer = VehicleController::default();
+        trailer.vehicle_type = VehicleType::Trailer;
+        trailer.node = OptionOrId::Some(node.clone());
+        trailer.frame = Some(VehicleFrame { forward: -Vector3::z(), up: Vector3::y() });
+        trailer.wheels = vec![VehicleWheel::new("l", Vector3::new(-0.9, 0.37, 0.0), 0.37), VehicleWheel::new("r", Vector3::new(0.9, 0.37, 0.0), 0.37)];
+
+        // a box on the axle and a drawbar to the ball 2.5 m ahead
+        for x in [-0.8, 0.8] { for y in [0.45, height] { for z in [-1.3, 1.2] { trailer.chassis_points.push(Vector3::new(x, y, z)); } } }
+        for x in [-0.05, 0.05] { for y in [0.45, 0.55] { trailer.chassis_points.push(Vector3::new(x, y, -2.5)); } }
+        trailer.chassis_bounds = VehicleController::bounds_of(&trailer.chassis_points);
+
+        trailer.apply_preset();
+        trailer.build_physics(&mut scene);
+
+        car.trailer = OptionOrId::Some(node.clone());
+        car.hitch.point_auto = false;
+        car.hitch.point = Vector3::new(0.0, 0.5, 2.1);
+        car.hitch.break_roll = break_roll;
+        car.hitch.break_force = break_force;
+        car.hitch_dirty = true;
+        car.sync_hitch(&mut scene, car_id);
+
+        let trailer_id = node.read().unwrap().id;
+        (scene, car, car_id, trailer, trailer_id)
+    }
+
+    fn run_train(scene: &mut Scene, car: &mut VehicleController, car_id: u32, trailer: &mut VehicleController, trailer_id: u32, input: VehicleInput, seconds: f32)
+    {
+        let (car_frame, trailer_frame) = (car.frame.unwrap(), trailer.frame.unwrap());
+
+        for _ in 0..(seconds / FRAME_DT) as usize
+        {
+            car.drive(&mut scene.physics, car_id, &car_frame, &input, FRAME_DT);
+            trailer.drive(&mut scene.physics, trailer_id, &trailer_frame, &VehicleInput::default(), FRAME_DT);
+
+            scene.physics.step(FRAME_DT, false);
+            scene.physics.apply_dynamic_bodies(false);
+        }
+    }
+
+    // CCD_MODE=hard | none | soft:<prediction m> - for comparing the vehicle ccd variants, unset keeps the default
+    fn set_ccd_mode(body: &mut rapier3d::prelude::RigidBody)
+    {
+        match std::env::var("CCD_MODE").unwrap_or_default().as_str()
+        {
+            "hard" => { body.set_soft_ccd_prediction(0.0); body.enable_ccd(true); }
+            "none" => { body.set_soft_ccd_prediction(0.0); body.enable_ccd(false); }
+            mode if mode.starts_with("soft:") => { body.enable_ccd(false); body.set_soft_ccd_prediction(mode[5..].parse().unwrap()); }
+            _ => {}
+        }
+    }
+
+    // driving straight over flat ground made of triangles, like a level: the biggest upward kick per step - a pop out of nothing
+    #[test]
+    #[ignore]
+    fn bench_flat_pops()
+    {
+        use rapier3d::prelude::ColliderBuilder;
+
+        let (cells, size) = (100, 2.0);
+        let mut vertices = vec![];
+        let mut indices = vec![];
+        for i in 0..=cells { for j in 0..=cells { vertices.push(Vector::new((i as f32 - cells as f32 / 2.0) * size, 0.0, (j as f32 - cells as f32) * size + 20.0)); } }
+        for i in 0..cells { for j in 0..cells
+        {
+            let a = (i * (cells + 1) + j) as u32;
+            let (b, c, d) = (a + 1, a + cells as u32 + 1, a + cells as u32 + 2);
+            indices.push([a, c, b]);
+            indices.push([b, c, d]);
+        } }
+
+        for speed in [30.0, 60.0, 100.0]
+        {
+            let (mut scene, mut car, id) = test_car(VehicleType::Car);
+            set_ccd_mode(scene.physics.vehicle_mut(id).unwrap().1);
+            scene.physics.set_ground_plane(None);
+            scene.physics.colliders.insert(ColliderBuilder::trimesh(vertices.clone(), indices.clone()).unwrap().build());
+            settle(&mut scene, &mut car, id);
+            set_speed(&mut scene, id, -Vector3::z(), speed / 3.6);
+
+            let (mut kick, mut rise, mut lowest, mut highest): (f32, f32, f32, f32) = (0.0, 0.0, f32::MAX, f32::MIN);
+            let mut previous = scene.physics.vehicle(id).unwrap().1.linvel().y;
+            for _ in 0..(4.0 / FRAME_DT) as usize
+            {
+                run(&mut scene, &mut car, id, VehicleInput { throttle: 0.4, ..Default::default() }, FRAME_DT);
+                let body = scene.physics.vehicle(id).unwrap().1;
+                kick = kick.max(body.linvel().y - previous);
+                rise = rise.max(body.linvel().y);
+                previous = body.linvel().y;
+                lowest = lowest.min(body.translation().y);
+                highest = highest.max(body.translation().y);
+            }
+            println!("{:>3} km/h: biggest upward kick {:.3} m/s in one frame, fastest rise {:.3} m/s, height {:.3}..{:.3} m", speed, kick, rise, lowest, highest);
+        }
+    }
+
+    // the off road car on the real test course, several lanes: the biggest upward kick per frame and where it happened
+    #[test]
+    #[ignore]
+    fn bench_course_pops()
+    {
+        for lane in [-12.0, -6.0, 0.0, 6.0, 12.0]
+        {
+            for speed in [40.0, 70.0]
+            {
+                let Some((mut scene, mut car, id)) = offroad_car(Vector3::new(lane, 0.0, -20.0), ChassisShape::ConvexHull) else { println!("course files missing"); return; };
+                set_ccd_mode(scene.physics.vehicle_mut(id).unwrap().1);
+                settle(&mut scene, &mut car, id);
+
+                let frame = car.frame.unwrap();
+                let (mut kick, mut at): (f32, Vector3<f32>) = (0.0, Vector3::zeros());
+                let mut previous = 0.0;
+                for _ in 0..(8.0 / FRAME_DT) as usize
+                {
+                    let current = scene.physics.vehicle(id).unwrap().1.linvel().length() * 3.6;
+                    let input = VehicleInput { throttle: if current < speed { 1.0 } else { 0.0 }, ..Default::default() };
+                    car.drive(&mut scene.physics, id, &frame, &input, FRAME_DT);
+                    scene.physics.step(FRAME_DT, false);
+                    scene.physics.apply_dynamic_bodies(false);
+
+                    let body = scene.physics.vehicle(id).unwrap().1;
+                    if body.linvel().y - previous > kick
+                    {
+                        kick = body.linvel().y - previous;
+                        at = Vector3::new(body.translation().x, body.translation().y, body.translation().z);
+                    }
+                    previous = body.linvel().y;
+                }
+                println!("lane {:>5.1} {:>3} km/h: biggest upward kick {:.2} m/s in one frame at {:.1?}", lane, speed, kick, at);
+            }
+        }
+    }
+
+    // a car at speed against a thin static wall: does it get through?
+    #[test]
+    #[ignore]
+    fn bench_thin_wall()
+    {
+        use rapier3d::prelude::ColliderBuilder;
+
+        for speed in [100.0, 180.0, 260.0]
+        {
+            for thickness in [0.05, 0.2]
+            {
+                let (mut scene, mut car, id) = test_car(VehicleType::Car);
+                set_ccd_mode(scene.physics.vehicle_mut(id).unwrap().1);
+                settle(&mut scene, &mut car, id);
+                scene.physics.colliders.insert(ColliderBuilder::cuboid(4.0, 1.5, thickness * 0.5).translation(Vector::new(0.0, 1.5, -30.0)).build());
+                set_speed(&mut scene, id, -Vector3::z(), speed / 3.6);
+                run(&mut scene, &mut car, id, VehicleInput { throttle: 1.0, ..Default::default() }, 1.5);
+                let z = position(&scene, id).z;
+                println!("{:>3} km/h, wall {:.2} m: car ends at z {:.1} -> {}", speed, thickness, z, if z < -30.0 { "THROUGH" } else { "stopped" });
+            }
+        }
+    }
+
+    // a train from a trailer test scene, geometry from its glbs: per wheel contact, spring length and how far it is drawn off its modelled spot
+    #[test]
+    #[ignore]
+    fn bench_trailer_scene()
+    {
+        for file in std::env::var("TRAIN_SCENE").map(|f| vec![f]).unwrap_or(vec!["tt_05_drawbar".to_string(), "tt_06_road_train".to_string()])
+        {
+            let text = std::fs::read_to_string(format!("data/trailer_test/{}.scene", file)).unwrap();
+            let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+            let mut scene = Scene::new("train bench");
+            let mut vehicles: Vec<(VehicleController, u32, Vector3<f32>, Vec<(String, Vector3<f32>)>)> = vec![];
+            let mut nodes: HashMap<String, NodeItem> = HashMap::new();
+
+            for value in json["controller"].as_array().unwrap()
+            {
+                let mut controller: VehicleController = serde_json::from_value(value.clone()).unwrap();
+                let uuid = value["node"].as_str().unwrap().to_string();
+                let object = json["objects"].as_array().unwrap().iter().find(|o| o["uuid"] == uuid).unwrap();
+                let at: Vec<f32> = object["position"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap() as f32).collect();
+                let at = Vector3::new(at[0], at[1], at[2]);
+                let meshes = gltf_meshes(&format!("data/trailer_test/{}", object["source"].as_str().unwrap())).unwrap();
+
+                let node = Node::new(object["name"].as_str().unwrap());
+                node.write().unwrap().uuid = uuid.clone();
+                node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::new("trans", at, Vector3::zeros(), Vector3::new(1.0, 1.0, 1.0))))));
+
+                let mut parts = vec![];
+                for (name, vertices, _) in &meshes
+                {
+                    if name.starts_with("Wheel") { continue; }
+                    controller.chassis_points.extend(vertices.iter().copied());
+                    controller.chassis_parts.push(vertices.clone());
+                    let (min, max) = VehicleController::bounds_of(vertices).unwrap();
+                    parts.push((name.clone(), (min + max) * 0.5));
+                }
+                controller.chassis_bounds = VehicleController::bounds_of(&controller.chassis_points);
+                controller.node = OptionOrId::Some(node.clone());
+                controller.engine_state.reset(&controller.engine);
+                controller.build_physics(&mut scene);
+
+                let id = node.read().unwrap().id;
+                nodes.insert(uuid, node);
+                vehicles.push((controller, id, at, parts));
+            }
+
+            // the couplings where the generator put them: the trailer's kingpin or eye, in the tow vehicle's space
+            for index in 0..vehicles.len()
+            {
+                let Some(trailer_uuid) = vehicles[index].0.trailer.id().map(|id| id.to_string()) else { continue; };
+                let trailer = vehicles.iter().find(|(c, ..)| c.node.as_ref().is_some_and(|n| n.read().unwrap().uuid == trailer_uuid)).unwrap();
+                let (_, coupling) = trailer.3.iter().find(|(name, _)| name == "Kingpin" || name == "Hitch").unwrap().clone();
+                let point = trailer.2 + coupling - vehicles[index].2;
+                let node = nodes[&trailer_uuid].clone();
+                let (controller, id, ..) = &mut vehicles[index];
+                controller.trailer = OptionOrId::Some(node);
+                controller.hitch.point_auto = false;
+                controller.hitch.point = point;
+                controller.hitch_dirty = true;
+                controller.sync_hitch(&mut scene, *id);
+            }
+
+            // the loose load (crate, flatbed load, truck truck truck): a body per object when combined, else per mesh - a convex hull per mesh like the engine
+            let mut loads: Vec<(String, rapier3d::prelude::RigidBodyHandle, Vector)> = vec![];
+            for object in json["objects"].as_array().unwrap()
+            {
+                let physics = &object["options"]["settings"]["physics"];
+                let source = object["source"].as_str().unwrap_or("");
+                if physics["body_type"] != "Dynamic" || source.starts_with("assets/yard") { continue; }
+
+                let at: Vec<f32> = object["position"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap() as f32).collect();
+                let density = physics["density"].as_f64().unwrap() as f32;
+                let friction = physics["friction"].as_f64().unwrap() as f32;
+                let meshes = gltf_meshes(&format!("data/trailer_test/{}", source)).unwrap();
+                let groups: Vec<Vec<&GltfMesh>> = if physics["combine_children"].as_bool().unwrap_or(false) { vec![meshes.iter().collect()] } else { meshes.iter().map(|mesh| vec![mesh]).collect() };
+
+                for group in groups
+                {
+                    let body = scene.physics.bodies.insert(rapier3d::prelude::RigidBodyBuilder::dynamic().translation(Vector::new(at[0], at[1], at[2])).build());
+                    for (_, vertices, _) in &group
+                    {
+                        let points: Vec<Vector> = vertices.iter().map(|v| Vector::new(v.x, v.y, v.z)).collect();
+                        let Some(builder) = rapier3d::prelude::ColliderBuilder::convex_hull(&points) else { continue; };
+                        scene.physics.colliders.insert_with_parent(builder.density(density).friction(friction).build(), body, &mut scene.physics.bodies);
+                    }
+                    let name = if group.len() > 1 { object["name"].as_str().unwrap().to_string() } else { group[0].0.clone() };
+                    loads.push((name, body, scene.physics.bodies.get(body).unwrap().center_of_mass()));
+                }
+            }
+
+            let report_loads = |scene: &Scene, vehicles: &Vec<(VehicleController, u32, Vector3<f32>, Vec<(String, Vector3<f32>)>)>|
+            {
+                let Some((_, trailer_id, trailer_start, _)) = vehicles.get(1) else { return; };
+                let moved = scene.physics.vehicle(*trailer_id).unwrap().1.translation().z - trailer_start.z;
+                for (name, body, start) in &loads
+                {
+                    let body = scene.physics.bodies.get(*body).unwrap();
+                    let center = body.center_of_mass();
+                    let tilt = (body.rotation() * Vector::Y).y.clamp(-1.0, 1.0).acos().to_degrees();
+                    println!("    {:<20} dy {:+.3} dz vs trailer {:+.3} tilt {:.1}", name, center.y - start.y, center.z - start.z - moved, tilt);
+                }
+            };
+
+            let report = |scene: &Scene, vehicles: &Vec<(VehicleController, u32, Vector3<f32>, Vec<(String, Vector3<f32>)>)>, label: &str|
+            {
+                println!("== {} {} - head at {:.1} km/h", file, label, scene.physics.vehicle(vehicles[0].1).unwrap().1.linvel().length() * 3.6);
+                for (controller, id, start, _) in vehicles
+                {
+                    let (vehicle, body) = scene.physics.vehicle(*id).unwrap();
+                    let rotation = UnitQuaternion::from_quaternion(nalgebra::Quaternion::new(body.rotation().w, body.rotation().x, body.rotation().y, body.rotation().z));
+                    let pitch = (rotation * Vector3::z()).y.asin().to_degrees();
+                    let t = body.translation();
+                    let wheels: Vec<String> = vehicle.controller.wheels().iter().zip(controller.wheels.iter()).map(|(wheel, w)|
+                    {
+                        let info = wheel.raycast_info();
+                        let compression = if info.is_in_contact { controller.suspension.rest_length - controller.sag - info.suspension_length } else { -controller.sag };
+                        format!("{}{}:{:+.2}", w.node_name.replace("Wheel ", "").replace("left", "L").replace("right", "R").replace("inner", "i").replace(' ', ""), if info.is_in_contact { "" } else { "(AIR)" }, compression)
+                    }).collect();
+                    println!("  {:<16} {:>7.0} kg y {:+.3} (start {:+.3}) pitch {:+.1} | sag {:.3} | {}", controller.node_name, controller.chassis.mass, t.y, start.y, pitch, controller.sag, wheels.join(" "));
+                }
+            };
+
+            let frames = |scene: &mut Scene, vehicles: &mut Vec<(VehicleController, u32, Vector3<f32>, Vec<(String, Vector3<f32>)>)>, input: VehicleInput, seconds: f32|
+            {
+                for _ in 0..(seconds / FRAME_DT) as usize
+                {
+                    for (index, (controller, id, ..)) in vehicles.iter_mut().enumerate()
+                    {
+                        let frame = controller.frame.unwrap();
+                        let own = if index == 0 { input } else { VehicleInput::default() };
+                        controller.drive(&mut scene.physics, *id, &frame, &own, FRAME_DT);
+                    }
+                    scene.physics.step(FRAME_DT, false);
+                    scene.physics.apply_dynamic_bodies(false);
+                }
+            };
+
+            frames(&mut scene, &mut vehicles, VehicleInput::default(), 3.0);
+            report(&scene, &vehicles, "standing 3 s");
+            report_loads(&scene, &vehicles);
+            frames(&mut scene, &mut vehicles, VehicleInput { throttle: 0.5, ..Default::default() }, 6.0);
+            report(&scene, &vehicles, "half throttle 6 s");
+            report_loads(&scene, &vehicles);
+            frames(&mut scene, &mut vehicles, VehicleInput { throttle: 1.0, ..Default::default() }, 6.0);
+            report(&scene, &vehicles, "full throttle 6 s");
+            frames(&mut scene, &mut vehicles, VehicleInput { brake: 1.0, ..Default::default() }, 4.0);
+            report(&scene, &vehicles, "full brake 4 s");
+            report_loads(&scene, &vehicles);
+        }
+    }
+
+    // a loose crate on the trailer at speed: how much it moves against the trailer per step
+    #[test]
+    #[ignore]
+    fn bench_trailer_load()
+    {
+        use rapier3d::prelude::{ColliderBuilder, RigidBodyBuilder};
+
+        for speed in [30.0, 60.0, 90.0]
+        {
+            let (mut scene, mut car, car_id, mut trailer, trailer_id) = car_with_trailer(1.3, 0.0, 0.0);
+            for id in [car_id, trailer_id] { set_ccd_mode(scene.physics.vehicle_mut(id).unwrap().1); }
+            run_train(&mut scene, &mut car, car_id, &mut trailer, trailer_id, VehicleInput::default(), 1.0);
+
+            let top = scene.physics.vehicle(trailer_id).unwrap().1.position().transform_point(Vector::new(0.0, 1.3 + 0.41, -0.3));
+            let crate_body = scene.physics.bodies.insert(RigidBodyBuilder::dynamic().translation(top).build());
+            scene.physics.colliders.insert_with_parent(ColliderBuilder::cuboid(0.4, 0.4, 0.4).density(150.0).friction(0.7).build(), crate_body, &mut scene.physics.bodies);
+            run_train(&mut scene, &mut car, car_id, &mut trailer, trailer_id, VehicleInput::default(), 1.0);
+
+            for id in [car_id, trailer_id] { scene.physics.vehicle_mut(id).unwrap().1.set_linvel(Vector::new(0.0, 0.0, -speed / 3.6), true); }
+            scene.physics.bodies.get_mut(crate_body).unwrap().set_linvel(Vector::new(0.0, 0.0, -speed / 3.6), true);
+
+            let local = |scene: &Scene| { let t = scene.physics.vehicle(trailer_id).unwrap().1.position(); t.inverse_transform_point(scene.physics.bodies.get(crate_body).unwrap().translation()) };
+            let mut samples = vec![];
+            for _ in 0..120
+            {
+                run_train(&mut scene, &mut car, car_id, &mut trailer, trailer_id, VehicleInput { throttle: 0.6, ..Default::default() }, FRAME_DT);
+                samples.push(local(&scene));
+            }
+
+            let mean = samples.iter().copied().sum::<Vector>() / samples.len() as f32;
+            let jitter: Vec<f32> = samples.windows(3).map(|w| (w[1] - (w[0] + w[2]) * 0.5).length()).collect();
+            let worst = jitter.iter().copied().fold(0.0, f32::max);
+            let average = jitter.iter().sum::<f32>() / jitter.len() as f32;
+            let drift = samples.last().unwrap().z - samples[0].z;
+            println!("{:>3} km/h: crate on the trailer at {:.3?}, drifted {:.3} m along, frame to frame wobble avg {:.4} m, worst {:.4} m, end speed {:.0} km/h", speed, mean, drift, average, worst, scene.physics.vehicle(car_id).unwrap().1.linvel().length() * 3.6);
+        }
+    }
+
+    // hitch force, trailer angles and the gap at the ball - straight, accelerating, braking, cornering and tipping
+    #[test]
+    #[ignore]
+    fn bench_trailer()
+    {
+        let report = |scene: &Scene, car: &VehicleController, car_id: u32, trailer_id: u32, label: &str|
+        {
+            let hitch = scene.physics.hitch_of(trailer_id).unwrap();
+            let (_, car_body) = scene.physics.vehicle(car_id).unwrap();
+            let (_, trailer_body) = scene.physics.vehicle(trailer_id).unwrap();
+            let ball = car_body.position().transform_point(Vector::new(car.hitch.point.x, car.hitch.point.y, car.hitch.point.z));
+            let eye = trailer_body.position().transform_point(Vector::new(0.0, 0.5, -2.5));
+            println!("{:<34} {:>5.1} km/h | {:?} {:>6.2} kN | yaw {:>5.1} pitch {:>5.1} roll {:>5.1} deg | gap {:.3} m", label, car_body.linvel().length() * 3.6, hitch.state, hitch.force / 1000.0, hitch.angles.x.to_degrees(), hitch.angles.y.to_degrees(), hitch.angles.z.to_degrees(), (ball - eye).length());
+        };
+
+        let (mut scene, mut car, car_id, mut trailer, trailer_id) = car_with_trailer(1.3, 0.0, 0.0);
+        println!("trailer: mass {:.0} kg, com {:.2?} - tongue load by the lever {:.2} kN", trailer.chassis.mass, trailer.chassis.center_of_mass, trailer.chassis.mass * EARTH_GRAVITY * (-trailer.chassis.center_of_mass.z) / 2.5 / 1000.0);
+
+        run_train(&mut scene, &mut car, car_id, &mut trailer, trailer_id, VehicleInput::default(), 2.0);
+        report(&scene, &car, car_id, trailer_id, "standing");
+
+        run_train(&mut scene, &mut car, car_id, &mut trailer, trailer_id, VehicleInput { throttle: 1.0, ..Default::default() }, 1.0);
+        report(&scene, &car, car_id, trailer_id, "full throttle 1 s");
+
+        run_train(&mut scene, &mut car, car_id, &mut trailer, trailer_id, VehicleInput { throttle: 1.0, ..Default::default() }, 5.0);
+        report(&scene, &car, car_id, trailer_id, "full throttle 6 s");
+
+        run_train(&mut scene, &mut car, car_id, &mut trailer, trailer_id, VehicleInput { throttle: 0.3, steer: 0.5, ..Default::default() }, 3.0);
+        report(&scene, &car, car_id, trailer_id, "half lock 3 s");
+
+        run_train(&mut scene, &mut car, car_id, &mut trailer, trailer_id, VehicleInput { brake: 1.0, ..Default::default() }, 0.5);
+        report(&scene, &car, car_id, trailer_id, "full brake 0.5 s");
+
+        run_train(&mut scene, &mut car, car_id, &mut trailer, trailer_id, VehicleInput { brake: 1.0, ..Default::default() }, 4.0);
+        report(&scene, &car, car_id, trailer_id, "full brake + reverse 4.5 s");
+
+        run_train(&mut scene, &mut car, car_id, &mut trailer, trailer_id, VehicleInput { brake: 1.0, steer: 1.0, ..Default::default() }, 3.0);
+        report(&scene, &car, car_id, trailer_id, "reversing full lock 3 s");
+
+        // fast and a hard swerve: the trailer may roll - tear off at 30 deg
+        for (speed, height, label) in [(60.0, 1.3, "swerve at 60"), (90.0, 1.3, "swerve at 90"), (60.0, 2.8, "tall box, swerve at 60"), (80.0, 2.8, "tall box, swerve at 80")]
+        {
+            let (mut scene, mut car, car_id, mut trailer, trailer_id) = car_with_trailer(height, 30.0, 40.0);
+            trailer.chassis.center_of_mass_height = 0.6;
+            trailer.build_physics(&mut scene);
+            car.drift.counter_steer = 0.0;
+            run_train(&mut scene, &mut car, car_id, &mut trailer, trailer_id, VehicleInput::default(), 1.0);
+
+            for id in [car_id, trailer_id]
+            {
+                let (_, body) = scene.physics.vehicle_mut(id).unwrap();
+                body.set_linvel(Vector::new(0.0, 0.0, -speed / 3.6), true);
+            }
+
+            let mut most_roll: f32 = 0.0;
+            let mut most_force: f32 = 0.0;
+            for step in 0..(3.0 / FRAME_DT) as usize
+            {
+                let steer = if step < 40 { 1.0 } else if step < 80 { -1.0 } else { 0.0 };
+                run_train(&mut scene, &mut car, car_id, &mut trailer, trailer_id, VehicleInput { throttle: 0.5, steer, ..Default::default() }, FRAME_DT);
+
+                let hitch = scene.physics.hitch_of(trailer_id).unwrap();
+                most_roll = most_roll.max(hitch.angles.z.abs().to_degrees());
+                most_force = most_force.max(hitch.force / 1000.0);
+            }
+
+            report(&scene, &car, car_id, trailer_id, label);
+            println!("    most roll {:.1} deg, most force {:.1} kN", most_roll, most_force);
+        }
     }
 }

@@ -190,6 +190,18 @@ impl VehicleController
                 self.engine.final_drive = 6.0;
                 self.engine.top_speed = 60.0;
             }
+            VehicleType::Trailer =>
+            {
+                // a loaded car trailer - no engine, the brakes are its overrun brake
+                self.chassis.mass = 750.0;
+                self.chassis.angular_damping = 0.5; // calms the sway a bit, like a real trailer's tires do
+                self.suspension.stiffness = 45.0; self.suspension.compression = 2.5; self.suspension.relaxation = 3.5;
+                self.suspension.rest_length = 0.25; self.suspension.travel = 0.18;
+                self.tires.grip = 2.0; self.tires.side_grip = 1.0;
+                self.steering.max_angle = 0.0;
+                self.brakes.brake_force = 7000.0; self.brakes.handbrake_force = 5000.0; self.brakes.air_drag = 0.6; self.brakes.rolling_resistance = 120.0;
+                self.drift.counter_steer = 0.0;
+            }
         }
 
         self.assign_wheel_roles();

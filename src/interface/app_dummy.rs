@@ -1,3 +1,5 @@
+
+use crate::input::keyboard::Key;
 use crate::resources::resources::load_binary;
 use crate::state::project::loader::load_and_apply_project;
 use crate::state::resources::sound_source::SoundSourceItem;
@@ -134,7 +136,7 @@ impl App for AppDummy
             Ok(bytes) =>
             {
                 let state = &mut *(context.state.borrow_mut());
-                self.bump_sound = Some(state.load_sound_source_byte_or_reuse(&bytes, "bump.wav", Some("wav".to_string())));
+                self.bump_sound = Some(state.load_sound_source_byte_or_reuse(&bytes, "bump", Some("wav".to_string())));
             },
             Err(err) =>
             {
@@ -147,7 +149,7 @@ impl App for AppDummy
             Ok(bytes) =>
             {
                 let state = &mut *(context.state.borrow_mut());
-                self.hit_sound = Some(state.load_sound_source_byte_or_reuse(&bytes, "hit.wav", Some("wav".to_string())));
+                self.hit_sound = Some(state.load_sound_source_byte_or_reuse(&bytes, "hit", Some("wav".to_string())));
             },
             Err(err) =>
             {
@@ -792,45 +794,72 @@ impl App for AppDummy
 
     fn update(&mut self, context: &mut Context)
     {
-        let Some(bump_sound) = &self.bump_sound else { return; };
-        let Some(hit_sound) = &self.hit_sound else { return; };
-
         let state = &mut *(context.state.borrow_mut());
 
-        let mut sounds = vec![];
+        // ********** sound on collision **********
+        // the sound resources of the scene by name (exports), else the ones from resourcesLocal
+        let sound_by_name = |name: &str| state.resources.sound_sources.values().find(|source| source.read().unwrap().name == name).cloned();
+        let bump_sound = sound_by_name("bump").or_else(|| self.bump_sound.clone());
+        let hit_sound = sound_by_name("hit").or_else(|| self.hit_sound.clone());
 
-        const MAX_IMPACT_SPEED: f32 = 10.0;
-
-        for scene in &state.scenes
+        if let (Some(bump_sound), Some(hit_sound)) = (bump_sound, hit_sound)
         {
-            for contact in scene.physics.contact_events()
-            {
-                if contact.started()
-                {
-                    let is_wall = contact.normal.y.abs() < 0.5;
+            let mut sounds = vec![];
 
-                    if is_wall && (contact.target.kind() == ContactKind::Vehicle || contact.other.kind() == ContactKind::Vehicle)
+            const MAX_IMPACT_SPEED: f32 = 10.0;
+
+            for scene in &state.scenes
+            {
+                for contact in scene.physics.contact_events()
+                {
+                    if contact.started()
                     {
-                        let volume = (contact.impact_speed / MAX_IMPACT_SPEED).min(1.0);
-                        sounds.push((hit_sound.clone(), volume));
-                    }
-                    else if !is_wall || contact.target.kind() == ContactKind::Character || contact.other.kind() == ContactKind::Character
-                    {
-                        let volume = (contact.impact_speed / MAX_IMPACT_SPEED).min(1.0);
-                        sounds.push((bump_sound.clone(), volume));
+                        let is_wall = contact.normal.y.abs() < 0.5;
+
+                        if is_wall && (contact.target.kind() == ContactKind::Vehicle || contact.other.kind() == ContactKind::Vehicle)
+                        {
+                            let volume = (contact.impact_speed / MAX_IMPACT_SPEED).min(1.0);
+                            sounds.push((hit_sound.clone(), volume));
+                        }
+                        else if !is_wall || contact.target.kind() == ContactKind::Character || contact.other.kind() == ContactKind::Character
+                        {
+                            let volume = (contact.impact_speed / MAX_IMPACT_SPEED).min(1.0);
+                            sounds.push((bump_sound.clone(), volume));
+                        }
                     }
                 }
             }
+
+            // only play the loudest few sounds
+            sounds.sort_by(|a, b| b.1.total_cmp(&a.1));
+            sounds.truncate(4);
+
+            for (source, volume) in sounds
+            {
+                state.play_one_shot_sound_source(source, volume);
+            }
         }
 
-        // only play the loudest few sounds
-        sounds.sort_by(|a, b| b.1.total_cmp(&a.1));
-        sounds.truncate(4);
-
-        for (source, volume) in sounds
+        // ********** scene cycling **********
+        if state.scenes.len() > 1
         {
-            state.play_one_shot_sound_source(source, volume);
+            let keys = [Key::Key1, Key::Key2, Key::Key3, Key::Key4, Key::Key5, Key::Key6, Key::Key7, Key::Key8, Key::Key9, Key::Key0];
+
+            let mut new_scene_id = None;
+            for (i, key) in keys.iter().enumerate()
+            {
+                if state.scenes.len() >= i + 1 && state.io.input_manager.keyboard.is_pressed(*key) && !state.scenes.get(i).unwrap().is_engine_internal()
+                {
+                    new_scene_id = Some(state.scenes.get(i).unwrap().id);
+                }
+            }
+
+            if let Some(new_scene_id) = new_scene_id
+            {
+                state.set_active_scene(new_scene_id);
+            }
         }
+
     }
 
     fn resize(&mut self, context: &mut Context)

@@ -21,8 +21,19 @@ const TIRE_RELEASE: f32 = 7.0;
 // the road noise reaches its full volume at this speed, m/s
 const ROAD_FULL_SPEED: f32 = 30.0;
 
+// electric: the motor sound fades out between these speeds (AVAS: 20 km/h in the EU), m/s
+const ELECTRIC_FADE_START: f32 = 20.0 / 3.6;
+const ELECTRIC_FADE_END: f32 = 30.0 / 3.6;
+
+// electric: what stays of the motor whine above the fade, coasting and at full load
+const ELECTRIC_REST_COAST: f32 = 0.04;
+const ELECTRIC_REST_LOAD: f32 = 0.15;
+
 // share of the rpm step between two layers in which they are crossfaded - two tonal loops at the same pitch comb filter each other
 const CROSSFADE_WIDTH: f32 = 0.4;
+
+// crossfade curve exponent: 2 = equal gain, 1 = equal power - the loops are partly correlated, measured 2 dB low with equal gain
+const CROSSFADE_POWER: f32 = 1.4;
 
 fn default_one() -> f32 { 1.0 }
 
@@ -140,7 +151,7 @@ fn release_if_detached(sound: &mut OptionOrId<ComponentItem>, attached: &[Compon
     Some(component)
 }
 
-// Equal gain crossfade over layers sorted by rpm - the weights of the two layers around the rpm, crossfaded around the middle of their log rpm step.
+// Crossfade over layers sorted by rpm - the weights of the two layers around the rpm, crossfaded around the middle of their log rpm step.
 pub fn layer_weights(layer_rpms: &[f32], rpm: f32) -> Vec<f32>
 {
     let mut weights = vec![0.0; layer_rpms.len()];
@@ -178,13 +189,8 @@ pub fn layer_weights(layer_rpms: &[f32], rpm: f32) -> Vec<f32>
             let t = (rpm.max(from) / from).ln() / (to / from).ln().max(0.001);
             let t = ((t - 0.5) / CROSSFADE_WIDTH + 0.5).clamp(0.0, 1.0);
 
-            // equal power (the weights' squares sum to 1) was up to +3 dB loud in the middle - loops cut from one recording add up like one signal
-            // weights[low] = (t * PI * 0.5).cos();
-            // weights[high] = (t * PI * 0.5).sin();
-
-            // equal gain: the weights sum to 1
-            weights[low] = (t * PI * 0.5).cos().powi(2);
-            weights[high] = (t * PI * 0.5).sin().powi(2);
+            weights[low] = (t * PI * 0.5).cos().powf(CROSSFADE_POWER);
+            weights[high] = (t * PI * 0.5).sin().powf(CROSSFADE_POWER);
             break;
         }
     }
@@ -230,9 +236,11 @@ pub struct VehicleSoundInput
 {
     pub rpm: f32,
     pub engine_load: f32, // 0..1, how hard the engine works - the smoothed throttle
+    pub idling: f32, // 1 at idle rpm - picks the on throttle loops there, without making it louder
     pub squeal: f32, // 0..1, tires sliding sideways or locked
     pub speed: f32, // m/s
     pub limiter: bool,
+    pub electric: bool, // the motor fades under the road noise above walking pace, like the AVAS
 }
 
 // Drives the gain and pitch of the assigned sound components. The components play and position themselves as part of the node.
@@ -308,7 +316,7 @@ impl VehicleSoundPlayer
         // ********** engine layers **********
         let rpms: Vec<f32> = settings.engine_layers.iter().map(|layer| layer.rpm.max(1.0)).collect();
         let loads: Vec<f32> = settings.engine_layers.iter().map(|layer| layer.load).collect();
-        let weights = load_layer_weights(&rpms, &loads, rpm, engine_load);
+        let weights = load_layer_weights(&rpms, &loads, rpm, engine_load.max(input.idling));
 
         // with overrun loops the engine load is already audible in the files, otherwise the volume carries it
         let has_off_layers = loads.iter().any(|layer_load| *layer_load < 0.5);
@@ -323,6 +331,14 @@ impl VehicleSoundPlayer
         if input.limiter
         {
             loudness *= 0.8;
+        }
+
+        if input.electric
+        {
+            let t = ((input.speed.abs() - ELECTRIC_FADE_START) / (ELECTRIC_FADE_END - ELECTRIC_FADE_START)).clamp(0.0, 1.0);
+            let t = t * t * (3.0 - 2.0 * t);
+            let rest = ELECTRIC_REST_COAST + (ELECTRIC_REST_LOAD - ELECTRIC_REST_COAST) * engine_load;
+            loudness *= 1.0 - t * (1.0 - rest);
         }
 
         for ((layer, layer_rpm), weight) in settings.engine_layers.iter().zip(rpms.iter()).zip(weights.iter())

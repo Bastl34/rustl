@@ -72,6 +72,7 @@ impl MainInterface
 
             state.rendering.msaa.set(cmp::min(state.rendering.msaa.get_ref().clone(), state.rendering_adapter.max_msaa_samples));
             samlpes = *(state.rendering.msaa.get_ref());
+            console_log!("msaa: {}x (adapter max {}x)", samlpes, state.rendering_adapter.max_msaa_samples);
 
             wgpu.create_msaa_texture(samlpes);
         }
@@ -318,6 +319,14 @@ impl MainInterface
                 };
 
                 self.context.window.set_title(format!("{} | FPS: {} (1%L: {})", title, state.stats.last_fps, state.stats.last_fps_1_percent_low).as_str());
+
+                // winit only sets the canvas alt text on web - the tab title gets the project without fps
+                #[cfg(target_arch = "wasm32")]
+                if let Some(document) = web_sys::window().and_then(|window| window.document())
+                {
+                    document.set_title(&title);
+                }
+
                 state.stats.fps = 0;
                 state.stats.frame_times.clear();
             }
@@ -948,8 +957,10 @@ impl MainInterface
                         },
                         winit::event::MouseScrollDelta::PixelDelta(delta) =>
                         {
-                            global_state.io.input_manager.mouse.set_wheel_delta_y(delta.x as f32);
-                            global_state.io.input_manager.mouse.set_wheel_delta_y(delta.y as f32);
+                            // browsers/trackpads send physical pixels, ~100 logical px are one wheel notch (= one line)
+                            let px_per_line = 100.0 * global_state.scale_factor;
+                            global_state.io.input_manager.mouse.set_wheel_delta_x(delta.x as f32 / px_per_line);
+                            global_state.io.input_manager.mouse.set_wheel_delta_y(delta.y as f32 / px_per_line);
                         },
                     }
                 },
