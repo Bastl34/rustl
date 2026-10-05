@@ -189,7 +189,7 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
             camera.ui(ui);
         });
 
-        collapse_with_title(ui, "camera_layers", true, "▦ Layers", None, |ui|
+        collapse_with_title(ui, "camera_layers", true, "🗐 Layers", None, |ui|
         {
             let mut culling_mask = camera.get_data().culling_mask;
 
