@@ -269,8 +269,26 @@ impl Editor
         full_output
     }
 
+    // while the editor ui is hidden (play mode): only its own native windows - the main window gets no ui
+    pub fn build_own_windows(&mut self, state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
+    {
+        let raw_input = egui.take_input(window);
+
+        let full_output = egui.ctx.run_ui(raw_input, |ui|
+        {
+            main_frame::create_own_windows(ui, &mut self.editor_state, state);
+        });
+
+        egui.ui_state.handle_platform_output(window, full_output.platform_output.clone());
+
+        full_output
+    }
+
     pub fn update(&mut self, state: &mut State, wgpu: &mut WGpu, egui_ctx: &egui::Context)
     {
+        let project_path = self.editor_state.project_path.clone();
+        self.editor_state.project_code.update(project_path.as_deref());
+
         // create editor nodes if needed
         {
             let scene_id = state.get_active_scene_id();

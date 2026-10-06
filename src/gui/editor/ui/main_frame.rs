@@ -31,10 +31,11 @@ use super::super::editor_state::{SelectionType, BottomPanel};
 use super::lights::{build_light_list, create_light_settings};
 use super::materials::{build_material_list, create_material_settings};
 use super::modals::create_modals;
+use super::code_editor::create_code_editor;
 use super::export::ExportPlatform;
 use super::objects::{build_objects_list, create_object_settings, create_component_settings};
 use super::general::create_general_settings;
-use super::project::create_project_settings;
+use super::project::{create_code_hierarchy, create_project_settings};
 use super::scenes::create_scene_settings;
 use super::sound::{build_sound_sources_list, create_sound_settings, create_sound_source_settings};
 use super::statistics::{create_chart, create_statistic};
@@ -73,6 +74,13 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
     {
         ui.horizontal(|ui|
         {
+            if editor_state.project_code.is_building()
+            {
+                let secs = editor_state.project_code.build_started.map_or(0, |started| started.elapsed().as_secs());
+                ui.add(egui::Spinner::new().size(12.0));
+                ui.label(RichText::new(format!("compiling {}... {}s", editor_state.project_code.crate_name, secs)).size(12.0));
+            }
+
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
             {
                 // just refresh if mouse was moved
@@ -233,10 +241,10 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
         });
     });
 
-    // loading progress bar
-    if loading
+    // loading progress bar - also while the project code compiles (no progress there)
+    if loading || editor_state.project_code.is_building()
     {
-        loading_progress_bar(ui, loading_progress);
+        loading_progress_bar(ui, if loading { loading_progress } else { 0.0 });
     }
 
     // box select overlay (selection rect / crosshair)
@@ -244,6 +252,9 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
 
     // modals
     create_modals(editor_state, state, ui.ctx());
+
+    // the editor of the project code files
+    create_code_editor(editor_state, ui.ctx());
 
     // assets in their own window - last: dropping from there checks the space the panels leave free
     create_assets_window(editor_state, state, ui);
@@ -932,6 +943,13 @@ fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &m
     });
 }
 
+// the windows of the editor outside of the main window - also while playing (then disabled)
+pub fn create_own_windows(ui: &mut Ui, editor_state: &mut EditorState, state: &mut State)
+{
+    create_code_editor(editor_state, ui.ctx());
+    create_assets_window(editor_state, state, ui);
+}
+
 fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     let mut object_settings = false;
@@ -1218,6 +1236,12 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         create_resources_entries(state, editor_state, exec_queue.clone(), ui);
     });
 
+    // ******************* code *******************
+    if editor_state.project_code.has_code()
+    {
+        ui.separator();
+        create_code_hierarchy(editor_state, ui);
+    }
 }
 
 fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui)

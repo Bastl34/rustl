@@ -14,6 +14,7 @@ use crate::helper::console_log::LogType;
 use crate::helper::file::{get_dirname, get_stem, make_relative_path, sanitize_filename, write_string_to_tile};
 use crate::gui::editor::editor::EDITOR_INTERNAL_TAG;
 use crate::gui::editor::editor_state::EditorState;
+use crate::gui::editor::project_code;
 use crate::resources::resources::{self, RESOURCE_SCHEME};
 use crate::state::project::loader::{apply_editor_project, apply_editor_scene, load_editor_project};
 use crate::state::project::project::{AudioSettings, SceneObject, SceneObjectOptions, ProjectFile, ProjectFileFormat, ProjectSceneRef, SceneFile, SceneSettings, SceneSound, ProjectSettings, RESUSE_MATERIALS_TAG};
@@ -388,6 +389,44 @@ pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &m
     }
 
     path
+}
+
+// every new project gets a new folder with code: <location>/<name>/<name>.project + code/ (the New Project dialog)
+pub fn create_editor_project(editor_state: &mut EditorState, state: &mut State, location: &std::path::Path, name: &str)
+{
+    let project_dir = location.join(name);
+    if project_dir.exists()
+    {
+        editor_state.alert("New Project", &format!("{} exists already - a new project needs a new folder", project_dir.display()), LogType::Error);
+        return;
+    }
+
+    if let Err(err) = std::fs::create_dir_all(&project_dir)
+    {
+        editor_state.alert("New Project", &format!("Can not create {}:\n{}", project_dir.display(), err), LogType::Error);
+        return;
+    }
+
+    let name = name.to_string();
+
+    editor_state.reset_project(state);
+    state.delete_all_scenes(true);
+    state.add_scene("main scene").add_default_lights_and_cam();
+    state.run_mode = RunMode::Edit;
+    state.project.name = name.clone();
+
+    if let Err(err) = project_code::create_project_code(&project_dir, &name)
+    {
+        console_warning!("{}", err);
+    }
+
+    let base = project_dir.join(&name).to_string_lossy().to_string();
+    if save_editor_project(state, editor_state, &base)
+    {
+        let path = format!("{}.project", base);
+        editor_state.project_path = Some(path.clone());
+        editor_state.recent_projects.add_and_save(path);
+    }
 }
 
 pub fn load_editor_project_with_dialog(editor_state: &mut EditorState, state: &mut State, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>)

@@ -15,3 +15,6 @@ resourcesLocal/
 
 tools/
 dist/
+
+# a copy of the engine Cargo.lock (scripts/dev.mjs)
+crates/rustl_editor/Cargo.lock

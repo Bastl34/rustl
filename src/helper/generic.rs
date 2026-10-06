@@ -81,6 +81,12 @@ pub fn point3_as_array(p: &Point3<f32>) -> [f32; 3]
     [p.x, p.y, p.z]
 }
 
+// the engine folder (repo root) the editor was built from
+pub fn engine_root() -> std::path::PathBuf
+{
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
 pub fn format_duration_secs(total_secs: u64) -> String
 {
     let years   = total_secs / 31536000;

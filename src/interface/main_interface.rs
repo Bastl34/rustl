@@ -24,6 +24,7 @@ use crate::input::keyboard::{Key, Modifier};
 use crate::state::state::MouseCapture;
 use crate::interface::winit::winit_map_mouse_button;
 use crate::output::audio_device::AudioDevice;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::state::resources::utilities::resource_utils::play_and_forget_sound;
 use crate::state::scene::utilities::scene_utils::highlight_and_unhighlight_scene_meshes;
 use crate::{console_debug, console_error, console_log, rendering};
@@ -31,9 +32,10 @@ use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
+use crate::state::project::loader::load_and_apply_project;
 use crate::state::state::{State, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
-use super::app::App;
+use super::app::{App, project_app_factory};
 use super::context::Context;
 use super::gilrs::{gilrs_event, gilrs_initialize};
 use super::winit::{winit_map_key, winit_map_physical_key};
@@ -41,11 +43,19 @@ use super::winit::{winit_map_key, winit_map_physical_key};
 #[cfg(feature = "editor")]
 use crate::gui::editor::editor::Editor;
 
+// the project of a build, packed by scripts/build.mjs
+const APP_PROJECT: &str = "project/app.project";
+
 pub struct MainInterface
 {
     pub context: Context,
 
+    // the engine test app (app_dummy) - not in builds with project code
     app: Option<Box<dyn App>>,
+
+    // the code of the project - created when Play starts, dropped when it ends
+    project_app: Option<Box<dyn App>>,
+    project_app_started: bool,
 
     gilrs: Option<Gilrs>,
 
@@ -128,6 +138,9 @@ impl MainInterface
 
             app: None,
 
+            project_app: None,
+            project_app_started: false,
+
             gilrs,
 
             // the browser only grants the pointer lock on a click
@@ -169,15 +182,57 @@ impl MainInterface
             }
         }
 
-        // create dummy app
-        let dummy_app = super::app_dummy::AppDummy::new();
-        self.app = Some(Box::new(dummy_app));
+        {
+            let state = &mut *(self.context.state.borrow_mut());
+            Self::load_startup_project(state);
+        }
+
+        // the test app of the engine - builds with project code only run that
+        if project_app_factory().is_none()
+        {
+            self.app = Some(Box::new(super::app_dummy::AppDummy::new()));
+        }
 
         // init app
         if let Some(app) = &mut self.app
         {
             app.init(&mut self.context);
         }
+    }
+
+    // native: the .project command line arg, else the project packed by scripts/build.mjs
+    fn startup_project() -> Option<String>
+    {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(project) = env::args().find(|a| a.ends_with(".project"))
+        {
+            return Some(project);
+        }
+
+        crate::resources::resources::exists(APP_PROJECT).then(|| APP_PROJECT.to_string())
+    }
+
+    fn load_startup_project(state: &mut State)
+    {
+        let Some(project) = Self::startup_project() else { return; };
+
+        load_and_apply_project(state, project.as_str(), Some(Box::new(|state|
+        {
+            let scene_id = state.get_active_scene_id();
+            if let Some(scene_id) = scene_id
+            {
+                state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
+            }
+
+            // projects saved with cameras and lights bring their own
+            for scene in &mut state.scenes
+            {
+                if scene.cameras.is_empty()
+                {
+                    scene.add_default_lights_and_cam();
+                }
+            }
+        })));
     }
 
     pub fn window(&self) -> &Window
@@ -245,6 +300,11 @@ impl MainInterface
         {
             app.resize(&mut self.context);
         }
+
+        if let Some(app) = &mut self.project_app
+        {
+            app.resize(&mut self.context);
+        }
     }
 
     pub fn scene_init(&mut self) -> u32
@@ -265,6 +325,11 @@ impl MainInterface
             // update app
             app.update(&mut self.context);
         }
+
+        if let Some(app) = &mut self.project_app
+        {
+            app.update(&mut self.context);
+        }
     }
 
     pub fn update(&mut self)
@@ -278,8 +343,10 @@ impl MainInterface
 
         // ******************** key bindings ********************
         {
-            // screenshot
+            // screenshot - not on the web: the gpu readback is async there and there is no file system to save it to
+            #[cfg(not(target_arch = "wasm32"))]
             let state = &mut *(self.context.state.borrow_mut());
+            #[cfg(not(target_arch = "wasm32"))]
             if state.io.input_manager.keyboard.is_pressed_no_wait(Key::F12)
             {
                 play_and_forget_sound("sounds/screenshot.ogg", 1.0, state.main_thread_execution_queue.clone());
@@ -448,8 +515,6 @@ impl MainInterface
             let now = Instant::now();
             let state = &mut *(self.context.state.borrow_mut());
 
-            self.context.egui.set_viewport_windows_visible(editor_gui.editor_state.visible, &self.context.window);
-
             if editor_gui.editor_state.visible
             {
                 let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui, None);
@@ -457,11 +522,20 @@ impl MainInterface
 
                 //self.gui.request_repaint();
             }
+            else
+            {
+                // play mode: the assets and code windows stay open (disabled) - the main window shows only the game
+                let gui_output = editor_gui.build_own_windows(state, &self.context.window, &mut self.context.egui);
+                self.context.egui.set_output(gui_output, &self.context.window);
+            }
             state.stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
 
         // ******************** app update ********************
+        self.notify_scenes_loaded();
+        self.update_project_app();
+
         if self.context.state.borrow().run_mode.updates_engine()
         {
             let now = Instant::now();
@@ -846,6 +920,11 @@ impl MainInterface
 
     pub fn exit(&mut self)
     {
+        if let Some(mut app) = self.project_app.take()
+        {
+            app.exit(&mut self.context);
+        }
+
         if let Some(app) = &mut self.app
         {
             app.exit(&mut self.context);
@@ -861,12 +940,94 @@ impl MainInterface
 
     pub fn request_exit(&mut self) -> bool
     {
+        if let Some(app) = &mut self.project_app
+        {
+            if !app.request_exit(&mut self.context)
+            {
+                return false;
+            }
+        }
+
         if let Some(app) = &mut self.app
         {
             return app.request_exit(&mut self.context);
         }
 
         true
+    }
+
+    // the project app runs while playing - created on the switch to Play, ended on the switch back
+    fn update_project_app(&mut self)
+    {
+        let playing = self.context.state.borrow().run_mode.runs_game_logic();
+
+        if playing && !self.project_app_started
+        {
+            self.project_app_started = true;
+
+            if let Some(mut app) = self.create_project_app()
+            {
+                app.init(&mut self.context);
+
+                let ready: Vec<u32> =
+                {
+                    let state = self.context.state.borrow();
+                    state.scenes.iter().filter(|scene| !scene.is_engine_internal() && !state.is_scene_loading(scene.id)).map(|scene| scene.id).collect()
+                };
+
+                for scene_id in ready
+                {
+                    app.scene_loaded(&mut self.context, scene_id);
+                }
+
+                self.project_app = Some(app);
+            }
+        }
+        else if !playing && self.project_app_started
+        {
+            self.project_app_started = false;
+
+            if let Some(mut app) = self.project_app.take()
+            {
+                app.exit(&mut self.context);
+            }
+        }
+    }
+
+    // before update_project_app: a project app created this frame gets the ready scenes from its init
+    fn notify_scenes_loaded(&mut self)
+    {
+        let loaded = std::mem::take(&mut self.context.state.borrow_mut().loaded_scenes);
+
+        for scene_id in loaded
+        {
+            if let Some(app) = &mut self.app
+            {
+                app.scene_loaded(&mut self.context, scene_id);
+            }
+
+            if let Some(app) = &mut self.project_app
+            {
+                app.scene_loaded(&mut self.context, scene_id);
+            }
+        }
+    }
+
+    fn create_project_app(&mut self) -> Option<Box<dyn App>>
+    {
+        if let Some(factory) = project_app_factory()
+        {
+            return Some(factory());
+        }
+
+        // the editor loads the code of the project as shared library
+        #[cfg(feature = "editor")]
+        if let Some(editor_gui) = &mut self.editor_gui
+        {
+            return editor_gui.editor_state.project_code.create_app();
+        }
+
+        None
     }
 
     // the editor captures the mouse in play mode - without it the game does it, per InputSettings
@@ -1144,8 +1305,8 @@ impl MainInterface
     {
         let global_state = &mut *(self.context.state.borrow_mut());
 
-        // center mouse (needed on windows)
-        if !*global_state.io.input_manager.mouse.visible.get_ref() && !is_mac()
+        // center mouse (needed on windows) - the web has the pointer lock and can not set the position
+        if !*global_state.io.input_manager.mouse.visible.get_ref() && !is_mac() && !cfg!(target_arch = "wasm32")
         {
             let window_size = self.context.window.inner_size();
             let center = PhysicalPosition::new(window_size.width as f64 / 2.0, window_size.height as f64 / 2.0);

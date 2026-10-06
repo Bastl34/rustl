@@ -9,6 +9,9 @@ use nalgebra::{Point2, Point3, Vector3};
 use crate::{gui::editor::gizmo::hide_gizmos, state::{project::{loader::apply_project_settings, project::{ProjectData, ProjectSettings}}, scene::node::NodeSettings}};
 use crate::{console_log, gui::editor::{helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::{RunMode, State}}};
 use crate::gui::editor::ui::export::ExportDialog;
+use crate::gui::editor::project_code::ProjectCode;
+use crate::gui::editor::ui::code_editor::CodeEditor;
+use crate::helper::console_log::LogSource;
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -182,6 +185,22 @@ pub struct ConfirmDialog
     pub callback: Box<dyn FnOnce(&mut EditorState, &mut State)>,
 }
 
+// "New Project" dialog - the project gets the new folder <location>/<name>
+pub struct NewProjectDialog
+{
+    pub name: String,
+    pub location: Option<std::path::PathBuf>,
+    pub focus_name: bool,
+}
+
+impl NewProjectDialog
+{
+    pub fn new() -> Self
+    {
+        Self { name: "new_project".to_string(), location: None, focus_name: true }
+    }
+}
+
 pub struct EditorState
 {
     pub visible: bool,
@@ -201,6 +220,8 @@ pub struct EditorState
 
     pub project_path: Option<String>,
     pub project_session_start: Instant,
+    pub project_code: ProjectCode,
+    pub code_editor: CodeEditor,
 
     pub gizmo_position: bool,
     pub gizmo_rotation: bool,
@@ -308,6 +329,7 @@ pub struct EditorState
     pub export: ExportDialog,
 
     pub confirm_dialog: Option<ConfirmDialog>,
+    pub new_project_dialog: Option<NewProjectDialog>,
 
     pub asset_filter: String,
     pub reuse_materials_by_name: bool,
@@ -323,6 +345,7 @@ pub struct EditorState
 
     pub log_filter: String,
     pub log_auto_scroll: bool,
+    pub log_source: Option<LogSource>,
 
     pub debug_images: DebugImages,
 
@@ -354,6 +377,8 @@ impl EditorState
 
             project_path: None,
             project_session_start: Instant::now(),
+            project_code: ProjectCode::new(),
+            code_editor: CodeEditor::default(),
 
             gizmo_position: true,
             gizmo_rotation: false,
@@ -459,6 +484,7 @@ impl EditorState
             export: ExportDialog::new(),
 
             confirm_dialog: None,
+            new_project_dialog: None,
 
             asset_filter: "".to_string(),
             reuse_materials_by_name: true,
@@ -471,6 +497,7 @@ impl EditorState
             reload_assets_requested: Arc::new(RwLock::new(false)),
             log_filter: "".to_string(),
             log_auto_scroll: true,
+            log_source: None,
 
             debug_images: DebugImages
             {
@@ -523,12 +550,9 @@ impl EditorState
         (
             "New Project",
             "Save changes to the current project before creating a new one?",
-            |editor_state, state|
+            |editor_state, _state|
             {
-                editor_state.reset_project(state);
-                state.delete_all_scenes(true);
-                state.add_scene("main scene").add_default_lights_and_cam();
-                state.run_mode = RunMode::Edit;
+                editor_state.new_project_dialog = Some(NewProjectDialog::new());
             }
         );
     }
@@ -1089,6 +1113,15 @@ impl EditorState
 
     pub fn set_run_mode(&mut self, state: &mut State, run_mode: RunMode, fullscreen: bool)
     {
+        if run_mode == RunMode::Play
+        {
+            if let Some(reason) = self.project_code.play_blocked()
+            {
+                crate::console_warning!("Play has to wait: {}", reason);
+                return;
+            }
+        }
+
         let was_running = state.run_mode.is_running();
 
         state.set_run_mode(run_mode);

@@ -1,6 +1,7 @@
 use egui::{Color32, CornerRadius, Frame, ImageSource, Margin, Stroke, Ui};
 
 use crate::gui::editor::editor_state::EditorState;
+use crate::gui::editor::project_code::CodeStatus;
 use crate::state::state::{RunMode, State};
 
 // same button size as the tool row (20px icon + 4px padding)
@@ -38,7 +39,7 @@ fn icon_button(ui: &mut Ui, image: ImageSource<'static>, tint: Color32, active: 
         btn = btn.fill(ACTIVE_FILL);
     }
 
-    ui.add_enabled(enabled, btn).on_hover_text(hover).clicked()
+    ui.add_enabled(enabled, btn).on_hover_text(hover).on_disabled_hover_text(hover).clicked()
 }
 
 fn bar_separator(ui: &mut Ui)
@@ -53,12 +54,16 @@ pub fn create_run_mode_bar(editor_state: &mut EditorState, state: &mut State, ui
     let updating = run_mode.updates_engine();
     let paused = state.pause;
     let fullscreen = *state.rendering.fullscreen.get_ref();
+    let play_blocked = editor_state.project_code.play_blocked();
+    let has_code = editor_state.project_code.has_code();
+    let code_status = editor_state.project_code.status;
 
     let mut picked_run_mode: Option<(RunMode, bool)> = None;
     let mut stop = false;
     let mut toggle_pause = false;
     let mut toggle_engine = false;
     let mut toggle_fullscreen = false;
+    let mut compile = false;
 
     Frame::new()
         .fill(BAR_FILL)
@@ -118,9 +123,33 @@ pub fn create_run_mode_bar(editor_state: &mut EditorState, state: &mut State, ui
                 picked_run_mode = Some((RunMode::Simulate, false));
             }
 
-            if icon_button(ui, egui::include_image!("../../../../resources/icons/run.svg"), PLAY_COLOR, run_mode == RunMode::Play, true, "Play (Ctrl+R, hold Shift for fullscreen)") && run_mode != RunMode::Play
+            let play_hover = play_blocked.unwrap_or("Play (Ctrl+R, hold Shift for fullscreen)");
+            if icon_button(ui, egui::include_image!("../../../../resources/icons/run.svg"), PLAY_COLOR, run_mode == RunMode::Play, play_blocked.is_none(), play_hover) && run_mode != RunMode::Play
             {
                 picked_run_mode = Some((RunMode::Play, false));
+            }
+
+            // compile the project code - a spinner in its place while it compiles
+            if has_code
+            {
+                if code_status == CodeStatus::Building
+                {
+                    let size = egui::vec2(ICON_SIZE, ICON_SIZE) + BUTTON_PADDING * 2.0;
+                    ui.add_sized(size, egui::Spinner::new().size(ICON_SIZE - 4.0)).on_hover_text("the project code is compiling");
+                }
+                else
+                {
+                    let (tint, hover) = match code_status
+                    {
+                        CodeStatus::Failed => (STOP_COLOR, "Compile - the project code does not compile, see Project > Code"),
+                        _ => (ICON_COLOR, "Compile the project code (it also compiles on its own when a file changes)"),
+                    };
+
+                    if icon_button(ui, egui::include_image!("../../../../resources/icons/build.svg"), tint, false, true, hover)
+                    {
+                        compile = true;
+                    }
+                }
             }
 
             bar_separator(ui);
@@ -138,6 +167,11 @@ pub fn create_run_mode_bar(editor_state: &mut EditorState, state: &mut State, ui
     {
         let run_mode = if updating { RunMode::Stopped } else { RunMode::Edit };
         editor_state.set_run_mode(state, run_mode, false);
+    }
+
+    if compile
+    {
+        editor_state.project_code.rebuild();
     }
 
     if toggle_fullscreen

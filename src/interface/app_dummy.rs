@@ -1,46 +1,11 @@
 
 use crate::input::keyboard::Key;
 use crate::resources::resources::load_binary;
-use crate::state::project::loader::load_and_apply_project;
 use crate::state::resources::sound_source::SoundSourceItem;
 use crate::state::scene::physics::contacts::ContactKind;
 use crate::{console_error, helper::concurrency::thread::spawn_thread, state::scene::{node::Node, utilities::scene_utils::execute_on_scene_mut_and_wait}};
 
 use super::{app::App, context::Context};
-
-// native: the .project command line arg, else resources/startup.json - web: ?project=..., else window.RUSTL_PROJECT, else the web test project (both written by scripts/build.mjs)
-fn startup_project() -> Option<String>
-{
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if let Some(project) = std::env::args().find(|a| a.ends_with(".project"))
-        {
-            return Some(project);
-        }
-
-        let startup = crate::resources::resources::load_string("startup.json").ok()?;
-        serde_json::from_str::<serde_json::Value>(&startup).ok()?["project"].as_str().map(str::to_string)
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        let window = web_sys::window()?;
-
-        let search = window.location().search().unwrap_or_default();
-        let project = search.trim_start_matches('?').split('&').find_map(|pair| pair.strip_prefix("project="));
-        if let Some(project) = project
-        {
-            return urlencoding::decode(project).ok().map(|project| project.into_owned());
-        }
-
-        if let Some(project) = js_sys::Reflect::get(&window, &"RUSTL_PROJECT".into()).ok().and_then(|project| project.as_string())
-        {
-            return Some(project);
-        }
-
-        Some("projects/web_test/web_test.project".to_string())
-    }
-}
 
 pub struct AppDummy
 {
@@ -105,30 +70,6 @@ impl App for AppDummy
 
 
 
-
-        // load project if needed
-        if let Some(project) = startup_project()
-        {
-            let state = &mut *(context.state.borrow_mut());
-
-            load_and_apply_project(state, project.as_str(), Some(Box::new(|state|
-            {
-                let scene_id = state.get_active_scene_id();
-                if let Some(scene_id) = scene_id
-                {
-                    state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
-                }
-
-                // projects saved with cameras and lights bring their own
-                for scene in &mut state.scenes
-                {
-                    if scene.cameras.is_empty()
-                    {
-                        scene.add_default_lights_and_cam();
-                    }
-                }
-            })));
-        }
 
         // ********** contact sound **********
         match load_binary("resourcesLocal/sounds/bump.wav")

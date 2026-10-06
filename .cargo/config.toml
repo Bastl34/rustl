@@ -1,7 +1,8 @@
 [alias]
-dev = ["watch", "-s", "cargo run --profile dev-fast", "-w", "src/", "-w", "resources/"]
-dev-debug = ["watch", "-s", "cargo run --profile dev-debug", "-w", "src/", "-w", "resources/"]
-dev-release = ["watch", "-s", "cargo run --release", "-w", "src/", "-w", "resources/"]
+# the editor, always with the engine as shared library - it runs the code of projects (scripts/dev.mjs)
+dev = ["watch", "-s", "node scripts/dev.mjs", "-w", "src/", "-w", "resources/", "-w", "crates/"]
+dev-debug = ["watch", "-s", "node scripts/dev.mjs --profile=debug-dylib", "-w", "src/", "-w", "resources/", "-w", "crates/"]
+dev-release = ["watch", "-s", "node scripts/dev.mjs --profile=release-dylib", "-w", "src/", "-w", "resources/", "-w", "crates/"]
 
 # getrandom 0.3 has no default backend on wasm32-unknown-unknown and refuses to compile without one
 # it needs the cfg flag AND the "wasm_js" feature - the feature is set in Cargo.toml
@@ -20,3 +21,39 @@ rustflags = [
     '-C', 'link-arg=--export=__tls_align',
     '-C', 'link-arg=--export=__tls_base',
 ]
+
+# ******************** profiles + patches ********************
+# here and not in Cargo.toml: the editor copies this file into the code of a project (src/gui/editor/project_code.rs)
+# - the project is a workspace of its own and has to build the engine exactly like the editor did, or the engine shared library gets built again
+
+[patch.crates-io]
+# egui_plot from git still asks crates.io for egui/emath - same source as above, otherwise there are two eguis in the tree
+egui = { git = "https://github.com/emilk/egui", branch = "main" }
+emath = { git = "https://github.com/emilk/egui", branch = "main" }
+
+# the editor profiles (scripts/dev.mjs) - own names: other rustflags than cargo run and the exports, so own target dirs
+# the code of a project is built with the profile of the running editor
+[profile.dev-dylib]
+inherits = "dev"
+incremental = true
+# line numbers in backtraces but no variables in the debugger - smaller pdb, faster linking (cargo dev-debug has everything)
+debug = "line-tables-only"
+
+[profile.dev-dylib.package."*"]
+opt-level = 3
+
+[profile.dev-dylib.package.rustl]
+opt-level = 0
+
+# members here, but not in the workspace of a project - "*" would optimize them there and the engine shared library would be built again
+[profile.dev-dylib.package.rustl_dylib]
+opt-level = 0
+
+# dev-dylib with full debug info for the debugger (cargo dev-debug) - the package overrides are inherited
+[profile.debug-dylib]
+inherits = "dev-dylib"
+debug = "full"
+
+# the optimized editor (cargo dev-release)
+[profile.release-dylib]
+inherits = "release"

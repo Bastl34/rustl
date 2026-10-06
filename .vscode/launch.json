@@ -5,9 +5,36 @@
     "version": "0.2.0",
     "configurations": [
         {
+            // the editor like cargo dev-debug (scripts/dev.mjs) - engine and std as shared library, so their folders go into PATH
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'rustl'",
+            "name": "Debug the editor",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--manifest-path=crates/rustl_editor/Cargo.toml",
+                    "--target-dir=target",
+                    "--profile=debug-dylib"
+                ],
+                "env": {
+                    "RUSTC_BOOTSTRAP": "1",
+                    "RUSTFLAGS": "-C prefer-dynamic -Z share-generics=n"
+                },
+                "filter": {
+                    "name": "rustl_editor",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PATH": "${workspaceFolder}/target/debug-dylib/deps;${env:USERPROFILE}/.rustup/toolchains/stable-x86_64-pc-windows-msvc/bin;${env:PATH}"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug the game (without editor)",
             "cargo": {
                 "args": [
                     "build",

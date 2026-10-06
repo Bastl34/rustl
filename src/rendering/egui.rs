@@ -23,7 +23,6 @@ pub struct EGui
 
     // viewports as native windows - drags between them need window positions (not on wasm/wayland)
     pub multi_viewport_support: bool,
-    viewport_windows_visible: bool,
 
     // gpu time of the egui render pass (None if the adapter does not support timestamp queries)
     gpu_timer: Option<GpuTimer>,
@@ -75,7 +74,6 @@ impl EGui
             viewports,
 
             multi_viewport_support,
-            viewport_windows_visible: true,
 
             gpu_timer: GpuTimer::new(device),
         }
@@ -165,24 +163,6 @@ impl EGui
     pub fn create_pending_viewport_windows(&mut self, event_loop: &ActiveEventLoop, wgpu: &WGpu, icon: Option<Icon>)
     {
         self.viewports.borrow_mut().create_pending_windows(&self.ctx, event_loop, wgpu, icon);
-    }
-
-    // nothing renders the other windows while the editor ui is hidden (play mode) -> hide them meanwhile
-    pub fn set_viewport_windows_visible(&mut self, visible: bool, main_window: &Window)
-    {
-        if self.viewport_windows_visible == visible
-        {
-            return;
-        }
-
-        self.viewport_windows_visible = visible;
-        let any_window = self.viewports.borrow_mut().set_windows_visible(visible);
-
-        // showing a window also focuses it
-        if visible && any_window
-        {
-            main_window.focus_window();
-        }
     }
 
     pub fn request_repaint(&self)
@@ -410,16 +390,6 @@ impl EGuiViewports
             let mut actions_requested = vec![];
             egui_winit::process_viewport_commands(ctx, self.infos.entry(*viewport_id).or_default(), output.commands.clone(), window, &mut actions_requested);
         }
-    }
-
-    pub fn set_windows_visible(&mut self, visible: bool) -> bool
-    {
-        for viewport in self.windows.values()
-        {
-            viewport.window.set_visible(visible);
-        }
-
-        !self.windows.is_empty()
     }
 
     fn render_window(&mut self, ctx: &egui::Context, viewport_id: ViewportId, mut output: FullOutput)

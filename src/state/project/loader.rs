@@ -465,6 +465,9 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(SceneFil
         added_ids.push(id);
     }
 
+    state.loading_scenes.extend(added_ids.iter().copied());
+    let loading_ids = added_ids.clone();
+
     let main_queue = state.main_thread_execution_queue.clone();
     let create_mipmaps = state.rendering.create_mipmaps;
     let max_tex_res = state.max_texture_resolution();
@@ -540,6 +543,15 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(SceneFil
                 done_callback(state);
             }));
         }
+
+        // after the done callback: it may still add cameras and lights
+        execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
+        {
+            for id in loading_ids
+            {
+                state.finish_scene_loading(id);
+            }
+        }));
 
         *loading_progress_state.write().unwrap() = 0.0;
         console_success!("{} loaded", log_label);

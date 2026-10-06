@@ -316,6 +316,12 @@ pub fn create_assets_window(editor_state: &mut EditorState, state: &mut State, u
 
         egui::CentralPanel::default().show(ui, |ui|
         {
+            // play mode: stays open, but the game has the input
+            if !editor_state.visible
+            {
+                ui.disable();
+            }
+
             create_asset_section(editor_state, state, ui);
         });
 

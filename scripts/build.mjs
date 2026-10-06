@@ -1,24 +1,27 @@
 // builds without the editor into dist/<platform>, a given project is packed in with every file it uses and starts directly
 // web: wasm with threads (nightly + build-std, the atomics flags are in .cargo/config.toml) - windows/linux/mac: native build, has to run on that platform
-// usage: npm run build-web|build-windows|build-linux|build-mac -- [--dev] [--out=dir] [path/to/x.project]   |   npm run dev-web -- [path/to/x.project]
+// usage: npm run build-web|build-windows|build-linux|build-mac -- [--dev] [--out=dir] path/to/x.project   |   npm run dev-web -- path/to/x.project
 // --out: another target dir instead of dist/<platform> (the editor export uses it)
+// node scripts/build.mjs --editor-library --profile=<profile> --target-dir=<dir> path/to/x.project: the code of the project as shared library for the editor (src/gui/editor/project_code.rs)
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { ENGINE_LIBRARY_ENV } from "./engine_library.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RESOURCE_SCHEME = "resources://";
-const SETUP_WEB = "one time setup: rustup toolchain install nightly && rustup +nightly target add wasm32-unknown-unknown && rustup +nightly component add rust-src";
+const SETUP_WEB = "one time setup: rustup toolchain install nightly && rustup +nightly target add wasm32-unknown-unknown && rustup +nightly component add rust-src && cargo install wasm-pack";
 
-// the packaged project inside the resources of the build
+// the packaged project inside the resources of the build - the engine starts project/app.project (main_interface.rs)
 const BUNDLE_DIR = "project";
+const BUNDLE_PROJECT = "app.project";
 
-// what the engine itself loads from resources/ without the editor - everything else only goes in when the project uses it (resources://)
-const ENGINE_RESOURCES = ["shader", "designs/logo/logo.png", "sounds/screenshot.ogg", "textures/environment/footprint_court.jpg"];
+// the code of a project: <project folder>/code (src/gui/editor/project_code.rs) - never packed, the build links it in
+const CODE_DIR = "code";
 
-// packaged when no project is given
-const DEFAULT_PROJECT = path.join(ROOT, "resources", "projects", "web_test", "web_test.project");
+// what the engine itself loads from resources/ without the editor (resources/engine_resources.txt) - everything else only goes in when the project uses it (resources://)
+const ENGINE_RESOURCES = fs.readFileSync(path.join(ROOT, "resources", "engine_resources.txt"), "utf8").split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith("#"));
 
 // the rustl logo for now - later the app icon of the project
 const APP_ICON = path.join(ROOT, "resources", "designs", "logo", "logo.png");
@@ -43,6 +46,9 @@ const projectArg = args.find(arg => !arg.startsWith("--"));
 const project = projectArg ? path.resolve(process.env.INIT_CWD ?? process.cwd(), projectArg) : null;
 const outArg = args.find(arg => arg.startsWith("--out="))?.slice("--out=".length).trim();
 const outDir = outArg ? path.resolve(process.env.INIT_CWD ?? process.cwd(), outArg) : null;
+const editorLibrary = args.includes("--editor-library");
+const profileArg = args.find(arg => arg.startsWith("--profile="))?.slice("--profile=".length);
+const targetDirArg = args.find(arg => arg.startsWith("--target-dir="))?.slice("--target-dir=".length);
 
 // ******************** commands ********************
 
@@ -55,10 +61,12 @@ function build()
             throw new Error(`build-${platformName} has to run on ${platformName} - cross compiling needs the linker and SDK of that platform`);
         }
 
-        if (project && !fs.existsSync(project))
+        if (!fs.existsSync(project))
         {
             throw new Error(`project not found: ${project}`);
         }
+
+        const code = projectCode(project);
 
         const name = appName();
         const target = layout(name);
@@ -80,21 +88,20 @@ function build()
 
         const bundleDir = path.join(target.resources, BUNDLE_DIR);
         fs.rmSync(bundleDir, { recursive: true, force: true });
-        const startProject = packageProject(project ?? DEFAULT_PROJECT, bundleDir, resources);
+        const startProject = packageProject(project, bundleDir, resources, target.dir);
 
         resources.sync();
 
         if (platformName === "web")
         {
-            writeWebFiles(target.dir, project ?? DEFAULT_PROJECT, startProject);
-            buildWeb(target.dir);
+            writeWebFiles(target.dir, project);
+            buildWeb(target.dir, code);
             const served = path.relative(ROOT, target.dir).replaceAll("\\", "/");
             console.log(outDir ? `web build ready in ${target.dir}, starts ${startProject} - serve that dir with COOP/COEP headers (serve.json)` : `web build ready in ${served}, starts ${startProject} - http://localhost:1337/${served}/ (npx serve -p 1337 in the repo root)`);
         }
         else
         {
-            writeStartup(target.resources, startProject);
-            buildNative(target, name);
+            buildNative(target, name, code);
             console.log(`${platformName} build ready: ${path.relative(ROOT, target.app)}, starts ${startProject}`);
         }
 
@@ -107,12 +114,36 @@ function build()
     }
 }
 
-function buildWeb(dir)
+function buildWeb(dir, code)
 {
     // own target dir, so web builds do not wait for the file locks of native builds or rust-analyzer
+    // a project with code: its crate is the wasm module, the engine takes the app from its rustl_create_app (RUSTL_EXTERNAL_START, build.rs)
+    // --out-name: web/index.html loads pkg/rustl.js either way - after the path and -- everything goes to cargo
+    // --no-opt: the binaryen wasm-pack downloads is too old for the threaded build (table.fill) - needs wasm-pack 0.12+
     const pkg = path.join(dir, "pkg");
-    const args = ["run", "nightly", "wasm-pack", "build", "--target", "web", "--no-typescript", "--no-default-features", "--out-dir", pkg, ...(dev ? ["--dev"] : []), "--", "-Z", "build-std=std,panic_abort"];
-    run("rustup", args, { CARGO_TARGET_DIR: path.join(ROOT, "target", "web") }, SETUP_WEB);
+    const crateDir = code ? code.dir : ROOT;
+    const args = ["run", "nightly", "wasm-pack", "build", "--target", "web", "--no-typescript", "--no-opt", "--out-dir", pkg, "--out-name", "rustl", ...(dev ? ["--dev"] : []), crateDir, "--", "--no-default-features", "-Z", "build-std=std,panic_abort", ...(code ? engineCargoArgs(code.dir) : [])];
+    const env = { CARGO_TARGET_DIR: path.join(ROOT, "target", "web"), ...(code ? { RUSTL_EXTERNAL_START: "1" } : {}) };
+    // wasm-pack runs cargo metadata on its own (without the engine args) and takes the wasm-bindgen cli version from it
+    // -> the lock of the project lies in the code folder while it builds, so it sees the versions the wasm is built with (removed afterwards)
+    const folderLock = code ? path.join(code.dir, "Cargo.lock") : null;
+    const ownLock = folderLock !== null && fs.existsSync(folderLock);
+    if (folderLock && !ownLock)
+    {
+        fs.copyFileSync(prepareLock(code.dir), folderLock);
+    }
+
+    try
+    {
+        run("rustup", args, env, SETUP_WEB);
+    }
+    finally
+    {
+        if (folderLock && !ownLock)
+        {
+            fs.rmSync(folderLock, { force: true });
+        }
+    }
 
     // wasm-pack builds an npm package - the page only needs the .js, the .wasm and snippets/
     for (const entry of fs.readdirSync(pkg))
@@ -124,15 +155,25 @@ function buildWeb(dir)
     }
 }
 
-function buildNative(target, name)
+function buildNative(target, name, code)
 {
-    // own target dir, so the build without editor does not replace the one of cargo run - build.rs gives the windows exe its icon and name
+    // own target dir, so the build without editor does not replace the one of cargo run
+    // a project with code: its own executable, the code linked in (without the engine shared library of the editor)
     const targetDir = path.join(ROOT, "target", "dist");
-    run("cargo", ["build", "--no-default-features", ...(dev ? [] : ["--release"])], { CARGO_TARGET_DIR: targetDir, RUSTL_APP_NAME: name, RUSTL_APP_ICON: APP_ICON });
+    const engineArgs = code ? engineCargoArgs(code.dir) : [];
+    const packageArgs = code ? ["--manifest-path", path.join(code.dir, "Cargo.toml"), "--bin", code.crate] : [];
+    run("cargo", [...engineArgs, "build", ...packageArgs, "--no-default-features", ...(dev ? [] : ["--release"])], { CARGO_TARGET_DIR: targetDir });
 
+    const exe = code ? code.crate : "rustl";
     fs.mkdirSync(path.dirname(target.exe), { recursive: true });
-    fs.copyFileSync(path.join(targetDir, dev ? "debug" : "release", process.platform === "win32" ? "rustl.exe" : "rustl"), target.exe);
+    fs.copyFileSync(path.join(targetDir, dev ? "debug" : "release", process.platform === "win32" ? `${exe}.exe` : exe), target.exe);
     fs.chmodSync(target.exe, 0o755);
+
+    // the exe is named like the project already - windows shows that name without a version resource
+    if (platformName === "windows")
+    {
+        run("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(ROOT, "scripts", "windows_icon.ps1"), "-Exe", target.exe, "-Png", APP_ICON]);
+    }
 
     if (platformName === "mac")
     {
@@ -141,14 +182,107 @@ function buildNative(target, name)
     }
 }
 
+// the code of the project as shared library for the editor: the profile and target dir of the running editor, so the engine shared library is shared and not built again
+// cargo's json messages go straight through to the editor (stdout), it reads the diagnostics and the shared library from them
+function buildEditorLibrary()
+{
+    const code = projectCode(project);
+    if (!code)
+    {
+        console.error(`error: the project has no code: ${project}`);
+        return false;
+    }
+
+    const cargoArgs = [...engineCargoArgs(code.dir), "rustc", "--lib", "--crate-type", "dylib", "--message-format=json", "--color", "never", "-p", code.crate, "--profile", profileArg, "--target-dir", targetDirArg, "--manifest-path", path.join(code.dir, "Cargo.toml")];
+    const result = spawnSync("cargo", cargoArgs, { cwd: code.dir, stdio: "inherit", env: buildEnv(ENGINE_LIBRARY_ENV) });
+    if (result.error)
+    {
+        console.error(`error: failed to run cargo: ${result.error.message}`);
+    }
+
+    return result.status === 0;
+}
+
+// <project folder>/code with its crate name - null without code (src/gui/editor/project_code.rs)
+function projectCode(projectFile)
+{
+    // the real spelling (drive letter case): cargo resolves the relative engine path from it - another spelling would be another engine build
+    const dir = path.join(path.dirname(fs.realpathSync.native(projectFile)), CODE_DIR);
+    const manifest = path.join(dir, "Cargo.toml");
+    if (!fs.existsSync(manifest))
+    {
+        return null;
+    }
+
+    const crate = readText(manifest).match(/^\s*name\s*=\s*"([^"]+)"/m)?.[1];
+    if (!crate)
+    {
+        throw new Error(`no package name in ${manifest}`);
+    }
+
+    return { dir, crate };
+}
+
+// the code of a project is a workspace of its own - the cargo args for the config of the engine (profiles, egui patch) and its lock (.cargo/Cargo.lock) - also for the shared library of the editor (--editor-library)
+function engineCargoArgs(dir)
+{
+    const slashes = (file) => file.replaceAll("\\", "/");
+    return ["--config", slashes(fs.realpathSync.native(path.join(ROOT, ".cargo", "config.toml"))), "--config", `resolver.lockfile-path='${slashes(prepareLock(dir))}'`];
+}
+
+// .cargo/Cargo.lock of the project: the entries of the engine plus the crates only the project uses - by content, not by date: an engine update always arrives
+function prepareLock(dir)
+{
+    const read = (file) => fs.existsSync(file) ? fs.readFileSync(file, "utf8").replaceAll("\r\n", "\n") : null;
+    const target = path.join(dir, ".cargo", "Cargo.lock");
+
+    const lock = read(path.join(ROOT, "Cargo.lock"));
+    const projectLock = read(target);
+    const merged = projectLock === null ? lock : mergeLock(lock, projectLock);
+    if (merged !== null)
+    {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, merged);
+    }
+
+    return target;
+}
+
+// header and [[package]] blocks of a Cargo.lock - the key is name + version + source
+function lockBlocks(text)
+{
+    const [header, ...parts] = text.split("\n[[package]]\n");
+    const blocks = parts.map(part =>
+    {
+        const block = part.trimEnd();
+        const key = block.split("\n").filter(line => line.startsWith("name = ") || line.startsWith("version = ") || line.startsWith("source = ")).join("|");
+        return { key, block };
+    });
+    return { header: header.trimEnd(), blocks };
+}
+
+// null: every entry of the engine is in the project lock as it is
+function mergeLock(engine, project)
+{
+    const engineLock = lockBlocks(engine);
+    const projectLock = lockBlocks(project);
+
+    const projectTexts = new Set(projectLock.blocks.map(entry => entry.block));
+    if (engineLock.blocks.every(entry => projectTexts.has(entry.block)))
+    {
+        return null;
+    }
+
+    const engineKeys = new Set(engineLock.blocks.map(entry => entry.key));
+    const blocks = [...engineLock.blocks, ...projectLock.blocks.filter(entry => !engineKeys.has(entry.key))];
+    blocks.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+
+    return engineLock.header + "\n" + blocks.map(entry => "\n[[package]]\n" + entry.block + "\n").join("");
+}
+
 // native builds are named like the project (its name, else the file name)
 function appName()
 {
-    if (!project)
-    {
-        return "rustl";
-    }
-
     return projectName(project).replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").replace(/[. ]+$/, "") || "rustl";
 }
 
@@ -207,9 +341,18 @@ function removeOtherApps(target)
     }
 }
 
+// the build flags come from .cargo/config.toml - an inherited build env overrides them (the editor of cargo dev: RUSTFLAGS without atomics + prefer-dynamic, cargo run: CARGO_*)
+const INHERITED_BUILD_ENV = /^(RUSTFLAGS|RUSTC_BOOTSTRAP|RUSTUP_TOOLCHAIN|OUT_DIR|CARGO|CARGO_(?!HOME$|TERM_)\w+)$/i;
+
+function buildEnv(env)
+{
+    const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !INHERITED_BUILD_ENV.test(key)));
+    return { ...inherited, ...env };
+}
+
 function run(command, commandArgs, env = {}, setup = "", stdio = "inherit")
 {
-    const result = spawnSync(command, commandArgs, { cwd: ROOT, stdio, env: { ...process.env, ...env } });
+    const result = spawnSync(command, commandArgs, { cwd: ROOT, stdio, env: buildEnv(env) });
     if (result.error)
     {
         throw new Error(`failed to run ${command}: ${result.error.message}${setup ? `\n${setup}` : ""}`);
@@ -225,13 +368,10 @@ function watchAndBuild()
 {
     const watched = [path.join(ROOT, "src"), path.join(ROOT, "resources"), path.join(ROOT, "web")];
 
-    if (project)
-    {
-        // the whole project folder, unless that would also watch dist/ and target/
-        const projectDir = path.dirname(project);
-        const rootFromProject = path.relative(projectDir, ROOT);
-        watched.push(rootFromProject.startsWith("..") || path.isAbsolute(rootFromProject) ? projectDir : project);
-    }
+    // the whole project folder, unless that would also watch dist/ and target/
+    const projectDir = path.dirname(project);
+    const rootFromProject = path.relative(projectDir, ROOT);
+    watched.push(rootFromProject.startsWith("..") || path.isAbsolute(rootFromProject) ? projectDir : project);
 
     // builds run synchronously - changes made meanwhile arrive afterwards and trigger the next build
     let timer = null;
@@ -273,10 +413,10 @@ function watchAndBuild()
 
 // ******************** platform files ********************
 
-function writeWebFiles(dist, projectFile, startProject)
+function writeWebFiles(dist, projectFile)
 {
     const template = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
-    const html = template.replace("<title>Rustl</title>", webHead(projectFile)).replace("/*project*/null", JSON.stringify(startProject));
+    const html = template.replace("<title>Rustl</title>", webHead(projectFile));
     fs.writeFileSync(path.join(dist, "index.html"), html);
     fs.copyFileSync(APP_ICON, path.join(dist, "favicon.png"));
 }
@@ -330,12 +470,6 @@ function pngSize(file)
 {
     const data = fs.readFileSync(file);
     return [data.readUInt32BE(16), data.readUInt32BE(20)];
-}
-
-// native builds read the project to start from resources/startup.json
-function writeStartup(resources, startProject)
-{
-    fs.writeFileSync(path.join(resources, "startup.json"), JSON.stringify({ project: startProject }, null, 2) + "\n");
 }
 
 // icns from the app icon, with the tools macOS brings along
@@ -462,7 +596,7 @@ class Resources
         this.prune(this.dir, "");
     }
 
-    // the packaged project and startup.json are written separately
+    // the packaged project is written separately
     prune(dir, relative)
     {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true }))
@@ -470,7 +604,7 @@ class Resources
             const key = relative ? `${relative}/${entry.name}` : entry.name;
             const full = path.join(dir, entry.name);
 
-            if (!relative && (entry.name === BUNDLE_DIR || entry.name === "startup.json"))
+            if (!relative && entry.name === BUNDLE_DIR)
             {
                 continue;
             }
@@ -493,23 +627,37 @@ class Resources
 
 // ******************** project packaging ********************
 
-// copies the project, its scenes and every file they use into the bundle dir and rewrites their paths, resources:// files go to the resources - returns the project path for the build
-function packageProject(projectPath, bundleDir, resources)
+// copies the project into the bundle dir and rewrites the paths that point outside of it, resources:// files go to the resources - returns the project path for the build
+// a project in a folder of its own: the whole folder (without code/ and hidden entries) - the code of the project may load any file of it
+// a project next to others (old layout): only its scenes and the files they use
+function packageProject(projectPath, bundleDir, resources, outputDir)
 {
     const projectFile = fs.realpathSync.native(projectPath);
+    const projectDir = path.dirname(projectFile);
     const projectJson = JSON.parse(readText(projectFile));
-    const bundle = new Bundle(bundleDir);
-    const sceneNames = [];
+    const bundle = new Bundle(bundleDir, projectDir);
+    let sceneCount = 0;
 
     fs.mkdirSync(bundleDir, { recursive: true });
 
+    const ownFolder = fs.readdirSync(projectDir).filter(entry => entry.toLowerCase().endsWith(".project")).length === 1;
+    if (ownFolder)
+    {
+        bundle.addFolder(projectDir, [projectFile, path.join(projectDir, CODE_DIR), outputDir]);
+    }
+    else
+    {
+        console.warn(`warning: ${projectDir} holds other projects too - only the files of the scenes are packed (a project in a folder of its own gets the whole folder)`);
+    }
+
     for (const sceneRef of projectJson.scenes ?? [])
     {
-        const scenePath = path.resolve(path.dirname(projectFile), sceneRef.path);
+        const scenePath = fs.realpathSync.native(path.resolve(projectDir, sceneRef.path));
         const text = readText(scenePath);
         const sceneDir = path.dirname(scenePath);
+        const scenePacked = bundle.bundlePath(scenePath);
 
-        // old -> new source - only these strings change, everything else stays as saved
+        // old -> new source, relative to the packed scene - only these strings change, everything else stays as saved
         const sources = new Map();
         for (const source of sceneSources(JSON.parse(text)))
         {
@@ -522,7 +670,7 @@ function packageProject(projectPath, bundleDir, resources)
                 const packed = bundle.add(path.resolve(sceneDir, source), scenePath);
                 if (packed)
                 {
-                    sources.set(source, packed);
+                    sources.set(source, path.posix.relative(path.posix.dirname(scenePacked), packed));
                 }
             }
         }
@@ -533,24 +681,18 @@ function packageProject(projectPath, bundleDir, resources)
             return packed ? key + JSON.stringify(packed) : match;
         });
 
-        // all scenes next to the project file, so the rewritten paths are relative to the bundle dir
-        let name = path.basename(scenePath);
-        if (sceneNames.includes(name))
-        {
-            name = `${sceneNames.length}_${name}`;
-        }
-        sceneNames.push(name);
-
-        fs.writeFileSync(path.join(bundleDir, name), rewritten);
-        sceneRef.path = name;
+        const target = path.join(bundleDir, scenePacked);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, rewritten);
+        sceneRef.path = scenePacked;
+        sceneCount++;
     }
 
-    const projectName = path.basename(projectFile);
-    fs.writeFileSync(path.join(bundleDir, projectName), JSON.stringify(projectJson, null, 2) + "\n");
+    fs.writeFileSync(path.join(bundleDir, BUNDLE_PROJECT), JSON.stringify(projectJson, null, 2) + "\n");
 
-    console.log(`packaged ${projectName} (${sceneNames.length} scenes, ${bundle.copied.size} files)`);
+    console.log(`packaged ${path.basename(projectFile)} (${sceneCount} scenes, ${bundle.copied.size} files${ownFolder ? ", the whole project folder" : ""})`);
 
-    return `${BUNDLE_DIR}/${projectName}`;
+    return `${BUNDLE_DIR}/${BUNDLE_PROJECT}`;
 }
 
 // object sources (also of child objects) and sound sources - relative to the scene file or resources://
@@ -584,23 +726,63 @@ function sceneSources(scene)
 
 class Bundle
 {
-    constructor(dir)
+    constructor(dir, projectDir)
     {
         this.dir = dir;
+        this.projectDir = projectDir;
         this.root = fs.realpathSync.native(ROOT);
         this.copied = new Map();
     }
 
-    // files keep their layout below the repo (or the disk), so relative references between them still work
+    // the project folder is the bundle dir - files outside of it go to external/ (engine files by their path in the repo, others by their path on the disk)
+    // the layout stays, so relative references between files still work
     bundlePath(file)
     {
-        let relative = path.relative(this.root, file);
-        if (relative.startsWith("..") || path.isAbsolute(relative))
+        const outside = (relative) => relative.startsWith("..") || path.isAbsolute(relative);
+
+        let relative = path.relative(this.projectDir, file);
+        if (outside(relative))
         {
-            relative = path.join("external", file.replace(/^[a-zA-Z]:/, "").replace(/^[\\/]+/, ""));
+            const inRepo = path.relative(this.root, file);
+            relative = path.join("external", outside(inRepo) ? file.replace(/^[a-zA-Z]:/, "").replace(/^[\\/]+/, "") : inRepo);
         }
 
-        return path.join("assets", relative).replaceAll("\\", "/");
+        return relative.replaceAll("\\", "/");
+    }
+
+    // every file of a folder - without hidden entries, the skipped paths and sub folders of other projects (backups, ...)
+    addFolder(dir, skip)
+    {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true }))
+        {
+            const full = path.join(dir, entry.name);
+            if (entry.name.startsWith(".") || skip.some(skipped => skipped && path.relative(skipped, full) === ""))
+            {
+                continue;
+            }
+
+            if (entry.isDirectory())
+            {
+                if (!fs.readdirSync(full).some(name => name.toLowerCase().endsWith(".project")))
+                {
+                    this.addFolder(full, skip);
+                }
+            }
+            else if (entry.isFile())
+            {
+                this.copy(fs.realpathSync.native(full));
+            }
+        }
+    }
+
+    copy(real)
+    {
+        const packed = this.bundlePath(real);
+        const target = path.join(this.dir, packed);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.copyFileSync(real, target);
+        this.copied.set(real, packed);
+        return packed;
     }
 
     // copies a file and the files it references itself (gltf buffers/images, obj materials, mtl textures) - null if it is missing
@@ -622,12 +804,7 @@ class Bundle
             return this.copied.get(real);
         }
 
-        const packed = this.bundlePath(real);
-        const target = path.join(this.dir, packed);
-        fs.mkdirSync(path.dirname(target), { recursive: true });
-        fs.copyFileSync(real, target);
-        this.copied.set(real, packed);
-
+        const packed = this.copy(real);
         for (const referenced of referencedFiles(real))
         {
             this.add(referenced, real);
@@ -717,7 +894,22 @@ if (!platform)
     process.exit(1);
 }
 
-if (watch)
+if (!project)
+{
+    console.error(`error: no project given - npm run ${watch ? "dev" : "build"}-${platformName} -- path/to/x.project`);
+    process.exit(1);
+}
+
+if (editorLibrary)
+{
+    if (!profileArg || !targetDirArg)
+    {
+        console.error("error: --editor-library needs --profile and --target-dir");
+        process.exit(1);
+    }
+    process.exit(buildEditorLibrary() ? 0 : 1);
+}
+else if (watch)
 {
     watchAndBuild();
 }

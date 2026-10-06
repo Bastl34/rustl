@@ -9,6 +9,8 @@ use web_time::Instant;
 
 use crate::gui::editor::editor_state::EditorState;
 use crate::helper::concurrency::thread::spawn_thread;
+use crate::helper::file::open_with_default_app;
+use crate::helper::generic::engine_root;
 use crate::state::project::project::ProjectExportDirs;
 use crate::state::state::State;
 
@@ -286,6 +288,7 @@ impl ExportDialog
         self.target_dir = Some(target_dir);
         self.pid = None;
 
+        // scripts/build.mjs drops the build env of the editor itself (RUSTFLAGS of cargo dev, ...)
         let mut command = Command::new("node");
         command.args(&args)
             .current_dir(&root)
@@ -425,7 +428,7 @@ fn repo_root() -> PathBuf
         }
     }
 
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    engine_root()
 }
 
 // "error: ...", "error[E0308]: ..."
@@ -468,18 +471,6 @@ fn strip_ansi(text: &str) -> String
     }
 
     result
-}
-
-fn open_folder(dir: &PathBuf)
-{
-    #[cfg(target_os = "windows")]
-    let program = "explorer";
-    #[cfg(target_os = "macos")]
-    let program = "open";
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let program = "xdg-open";
-
-    let _ = Command::new(program).arg(dir).spawn();
 }
 
 fn format_duration(duration: Duration) -> String
@@ -688,7 +679,7 @@ pub fn create_modal_export(editor_state: &mut EditorState, state: &mut State, ct
                         ui.separator();
                         if ui.button("📁 Open Folder").on_hover_text(dir.display().to_string()).clicked()
                         {
-                            open_folder(dir);
+                            open_with_default_app(dir);
                         }
                     }
                 });

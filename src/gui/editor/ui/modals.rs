@@ -10,6 +10,10 @@ pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &eg
     {
         create_modal_confirm(editor_state, state, ctx);
     }
+    if editor_state.new_project_dialog.is_some()
+    {
+        create_modal_new_project(editor_state, state, ctx);
+    }
     if editor_state.dialog_splash
     {
         create_modal_splash(editor_state, state, ctx);
@@ -113,6 +117,125 @@ pub fn create_alert_dialog(editor_state: &mut EditorState, _state: &mut State, c
         editor_state.dialog_alert = false;
         editor_state.dialog_alert_title.clear();
         editor_state.dialog_alert_message.clear();
+    }
+}
+
+// the problem with name + location, None when the project can be created
+fn new_project_error(name: &str, location: Option<&std::path::Path>) -> Option<&'static str>
+{
+    let Some(location) = location else { return Some("Choose the location of the project folder."); };
+
+    let invalid = name.is_empty() || name.ends_with('.') || name.chars().any(|c| c.is_control() || r#"<>:"/\|?*"#.contains(c));
+    if invalid
+    {
+        Some("Enter a valid folder name.")
+    }
+    else if location.join(name).exists()
+    {
+        Some("The folder exists already - a new project needs a new folder.")
+    }
+    else
+    {
+        None
+    }
+}
+
+pub fn create_modal_new_project(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
+{
+    let Some(dialog) = &mut editor_state.new_project_dialog else { return; };
+
+    let mut create = false;
+    let mut cancel = false;
+
+    let response = egui::Modal::new(egui::Id::unique("new_project_dialog")).show(ctx, |ui|
+    {
+        ui.set_width(480.0);
+        ui.label(egui::RichText::new("New Project").size(16.0).strong());
+        ui.add_space(12.0);
+
+        egui::Grid::new("new_project_grid").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui|
+        {
+            ui.label("Name");
+            let edit = ui.add(egui::TextEdit::singleline(&mut dialog.name).desired_width(f32::INFINITY));
+            if dialog.focus_name
+            {
+                edit.request_focus();
+                dialog.focus_name = false;
+            }
+            if edit.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter))
+            {
+                create = true;
+            }
+            ui.end_row();
+
+            ui.label("Location");
+            ui.horizontal(|ui|
+            {
+                if ui.button("...").on_hover_text("the folder the new project folder is created in").clicked()
+                {
+                    let mut picker = rfd::FileDialog::new();
+                    if let Some(location) = &dialog.location
+                    {
+                        picker = picker.set_directory(location);
+                    }
+                    if let Some(location) = picker.pick_folder()
+                    {
+                        dialog.location = Some(location);
+                    }
+                }
+                match &dialog.location
+                {
+                    Some(location) => { ui.label(location.display().to_string()); }
+                    None => { ui.weak("not chosen"); }
+                }
+            });
+            ui.end_row();
+        });
+
+        let name = dialog.name.trim();
+        let error = new_project_error(name, dialog.location.as_deref());
+
+        ui.add_space(10.0);
+        match error
+        {
+            Some(error) => { ui.colored_label(egui::Color32::from_rgb(225, 95, 95), error); }
+            None => { ui.weak(format!("Creates {}", dialog.location.clone().unwrap_or_default().join(name).join(format!("{}.project", name)).display())); }
+        }
+
+        ui.add_space(12.0);
+        ui.separator();
+        ui.add_space(8.0);
+
+        ui.horizontal(|ui|
+        {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+            {
+                let button_size = egui::vec2(78.0, 28.0);
+                if ui.add_enabled(error.is_none(), egui::Button::new("Create").min_size(button_size)).clicked()
+                {
+                    create = true;
+                }
+                ui.add_space(8.0);
+                if ui.add(egui::Button::new("Cancel").min_size(button_size)).clicked()
+                {
+                    cancel = true;
+                }
+            });
+        });
+    });
+
+    if create
+    {
+        let name = dialog.name.trim().to_string();
+        if let Some(location) = dialog.location.clone().filter(|location| new_project_error(&name, Some(location)).is_none())
+        {
+            editor_state.new_project_dialog = None;
+            crate::gui::editor::editor_project::create_editor_project(editor_state, state, &location, &name);
+        }
+    }
+    else if cancel || response.should_close()
+    {
+        editor_state.new_project_dialog = None;
     }
 }
 

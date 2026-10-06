@@ -1,6 +1,6 @@
 use egui::{Color32, Ui};
 
-use crate::{gui::{editor::editor_state::EditorState, helper::generic_items::button_with_background}, helper::console_log::{self, LogType}, state::state::State};
+use crate::{gui::{editor::editor_state::EditorState, helper::generic_items::button_with_background}, helper::console_log::{self, LogSource, LogType}, state::state::State};
 use egui_extras::{Column, TableBuilder};
 
 pub fn create_console_section(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
@@ -29,6 +29,13 @@ pub fn create_console_tree(editor_state: &mut EditorState, _state: &mut State, u
             ui.selectable_value(&mut editor_state.log_type, LogType::Warning, format!("⚠ Warnings ({})", console_log::get_warnings_amount()));
             ui.selectable_value(&mut editor_state.log_type, LogType::Success, format!("✅ Success ({})", console_log::get_success_amount()));
             ui.selectable_value(&mut editor_state.log_type, LogType::Debug, format!("🐞 Debug ({})", console_log::get_debug_amount()));
+
+            // no separator: in this column it would take the whole width and push the list away
+            ui.add_space(10.0);
+
+            ui.selectable_value(&mut editor_state.log_source, None, "☰ All Sources");
+            ui.selectable_value(&mut editor_state.log_source, Some(LogSource::Engine), format!("⚙ Engine ({})", console_log::get_source_amount(LogSource::Engine)));
+            ui.selectable_value(&mut editor_state.log_source, Some(LogSource::Code), format!("💻 Code ({})", console_log::get_source_amount(LogSource::Code)));
         });
     });
 }
@@ -63,6 +70,10 @@ pub fn create_console_list(editor_state: &mut EditorState, _state: &mut State, u
                 return false;
             }
             if log.log_type != editor_state.log_type && editor_state.log_type != LogType::All
+            {
+                return false;
+            }
+            if editor_state.log_source.is_some_and(|source| source != log.source)
             {
                 return false;
             }
@@ -122,6 +133,7 @@ pub fn create_console_list(editor_state: &mut EditorState, _state: &mut State, u
                 .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
                 .column(Column::auto())
                 .column(Column::auto())
+                .column(Column::auto())
                 .column(Column::remainder())
                 .min_scrolled_height(0.0)
                 .max_scroll_height(available_height);
@@ -138,6 +150,7 @@ pub fn create_console_list(editor_state: &mut EditorState, _state: &mut State, u
             {
                 header.col(|ui| { ui.strong("Date"); });
                 header.col(|ui| { ui.strong("Type"); });
+                header.col(|ui| { ui.strong("Source"); });
                 header.col(|ui| { ui.strong("Message"); });
             }).body(|body|
             {
@@ -174,7 +187,24 @@ pub fn create_console_list(editor_state: &mut EditorState, _state: &mut State, u
                     });
                     row.col(|ui|
                     {
-                        ui.colored_label(color, &log.log);
+                        let source_str = match log.source
+                        {
+                            LogSource::Engine => "Engine",
+                            LogSource::Code => "Code",
+                        };
+                        ui.colored_label(color, source_str);
+                    });
+                    row.col(|ui|
+                    {
+                        // compiler output is aligned with spaces
+                        if log.source == LogSource::Code
+                        {
+                            ui.colored_label(color, egui::RichText::new(&log.log).monospace());
+                        }
+                        else
+                        {
+                            ui.colored_label(color, &log.log);
+                        }
                     });
                 });
             });

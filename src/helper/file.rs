@@ -4,6 +4,8 @@ use std::{path::{PathBuf, Path}, env};
 use std::fs::File;
 use std::io::prelude::*;
 
+use crate::console_error;
+
 pub fn get_current_working_dir() -> std::io::Result<PathBuf>
 {
     env::current_dir()
@@ -87,31 +89,65 @@ pub fn resolve_relative_path(base_file: &str, relative: &str) -> String
     normalize_path_separators(&base_dir.join(relative).to_string_lossy())
 }
 
+// target relative to the folder of base_file - the absolute target on another drive
 pub fn make_relative_path(base_file: &str, target: &str) -> Option<String>
 {
     let base_dir = std::fs::canonicalize(std::path::Path::new(base_file).parent()?).ok()?;
     let abs_target = std::fs::canonicalize(target).ok()?;
 
-    let mut base_parts = base_dir.components().peekable();
-    let mut target_parts = abs_target.components().peekable();
+    Some(relative_path(&base_dir, &abs_target).unwrap_or_else(|| normalize_path_separators(&abs_target.to_string_lossy())))
+}
 
-    // skip common prefix
-    while base_parts.peek() == target_parts.peek() && base_parts.peek().is_some()
+// from_dir -> to as "../x/y" ("" for the same folder) - None on another drive, there is no relative path
+pub fn relative_path(from_dir: &Path, to: &Path) -> Option<String>
+{
+    let from_parts: Vec<_> = from_dir.components().collect();
+    let to_parts: Vec<_> = to.components().collect();
+    let common = from_parts.iter().zip(&to_parts).take_while(|(a, b)| a == b).count();
+
+    if common == 0
     {
-        base_parts.next();
-        target_parts.next();
+        return None;
     }
 
-    let mut rel = std::path::PathBuf::new();
-    for _ in base_parts
-    {
-        rel.push("..");
-    }
+    let mut parts = vec!["..".to_string(); from_parts.len() - common];
+    parts.extend(to_parts[common..].iter().map(|part| part.as_os_str().to_string_lossy().to_string()));
 
-    for part in target_parts
-    {
-        rel.push(part);
-    }
+    Some(parts.join("/"))
+}
 
-    Some(normalize_path_separators(&rel.to_string_lossy()))
+// the path as the file system spells it (drive letter case, no \\?\ prefix) - absolute if it does not exist (yet)
+pub fn real_path(path: &Path) -> PathBuf
+{
+    match std::fs::canonicalize(path)
+    {
+        Ok(real) =>
+        {
+            let real = real.to_string_lossy().to_string();
+            PathBuf::from(real.strip_prefix(r"\\?\").unwrap_or(&real))
+        },
+        Err(_) => std::path::absolute(path).unwrap_or(path.to_path_buf()),
+    }
+}
+
+// "src/app.rs" below dir - one join per part, windows tools do not take the / of the relative path
+pub fn join_relative(dir: &Path, relative: &str) -> PathBuf
+{
+    relative.split('/').fold(dir.to_path_buf(), |path, part| path.join(part))
+}
+
+// a file or folder like a double click in the file manager
+pub fn open_with_default_app(path: &Path)
+{
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let program = "xdg-open";
+
+    if let Err(err) = std::process::Command::new(program).arg(path).spawn()
+    {
+        console_error!("can not open {}: {}", path.display(), err);
+    }
 }

@@ -18,11 +18,21 @@ pub enum LogType
     Debug
 }
 
+// where a log comes from - the console filters by it
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LogSource
+{
+    Engine,
+    // the code of the project: its compiler output and its own logs
+    Code,
+}
+
 #[derive(Clone)]
 pub struct LogEntry
 {
     pub timestamp: DateTime<Local>,
     pub log_type: LogType,
+    pub source: LogSource,
     pub log: String,
 }
 
@@ -55,7 +65,7 @@ macro_rules! log_base
     {
         {
             let msg = format!($fmt, $($arg)*);
-            $crate::helper::console_log::log(&msg, $log_type);
+            $crate::helper::console_log::log_from_module(&msg, $log_type, module_path!());
         }
     };
     // without format
@@ -66,7 +76,7 @@ macro_rules! log_base
             msg = msg.strip_prefix('"').unwrap_or(&msg).to_string();
             msg = msg.strip_suffix('"').unwrap_or(&msg).to_string();
 
-            $crate::helper::console_log::log(&msg, $log_type);
+            $crate::helper::console_log::log_from_module(&msg, $log_type, module_path!());
         }
     };
     // single argument
@@ -77,7 +87,7 @@ macro_rules! log_base
             msg = msg.strip_prefix('"').unwrap_or(&msg).to_string();
             msg = msg.strip_suffix('"').unwrap_or(&msg).to_string();
 
-            $crate::helper::console_log::log(&msg, $log_type);
+            $crate::helper::console_log::log_from_module(&msg, $log_type, module_path!());
         }
     };
 }
@@ -262,27 +272,50 @@ pub fn get_debug_amount() -> usize
     CONSOLE.lock().unwrap().logs.iter().filter(|log| log.log_type == LogType::Debug).count()
 }
 
+pub fn get_source_amount(source: LogSource) -> usize
+{
+    CONSOLE.lock().unwrap().logs.iter().filter(|log| log.source == source).count()
+}
+
 pub fn log(msg: &str, log_type: LogType)
 {
-    let mut logs = CONSOLE.lock().unwrap();
-    logs.logs.push
-    (
-        LogEntry
-        {
-            timestamp: Local::now(),
-            log_type: log_type.clone(),
-            log: msg.to_string(),
-        }
-    );
+    log_from(msg, log_type, LogSource::Engine);
+}
 
-    if logs.logs.len() > logs.max_logs
+// the console_*! macros - module_path of the caller: rustl::... is the engine, everything else the code of a project
+pub fn log_from_module(msg: &str, log_type: LogType, module: &str)
+{
+    let source = if module.starts_with("rustl") { LogSource::Engine } else { LogSource::Code };
+    log_from(msg, log_type, source);
+}
+
+pub fn log_from(msg: &str, log_type: LogType, source: LogSource)
+{
+    // only the editor console reads it - and the web main thread must not wait for a lock a worker holds (Atomics.wait panics there)
+    #[cfg(not(target_arch = "wasm32"))]
     {
-        logs.logs.remove(0);
+        let mut logs = CONSOLE.lock().unwrap();
+        logs.logs.push
+        (
+            LogEntry
+            {
+                timestamp: Local::now(),
+                log_type: log_type.clone(),
+                source,
+                log: msg.to_string(),
+            }
+        );
+
+        if logs.logs.len() > logs.max_logs
+        {
+            logs.logs.remove(0);
+        }
     }
 
     // println goes nowhere on the web
     #[cfg(target_arch = "wasm32")]
     {
+        let _ = source;
         let msg = wasm_bindgen::JsValue::from_str(msg);
         match log_type
         {

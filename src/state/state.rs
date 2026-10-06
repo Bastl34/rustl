@@ -495,6 +495,10 @@ pub struct State
 
     pub scenes: Vec<SceneItem>,
 
+    // scenes the project loader is still filling - and the ones it finished since the last frame (App::scene_loaded)
+    pub loading_scenes: Vec<u32>,
+    pub loaded_scenes: Vec<u32>,
+
     pub oneshot_sounds: Vec<Sound>,
 
     pub registered_components: Vec<(String, bool, fn(&str) -> ComponentItem)>,
@@ -584,6 +588,9 @@ impl State
             exit: false,
 
             scenes: vec![],
+
+            loading_scenes: vec![],
+            loaded_scenes: vec![],
 
             oneshot_sounds: vec![],
 
@@ -1168,6 +1175,21 @@ impl State
         }
 
         success
+    }
+
+    pub fn is_scene_loading(&self, id: u32) -> bool
+    {
+        self.loading_scenes.contains(&id)
+    }
+
+    pub fn finish_scene_loading(&mut self, id: u32)
+    {
+        self.loading_scenes.retain(|scene_id| *scene_id != id);
+
+        if self.scenes.iter().any(|scene| scene.id == id)
+        {
+            self.loaded_scenes.push(id);
+        }
     }
 
     pub fn delete_all_scenes(&mut self, clear_resouces: bool) -> bool

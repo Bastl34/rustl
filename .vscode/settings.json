@@ -1,4 +1,11 @@
 {
     // rust-analyzer builds into target/rust-analyzer - no file lock waits with cargo run / the web build
-    "rust-analyzer.cargo.targetDir": true
+    "rust-analyzer.cargo.targetDir": true,
+
+    // templates/project_code: the files of new project code crates (src/gui/editor/project_code.rs) - part of no crate
+    "rust-analyzer.files.exclude": ["templates"],
+
+    // the code of a project is a workspace of its own: rust-analyzer asks once when a file of it is opened ("add it to the linked Projects?")
+    // and appends it here - the engine has to be in the list, else that list would only hold the project
+    "rust-analyzer.linkedProjects": ["Cargo.toml"]
 }

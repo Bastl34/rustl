@@ -35,10 +35,6 @@
         const resumeAudio = () => audioContexts.forEach(ctx => { if (ctx.state === "suspended") ctx.resume(); });
         ["pointerdown", "keydown", "touchend"].forEach(name => window.addEventListener(name, resumeAudio, { capture: true }));
     </script>
-    <script>
-        // project to start (path inside resources/) - set by scripts/build.mjs, ?project=... in the url wins
-        window.RUSTL_PROJECT = /*project*/null;
-    </script>
     <script type="module">
         import init from "./pkg/rustl.js";
 

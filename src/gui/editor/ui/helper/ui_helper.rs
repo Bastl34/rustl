@@ -116,15 +116,22 @@ pub fn loading_progress_bar(ui: &mut egui::Ui, progress: f32)
         ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
         ui.style_mut().visuals.selection.bg_fill = progress_color;
 
-        let bar = if approx_zero(progress)
+        // no progress known (yet): a segment runs through the bar - an empty egui progress bar shows nothing
+        if approx_zero(progress)
         {
-            egui::ProgressBar::new(0.0).animate(true).desired_height(bar_height).corner_radius(0).fill(progress_color)
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), bar_height), egui::Sense::hover());
+            let width = rect.width();
+            let segment = width * 0.25;
+            let x = ((ui.input(|input| input.time) as f32 * 0.6).fract() * (width + segment)) - segment;
+
+            let segment_rect = egui::Rect::from_min_max(egui::pos2(rect.left() + x.max(0.0), rect.top()), egui::pos2(rect.left() + (x + segment).min(width), rect.bottom()));
+            ui.painter().rect_filled(segment_rect, 0.0, progress_color);
+            ui.ctx().request_repaint();
         }
         else
         {
-            egui::ProgressBar::new(progress).desired_height(bar_height).corner_radius(0).fill(progress_color)
-        };
-        ui.add(bar);
+            ui.add(egui::ProgressBar::new(progress).desired_height(bar_height).corner_radius(0).fill(progress_color));
+        }
     });
 }
 
