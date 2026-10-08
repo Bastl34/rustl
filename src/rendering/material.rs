@@ -118,6 +118,10 @@ pub struct MaterialUniform
     pub shadow_softness: f32,
 
     pub no_fog: u32,
+
+    pub vertex_colors: u32,
+
+    pub _padding: [u32; 3], // uniform struct size has to be a multiple of 16
 }
 
 impl MaterialUniform
@@ -220,6 +224,10 @@ impl MaterialUniform
             shadow_softness: material_data.shadow_softness,
 
             no_fog: material_data.no_fog as u32,
+
+            vertex_colors: material_data.vertex_colors as u32,
+
+            _padding: [0, 0, 0],
         }
     }
 }
@@ -322,7 +330,8 @@ impl MaterialBuffer
         let mut bind_id = 0;
 
         // ********* material buffer *********
-        layout_group_vec.push(uniform::uniform_bind_group_layout_entry(bind_id, false, true));
+        // vertex stage needs it as well (vertex colors)
+        layout_group_vec.push(uniform::uniform_bind_group_layout_entry(bind_id, true, true));
         group_vec.push(wgpu::BindGroupEntry { binding: bind_id, resource: self.buffer.as_entire_binding() });
 
         bind_id += 1;

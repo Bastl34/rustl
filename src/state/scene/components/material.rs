@@ -225,6 +225,7 @@ impl TextureState
 // serde defaults so material files saved before texture mapping modes were added still load
 fn default_mapping_scale() -> f32 { 1.0 }
 fn default_mapping_sharpness() -> f32 { 4.0 }
+fn default_vertex_colors() -> bool { true }
 
 #[derive(Serialize, Deserialize)]
 pub struct MaterialData
@@ -285,6 +286,9 @@ pub struct MaterialData
 
     #[serde(default)]
     pub no_fog: bool, // when true, this material is excluded from the distance fog (sky spheres, editor helpers, etc.)
+
+    #[serde(default = "default_vertex_colors")]
+    pub vertex_colors: bool, // multiply the base color with the mesh vertex colors (COLOR_0)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -354,6 +358,8 @@ impl Material
 
             allow_xray: true,
             no_fog: false,
+
+            vertex_colors: true,
         };
 
         Material
@@ -1135,6 +1141,7 @@ impl Component for Material
         let mut cast_shadow;
         let mut receive_shadow;
         let mut no_fog;
+        let mut vertex_colors;
 
         let mut shadow_softness;
         let mut roughness;
@@ -1171,6 +1178,7 @@ impl Component for Material
             cast_shadow = data.cast_shadow;
             receive_shadow = data.receive_shadow;
             no_fog = data.no_fog;
+            vertex_colors = data.vertex_colors;
 
             shadow_softness = data.shadow_softness;
             roughness = data.roughness;
@@ -1238,6 +1246,7 @@ impl Component for Material
         apply_settings = ui.checkbox(&mut cast_shadow, "cast shadow").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut receive_shadow, "receive shadow").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut no_fog, "no fog (excluded from distance fog)").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut vertex_colors, "use vertex colors").changed() || apply_settings;
 
         apply_settings = ui.add(egui::Slider::new(&mut shadow_softness, 0.0..=100.0).text("shadow softness")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut roughness, 0.0..=5.0).text("roughness")).changed() || apply_settings;
@@ -1359,6 +1368,7 @@ impl Component for Material
             data.cast_shadow = cast_shadow;
             data.receive_shadow = receive_shadow;
             data.no_fog = no_fog;
+            data.vertex_colors = vertex_colors;
 
             data.shadow_softness = shadow_softness;
             data.roughness = roughness;

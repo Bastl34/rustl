@@ -346,6 +346,7 @@ fn read_node(gltf_node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_pat
             let mut uvs3: Vec<Point2<f32>> = vec![];
             let mut uvs4: Vec<Point2<f32>> = vec![];
             let mut normals: Vec<Vector3<f32>> = vec![];
+            let mut colors: Vec<[f32; 4]> = vec![];
 
             let mut joints: Vec<[u32; JOINTS_LIMIT]> = vec![];
             let mut weights: Vec<[f32; JOINTS_LIMIT]> = vec![];
@@ -418,6 +419,13 @@ fn read_node(gltf_node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_pat
                 }
             }
 
+            // vertex colors (COLOR_0) - rgb/rgba and normalized u8/u16 are converted to rgba f32
+            let gltf_colors = reader.read_colors(0);
+            if let Some(gltf_colors) = gltf_colors
+            {
+                colors = gltf_colors.into_rgba_f32().collect();
+            }
+
             // indices
             let gltf_indices: Option<Vec<u32>> = reader.read_indices().map(|indices| indices.into_u32().collect());
 
@@ -469,14 +477,6 @@ fn read_node(gltf_node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_pat
 
                     [w[0] / sum, w[1] / sum, w[2] / sum, w[3] / sum]
                 }).collect::<Vec<[f32; 4]>>();
-                /*
-                weights = weights.iter().map(|w|
-                {
-                    let weight = Vector4::<f32>::new(w[0], w[1], w[2], w[3]);
-                    let weight = weight / weight.norm();
-                    [weight.x, weight.y, weight.z, weight.w]
-                }).collect::<Vec<[f32; 4]>>();
-                 */
             }
 
             // mopth_target names
@@ -506,6 +506,21 @@ fn read_node(gltf_node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_pat
             mesh_resource.get_data_mut().get_mut().uvs_1 = uvs2;
             mesh_resource.get_data_mut().get_mut().uvs_2 = uvs3;
             mesh_resource.get_data_mut().get_mut().uvs_3 = uvs4;
+
+            if !colors.is_empty()
+            {
+                if colors.len() == mesh_resource.get_data().vertices.len()
+                {
+                    mesh_resource.get_data_mut().get_mut().colors = colors;
+
+                    // the hash was calculated without colors - same geometry with other colors must not be reused
+                    mesh_resource.calc_hash();
+                }
+                else
+                {
+                    console_warning!("can not load vertex colors, because length does not match");
+                }
+            }
 
             if joints.len() == weights.len()
             {

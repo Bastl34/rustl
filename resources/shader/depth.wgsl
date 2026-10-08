@@ -61,18 +61,20 @@ struct VertexInput
 
     @location(6) joints: vec4<u32>,
     @location(7) weights: vec4<f32>,
+
+    @location(8) color: vec4<f32>,
 };
 
 struct InstanceInput
 {
-    @location(8) model_matrix_0: vec4<f32>,
-    @location(9) model_matrix_1: vec4<f32>,
-    @location(10) model_matrix_2: vec4<f32>,
-    @location(11) model_matrix_3: vec4<f32>,
+    @location(9) model_matrix_0: vec4<f32>,
+    @location(10) model_matrix_1: vec4<f32>,
+    @location(11) model_matrix_2: vec4<f32>,
+    @location(12) model_matrix_3: vec4<f32>,
 
-    @location(12) color: vec4<f32>,
-    @location(13) highlight: f32,
-    @location(14) locked: f32,
+    @location(13) color: vec4<f32>,
+    @location(14) highlight: f32,
+    @location(15) locked: f32,
 };
 
 struct VertexOutput
