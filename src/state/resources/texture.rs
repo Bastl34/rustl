@@ -13,49 +13,6 @@ pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 const PREVIEW_SIZE: u32 = 256;
 const MAX_MIPMAPS: usize = 10; // max allowed mipmaps 10 (+ original texture)
 
-/*
-#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
-pub enum TextureAddressMode
-{
-    ClampToEdge,
-    Repeat,
-    MirrorRepeat,
-    ClampToBorder
-}
-
-#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
-pub enum TextureFilterMode
-{
-    Nearest,
-    Linear
-}
-
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-pub struct TextureTransform
-{
-    pub offset: Vector2::<f32>,
-    pub scale: Vector2::<f32>,
-    pub rotation: f32,
-
-    pub uv_index: u32,
-}
-
-impl TextureTransform
-{
-    pub fn default() -> TextureTransform
-    {
-        TextureTransform
-        {
-            offset: Vector2::<f32>::new(0.0, 0.0),
-            scale: Vector2::<f32>::new(1.0, 1.0),
-            rotation: 0.0,
-
-            uv_index: 0,
-        }
-    }
-}
-*/
-
 #[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum MipmapSamplingFilterType
 {
@@ -70,39 +27,31 @@ pub enum MipmapSamplingFilterType
 pub struct TextureData
 {
     #[serde(skip, default)]
-    pub preview: DynamicImage,
+    pub preview: Option<DynamicImage>,
     #[serde(skip, default)]
     pub image: DynamicImage,
     #[serde(skip, default)]
     pub mipmap_cache: Option<Vec<DynamicImage>>,
 
-    pub width: u64,
-    pub height: u64,
+    pub width: u32,
+    pub height: u32,
 
     pub mipmapping: bool,
     pub mipmap_sampling_type: MipmapSamplingFilterType,
 
     pub has_transparency: bool, // if there is a pixel with a alpha value < 1.0
 
-    /*
-    pub transform: TextureTransform,
-
-    pub mipmap_sampling_type: MipmapSamplingFilterType,
-
-    pub address_mode_u: TextureAddressMode,
-    pub address_mode_v: TextureAddressMode,
-    pub address_mode_w: TextureAddressMode,
-    pub mag_filter: TextureFilterMode,
-    pub min_filter: TextureFilterMode,
-    pub mipmap_filter: TextureFilterMode,
-     */
+    // true = sample as linear (data textures: normal / roughness / ao / ...); false = sRGB (color textures: base / emissive / ...)
+    // set by the material based on the texture slot it is assigned to
+    #[serde(default)]
+    pub linear: bool,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Texture
 {
     #[serde(skip, default)]
-    pub id: u64,
+    pub id: u32,
 
     pub uuid: String,
     pub source: Option<AssetPathDesciptor>,
@@ -131,7 +80,7 @@ impl Texture
     {
         let data: TextureData = TextureData
         {
-            preview: DynamicImage::new_rgba8(0,0),
+            preview: None,
             image: DynamicImage::new_rgba8(0,0),
             mipmap_cache: None,
 
@@ -141,19 +90,8 @@ impl Texture
             mipmapping: false,
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
 
-            // transform: TextureTransform::default(),
-
-
             has_transparency: false,
-
-            /*
-            address_mode_u: TextureAddressMode::ClampToEdge,
-            address_mode_v: TextureAddressMode::ClampToEdge,
-            address_mode_w: TextureAddressMode::ClampToEdge,
-            mag_filter: TextureFilterMode::Linear,
-            min_filter: TextureFilterMode::Nearest,
-            mipmap_filter: TextureFilterMode::Nearest
-             */
+            linear: false,
         };
 
         Texture
@@ -196,7 +134,7 @@ impl Texture
         let hash = helper::crypto::get_hash_from_byte_vec(image_bytes);
         //let hash = helper::crypto::get_hash_from_byte_vec(&rgba.to_vec());
 
-        let has_transparency = rgba.enumerate_pixels().find(|pixel| { pixel.2[3] < 255 }).is_some();
+        let has_transparency = image.color().has_alpha() && rgba.pixels().any(|pixel| pixel[3] < 255);
 
         let mut image = image::DynamicImage::ImageRgba8(rgba);
 
@@ -210,8 +148,8 @@ impl Texture
 
         let data: TextureData = TextureData
         {
-            width: image.width() as u64,
-            height: image.height() as u64,
+            width: image.width(),
+            height: image.height(),
 
             mipmapping: false,
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
@@ -219,19 +157,11 @@ impl Texture
             // transform: TextureTransform::default(),
 
             has_transparency: has_transparency,
+            linear: false,
 
-            preview: Self::create_preview(&image),
+            preview: None,
             image: image,
             mipmap_cache: None,
-
-            /*
-            address_mode_u: TextureAddressMode::ClampToEdge,
-            address_mode_v: TextureAddressMode::ClampToEdge,
-            address_mode_w: TextureAddressMode::ClampToEdge,
-            mag_filter: TextureFilterMode::Linear,
-            min_filter: TextureFilterMode::Linear,
-            mipmap_filter: TextureFilterMode::Linear
-            */
         };
 
         Texture
@@ -286,28 +216,20 @@ impl Texture
 
         let data: TextureData = TextureData
         {
-            width: image.width() as u64,
-            height: image.height() as u64,
+            width: image.width(),
+            height: image.height(),
 
             has_transparency: false,
+            linear: false,
 
             mipmapping: false,
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
 
             // transform: data.transform.clone(),
 
-            preview: Self::create_preview(&image),
+            preview: None,
             image: image,
             mipmap_cache: None,
-
-            /*
-            address_mode_u: TextureAddressMode::ClampToEdge,
-            address_mode_v: TextureAddressMode::ClampToEdge,
-            address_mode_w: TextureAddressMode::ClampToEdge,
-            mag_filter: TextureFilterMode::Linear,
-            min_filter: TextureFilterMode::Linear,
-            mipmap_filter: TextureFilterMode::Linear
-            */
         };
 
         Texture
@@ -464,6 +386,17 @@ impl Texture
         image.resize(width, height, preview_filter)
     }
 
+    pub fn get_preview(&mut self) -> &DynamicImage
+    {
+        if self.data.get_ref().preview.is_none()
+        {
+            let preview = Self::create_preview(&self.data.get_ref().image);
+            self.data.get_unmarked_mut().preview = Some(preview);
+        }
+
+        self.data.get_ref().preview.as_ref().unwrap()
+    }
+
     pub fn get_data(&self) -> &TextureData
     {
         &self.data.get_ref()
@@ -507,10 +440,13 @@ impl Texture
     pub fn memory_usage(&self) -> u64
     {
         // image
-        let mut bytes = self.get_data().width * self.get_data().height * self.channels() as u64;
+        let mut bytes = self.get_data().width as u64 * self.get_data().height as u64 * self.channels() as u64;
 
         // preview
-        bytes += self.get_data().preview.width() as u64 * self.get_data().preview.width() as u64 * 4;
+        if let Some(preview) = &self.get_data().preview
+        {
+            bytes += preview.width() as u64 * preview.width() as u64 * 4;
+        }
 
         // mipmaps
         if let Some(cache) = &self.get_data().mipmap_cache
@@ -531,7 +467,7 @@ impl Texture
             return 0;
         }
 
-        let mut bytes = self.get_data().width * self.get_data().height * self.channels() as u64;
+        let mut bytes = self.get_data().width as u64 * self.get_data().height as u64 * self.channels() as u64;
 
         // mipmaps are using around + 1/3 more gpu memory --> https://en.wikipedia.org/wiki/Mipmap
         if self.get_data().mipmapping
@@ -541,7 +477,10 @@ impl Texture
 
         if self.egui_preview.is_some()
         {
-            bytes += self.get_data().preview.width() as u64 * self.get_data().preview.width() as u64 * self.channels() as u64;
+            if let Some(preview) = &self.get_data().preview
+            {
+                bytes += preview.width() as u64 * preview.width() as u64 * self.channels() as u64;
+            }
         }
 
         bytes
@@ -586,19 +525,20 @@ impl Texture
 
         let name = format!("{}_preview",self.name);
 
-        let data = self.get_data();
+        let channels = self.channels();
+        let preview = self.get_preview();
 
-        let pixels = data.preview.as_flat_samples_u8();
+        let pixels = preview.as_flat_samples_u8();
         let pixels = pixels.unwrap();
 
         let image;
-        if self.channels() == 1
+        if channels == 1
         {
-            image = egui::ColorImage::from_gray([data.preview.width() as usize, data.preview.height() as usize], pixels.as_slice());
+            image = egui::ColorImage::from_gray([preview.width() as usize, preview.height() as usize], pixels.as_slice());
         }
         else
         {
-            image = egui::ColorImage::from_rgba_unmultiplied([data.preview.width() as usize, data.preview.height() as usize], pixels.as_slice());
+            image = egui::ColorImage::from_rgba_unmultiplied([preview.width() as usize, preview.height() as usize], pixels.as_slice());
         }
 
 
@@ -645,40 +585,12 @@ impl Texture
 
         let mut mipmap_sampling_type;
 
-        /*
-        let mut address_mode_u;
-        let mut address_mode_v;
-        let mut address_mode_w;
-        let mut mag_filter;
-        let mut min_filter;
-        let mut mipmap_filter;
-
-        let mut uv_offset;
-        let mut uv_scale;
-        let mut uv_rotation_deg;
-        let mut uv_index;
-         */
-
         {
             let data = self.data.get_ref();
 
             mipmapping = data.mipmapping;
 
             mipmap_sampling_type = data.mipmap_sampling_type;
-
-            /*
-            address_mode_u = data.address_mode_u;
-            address_mode_v = data.address_mode_v;
-            address_mode_w = data.address_mode_w;
-            mag_filter = data.mag_filter;
-            min_filter = data.min_filter;
-            mipmap_filter = data.mipmap_filter;
-
-            uv_offset = data.transform.offset;
-            uv_scale = data.transform.scale;
-            uv_rotation_deg = data.transform.rotation.to_degrees();
-            uv_index = data.transform.uv_index;
-             */
         }
 
         let mut changed = false;
@@ -709,124 +621,11 @@ impl Texture
             });
         });
 
-        /*
-        ui.horizontal(|ui|
-        {
-            ui.label("Address Mode U:");
-
-            egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_u")).selected_text(format!("{address_mode_u:?}")).show_ui(ui, |ui|
-            {
-                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::Repeat, "Repeat").changed() || changed;
-            });
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Address Mode V:");
-
-            egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_v")).selected_text(format!("{address_mode_v:?}")).show_ui(ui, |ui|
-            {
-                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::Repeat, "Repeat").changed() || changed;
-            });
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Address Mode W:");
-
-            egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_w")).selected_text(format!("{address_mode_w:?}")).show_ui(ui, |ui|
-            {
-                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::Repeat, "Repeat").changed() || changed;
-            });
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Mag Filter: ");
-
-            egui::ComboBox::from_id_salt(ui.make_persistent_id("mag_filter")).selected_text(format!("{mag_filter:?}")).show_ui(ui, |ui|
-            {
-                changed = ui.selectable_value(& mut mag_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
-                changed = ui.selectable_value(& mut mag_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
-            });
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Min Filter: ");
-
-            egui::ComboBox::from_id_salt(ui.make_persistent_id("min_filter")).selected_text(format!("{min_filter:?}")).show_ui(ui, |ui|
-            {
-                changed = ui.selectable_value(& mut min_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
-                changed = ui.selectable_value(& mut min_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
-            });
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Mipmap Filter: ");
-
-            egui::ComboBox::from_id_salt(ui.make_persistent_id("mipmap_filter")).selected_text(format!("{mipmap_filter:?}")).show_ui(ui, |ui|
-            {
-                changed = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
-                changed = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
-            });
-        });
-
-        ui.separator();
-        */
-
-        /*
-        ui.horizontal(|ui|
-        {
-            ui.label("UV Offset:");
-            changed = ui.add(egui::DragValue::new(&mut uv_offset.x).speed(0.001).prefix("u: ")).changed() || changed;
-            changed = ui.add(egui::DragValue::new(&mut uv_offset.y).speed(0.001).prefix("v: ")).changed() || changed;
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("UV Scale:");
-            changed = ui.add(egui::DragValue::new(&mut uv_scale.x).speed(0.001).prefix("u: ")).changed() || changed;
-            changed = ui.add(egui::DragValue::new(&mut uv_scale.y).speed(0.001).prefix("v: ")).changed() || changed;
-        });
-
-        changed = ui.add(egui::Slider::new(&mut uv_rotation_deg, 0.0..=359.9999).suffix(" °").text("UV Rotation (in deg)")).changed() || changed;
-
-        changed = ui.add(egui::Slider::new(&mut uv_index, 0..=3).text("UV Index")).changed() || changed;
-         */
-
-
         if changed
         {
             let data = self.get_data_mut().get_mut();
 
             data.mipmapping = mipmapping;
-
-            /*
-            data.mipmap_sampling_type = mipmap_sampling_type;
-
-            data.address_mode_u = address_mode_u;
-            data.address_mode_v = address_mode_v;
-            data.address_mode_w = address_mode_w;
-            data.mag_filter = mag_filter;
-            data.min_filter = min_filter;
-            data.mipmap_filter = mipmap_filter;
-
-            data.transform.offset = uv_offset;
-            data.transform.scale = uv_scale;
-            data.transform.rotation = uv_rotation_deg.to_radians();
-            data.transform.uv_index = uv_index;
-            */
         }
     }
 

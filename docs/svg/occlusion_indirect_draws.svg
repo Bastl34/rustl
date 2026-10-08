@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 440" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="oc_arrow5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="760" height="440" fill="#f8fafc" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">GPU-driven indirect draws — why the CPU never waits</text>
+
+  <!-- CPU column -->
+  <rect x="30" y="58" width="300" height="230" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="50" y="86" font-size="14" font-weight="700" fill="#7c3aed">CPU (every frame, blindly)</text>
+  <text x="50" y="110" font-size="12" fill="#334155">records one</text>
+  <text x="50" y="128" font-size="12" fill="#334155" font-family="ui-monospace, Menlo, monospace">draw_indexed_indirect(args, slot·20)</text>
+  <text x="50" y="146" font-size="12" fill="#334155">per (node, mesh) draw slot — it does</text>
+  <text x="50" y="164" font-size="12" fill="#334155">NOT know what is visible and never</text>
+  <text x="50" y="182" font-size="12" fill="#334155">has to ask the GPU for results.</text>
+
+  <rect x="50" y="200" width="260" height="70" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.5" rx="8"/>
+  <text x="180" y="224" text-anchor="middle" font-size="11.5" fill="#4c1d95">pipelines, bind groups, sorting,</text>
+  <text x="180" y="241" text-anchor="middle" font-size="11.5" fill="#4c1d95">render groups, frustum culling:</text>
+  <text x="180" y="258" text-anchor="middle" font-size="11.5" font-weight="600" fill="#4c1d95">all unchanged, still CPU-side</text>
+
+  <line x1="330" y1="170" x2="395" y2="170" stroke="#475569" stroke-width="2" marker-end="url(#oc_arrow5)"/>
+  <text x="362" y="156" text-anchor="middle" font-size="11" fill="#475569">slot index</text>
+
+  <!-- GPU column: args buffer -->
+  <rect x="400" y="58" width="330" height="230" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="420" y="86" font-size="14" font-weight="700" fill="#2563eb">GPU args buffer (occlusion check)</text>
+
+  <!-- table -->
+  <g font-size="11.5" font-family="ui-monospace, Menlo, monospace">
+    <rect x="420" y="100" width="290" height="26" fill="#eff6ff" stroke="#bfdbfe"/>
+    <text x="430" y="117" fill="#1e40af">slot</text>
+    <text x="490" y="117" fill="#1e40af">index_count</text>
+    <text x="600" y="117" fill="#1e40af">instance_count</text>
+
+    <rect x="420" y="126" width="290" height="26" fill="#ecfdf5" stroke="#bfdbfe"/>
+    <text x="430" y="143" fill="#065f46">0 wall</text>
+    <text x="490" y="143" fill="#065f46">3084</text>
+    <text x="600" y="143" fill="#065f46">1  → drawn</text>
+
+    <rect x="420" y="152" width="290" height="26" fill="#fff1f2" stroke="#bfdbfe"/>
+    <text x="430" y="169" fill="#9f1239">1 flask</text>
+    <text x="490" y="169" fill="#9f1239">13530</text>
+    <text x="600" y="169" fill="#9f1239">0  → skipped</text>
+
+    <rect x="420" y="178" width="290" height="26" fill="#ecfdf5" stroke="#bfdbfe"/>
+    <text x="430" y="195" fill="#065f46">2 tree</text>
+    <text x="490" y="195" fill="#065f46">804</text>
+    <text x="600" y="195" fill="#065f46">12 → drawn 12×</text>
+  </g>
+
+  <text x="420" y="232" font-size="12" fill="#334155">A culled object is a recorded draw with</text>
+  <text x="420" y="250" font-size="12" fill="#334155"><tspan font-family="ui-monospace, Menlo, monospace" font-size="11.5">instance_count = 0</tspan> — the GPU skips it</text>
+  <text x="420" y="268" font-size="12" fill="#334155">almost for free.</text>
+
+  <!-- two buffers -->
+  <rect x="30" y="308" width="345" height="66" fill="#eff6ff" stroke="#3b82f6" stroke-width="2" rx="10"/>
+  <text x="46" y="331" font-size="12.5" font-weight="700" fill="#2563eb" font-family="ui-monospace, Menlo, monospace">args_visible</text>
+  <text x="46" y="349" font-size="11.5" fill="#334155">mask = visible now · consumed by pass 1 of the next</text>
+  <text x="46" y="365" font-size="11.5" fill="#334155">frame and by transparent/no-depth draws in pass 2</text>
+
+  <rect x="385" y="308" width="345" height="66" fill="#ecfdf5" stroke="#10b981" stroke-width="2" rx="10"/>
+  <text x="401" y="331" font-size="12.5" font-weight="700" fill="#059669" font-family="ui-monospace, Menlo, monospace">args_new</text>
+  <text x="401" y="349" font-size="11.5" fill="#334155">mask = visible now ∧ not visible last frame</text>
+  <text x="401" y="365" font-size="11.5" fill="#334155">consumed by pass 2 of the same frame</text>
+
+  <!-- bottom note -->
+  <rect x="30" y="390" width="700" height="38" fill="#fffbeb" stroke="#f59e0b" stroke-width="2" rx="10"/>
+  <text x="380" y="414" text-anchor="middle" font-size="12" fill="#78350f">The "draw calls" stat stays constant — culling shows up in "occlusion culled objects" and the GPU times.</text>
+</svg>

@@ -1,225 +1,357 @@
-mod rendering
+pub mod rendering
 {
-    pub(crate) mod wgpu;
-    pub(crate) mod egui;
-    pub(crate) mod pipeline;
-    pub(crate) mod vertex_buffer;
-    pub(crate) mod instance;
-    pub(crate) mod texture;
-    pub(crate) mod state;
-    pub(crate) mod scene;
-    pub(crate) mod camera;
-    pub(crate) mod uniform;
-    pub(crate) mod light;
-    pub(crate) mod material;
-    pub(crate) mod skeleton;
-    pub(crate) mod morph_target;
+    pub mod wgpu;
+    pub mod egui;
+    pub mod pipeline;
+    pub mod compute_pipeline;
+    pub mod vertex_buffer;
+    pub mod instance;
+    pub mod texture;
+    pub mod state;
+    pub mod scene;
+    pub mod camera;
+    pub mod light;
+    pub mod shadow;
+    pub mod material;
+    pub mod skeleton;
+    pub mod morph_target;
+    pub mod bounding_boxes;
+    pub mod debug_volumes;
+    pub mod visibility;
+    pub mod hzb_cull_buffer;
+    pub mod draw_slots;
+    pub mod gpu_timer;
 
-    pub(crate) mod bind_groups
+    pub mod bind_groups
     {
-        pub(crate) mod light_cam_scene;
-        pub(crate) mod skeleton_morph_target;
+        pub mod uniform;
+        pub mod storage;
+        pub mod light_cam_scene;
+        pub mod skeleton_morph_target;
+        pub mod single_binding_group;
+        pub mod debug_volumes;
+        pub mod depth_export;
+        pub mod hzb_downsample;
+        pub mod hzb_occlusion_check;
+        pub mod ssao;
     }
 
-    pub(crate) mod helper
+    pub mod helper
     {
-        pub(crate) mod buffer;
+        pub mod buffer;
     }
 }
 
-mod state
+pub mod state
 {
-    pub(crate) mod state;
+    pub mod state;
 
-    pub(crate) mod helper
+    pub mod helper
     {
-        pub(crate) mod render_item;
+        pub mod render_item;
     }
 
-    pub(crate) mod scene
+    pub mod scene
     {
-        pub(crate) mod manager
+        pub mod manager
         {
-            pub(crate) mod id_manager;
+            pub mod id_manager;
         }
 
-        pub(crate) mod loader
+        pub mod loader
         {
-            pub(crate) mod wavefront;
-            pub(crate) mod gltf;
+            pub mod wavefront;
+            pub mod gltf;
+            pub mod asset_container;
+            pub mod loader;
         }
 
-        pub(crate) mod exporter
+        pub mod exporter
         {
-            pub(crate) mod json;
-            pub(crate) mod serialization_helper;
+            pub mod json;
+            pub mod serialization_helper;
         }
 
-        pub(crate) mod components
+        pub mod components
         {
-            pub(crate) mod component;
-            pub(crate) mod transformation;
-            pub(crate) mod mesh;
-            pub(crate) mod material;
-            pub(crate) mod alpha;
-            pub(crate) mod transformation_animation;
-            pub(crate) mod joint;
-            pub(crate) mod animation;
-            pub(crate) mod morph_target;
-            pub(crate) mod morph_target_animation;
-            pub(crate) mod animation_blending;
-            pub(crate) mod look_at;
-            pub(crate) mod sound;
-            pub(crate) mod delay;
+            pub mod component;
+            pub mod transformation;
+            pub mod mesh;
+            pub mod material;
+            pub mod alpha;
+            pub mod transformation_animation;
+            pub mod joint;
+            pub mod animation;
+            pub mod morph_target;
+            pub mod morph_target_animation;
+            pub mod animation_blending;
+            pub mod look_at;
+            pub mod sound;
+            pub mod delay;
         }
 
-        pub(crate) mod scene_controller
+        pub mod physics
         {
-            pub(crate) mod scene_controller;
-            pub(crate) mod generic_controller;
-            pub(crate) mod char_controller;
+            pub mod contacts;
+            pub mod physics_world;
         }
 
-        pub(crate) mod camera_controller
+        pub mod scene_controller
         {
-            pub(crate) mod camera_controller;
-            pub(crate) mod fly_controller;
-            pub(crate) mod target_rotation_controller;
-            pub(crate) mod follow_controller;
-        }
+            pub mod scene_controller;
+            pub mod char_controller;
+            pub mod vehicle_controller;
 
-        pub(crate) mod utilities
-        {
-            pub(crate) mod scene_utils;
-            pub(crate) mod extras;
-            pub(crate) mod tags;
-        }
-
-        pub(crate) mod camera;
-        pub(crate) mod light;
-        pub(crate) mod instance;
-        pub(crate) mod node;
-        pub(crate) mod scene;
-    }
-
-    pub(crate) mod resources
-    {
-        pub(crate) mod utilities
-        {
-            pub(crate) mod resource_utils;
-        }
-
-        pub(crate) mod texture;
-        pub(crate) mod sound_source;
-        pub(crate) mod mesh_resource;
-    }
-
-    pub(crate) mod gui
-    {
-        pub(crate) mod helper
-        {
-            pub(crate) mod info_box;
-            pub(crate) mod generic_items;
-        }
-
-        pub(crate) mod editor
-        {
-            pub(crate) mod editor;
-            pub(crate) mod editor_state;
-            pub(crate) mod helper;
-            pub(crate) mod gizmo;
-            pub(crate) mod grid;
-
-            pub(crate) mod ui
+            pub mod vehicle
             {
-                pub(crate) mod main_frame;
-                pub(crate) mod modals;
-                pub(crate) mod dialogs;
-                pub(crate) mod statistics;
-                pub(crate) mod cameras;
-                pub(crate) mod objects;
-                pub(crate) mod materials;
-                pub(crate) mod lights;
-                pub(crate) mod scenes;
-                pub(crate) mod general;
-                pub(crate) mod textures;
-                pub(crate) mod sound;
-                pub(crate) mod mesh;
-                pub(crate) mod assets;
-                pub(crate) mod console;
+                pub mod engine;
+                pub mod engine_sound;
+                pub mod presets;
+                pub mod tire_marks;
             }
         }
+
+        pub mod camera_controller
+        {
+            pub mod camera_controller;
+            pub mod fly_controller;
+            pub mod pan_controller;
+            pub mod target_rotation_controller;
+            pub mod follow_controller;
+            pub mod path_controller;
+        }
+
+        pub mod utilities
+        {
+            pub mod scene_utils;
+            pub mod extras;
+            pub mod origin;
+            pub mod tags;
+        }
+
+        pub mod camera;
+        pub mod light;
+        pub mod instance;
+        pub mod layers;
+        pub mod node;
+        pub mod scene;
     }
-}
 
-pub(crate) mod input
-{
-    pub(crate) mod input_manager;
-
-    pub(crate) mod press_state;
-    pub(crate) mod input_point;
-
-    pub(crate) mod keyboard;
-    pub(crate) mod mouse;
-    pub(crate) mod touch;
-    pub(crate) mod gamepad;
-}
-
-pub(crate) mod output
-{
-    pub(crate) mod audio_device;
-}
-
-mod window
-{
-    pub(crate) mod window;
-}
-
-mod interface
-{
-    pub(crate) mod main_interface;
-    pub(crate) mod winit;
-    pub(crate) mod gilrs;
-
-
-    pub(crate) mod context;
-    pub(crate) mod app;
-    pub(crate) mod app_dummy;
-}
-
-mod helper
-{
-    pub(crate) mod concurrency
+    pub mod resources
     {
-        pub(crate) mod thread;
-        pub(crate) mod execution_queue;
+        pub mod utilities
+        {
+            pub mod resource_utils;
+        }
+
+        pub mod texture;
+        pub mod sound_source;
+        pub mod mesh_resource;
     }
 
-    pub(crate) mod generic;
-    pub(crate) mod file;
-    pub(crate) mod math;
-    pub(crate) mod image;
-    pub(crate) mod crypto;
-    pub(crate) mod consumable;
-    pub(crate) mod change_tracker;
-    pub(crate) mod platform;
-    pub(crate) mod easing;
-    pub(crate) mod stopwatch;
-    pub(crate) mod asset_path_descriptor;
-    pub(crate) mod option_or_id;
-    pub(crate) mod console_log;
+    pub mod project
+    {
+        pub mod project;
+        pub mod loader;
+    }
+
+
 }
 
-mod resources
+pub mod gui
 {
-    pub(crate) mod resources;
+    // generic egui widgets - also used by scene components for their inspector UI,
+    // so this stays available without the editor
+    pub mod helper
+    {
+        pub mod info_box;
+        pub mod property_items;
+        #[cfg(feature = "editor")]
+        pub mod generic_items;
+    }
+
+    #[cfg(feature = "editor")]
+    pub mod editor
+    {
+        pub mod editor;
+        pub mod editor_state;
+        pub mod editor_project;
+        pub mod project_code;
+        pub mod recent_projects;
+        pub mod settings;
+        pub mod helper;
+        pub mod gizmo;
+        pub mod grid;
+        pub mod box_select;
+        pub mod preview_scene;
+
+        pub mod ui
+        {
+            pub mod helper
+            {
+                pub mod ui_helper;
+            }
+
+            pub mod main_frame;
+            pub mod modals;
+            pub mod dialogs;
+            pub mod export;
+            pub mod statistics;
+            pub mod cameras;
+            pub mod objects;
+            pub mod materials;
+            pub mod lights;
+            pub mod scenes;
+            pub mod scene_tabs;
+            pub mod run_mode_bar;
+            pub mod general;
+            pub mod project;
+            pub mod debug;
+            pub mod textures;
+            pub mod sound;
+            pub mod mesh;
+            pub mod assets;
+            pub mod console;
+            pub mod code_editor;
+            pub mod help;
+        }
+    }
+}
+
+pub mod input
+{
+    pub mod input_manager;
+
+    pub mod press_state;
+    pub mod input_point;
+
+    pub mod keyboard;
+    pub mod mouse;
+    pub mod touch;
+    pub mod gamepad;
+
+    pub mod input_binding;
+}
+
+pub mod output
+{
+    pub mod audio_device;
+}
+
+pub mod window
+{
+    pub mod window;
+}
+
+pub mod interface
+{
+    pub mod main_interface;
+    pub mod winit;
+    pub mod gilrs;
+
+
+    pub mod context;
+    pub mod app;
+    pub mod app_dummy;
+}
+
+pub mod helper
+{
+    pub mod concurrency
+    {
+        pub mod thread;
+        pub mod execution_queue;
+    }
+
+    pub mod generic;
+    pub mod file;
+    pub mod math;
+    pub mod image;
+    pub mod crypto;
+    pub mod consumable;
+    pub mod change_tracker;
+    pub mod platform;
+    pub mod easing;
+    pub mod curve;
+    pub mod stopwatch;
+    pub mod asset_path_descriptor;
+    pub mod option_or_id;
+    pub mod console_log;
+    pub mod observable;
+}
+
+pub mod resources
+{
+    pub mod resources;
 }
 
 #[cfg(target_arch="wasm32")]
 use wasm_bindgen::prelude::*;
 
-#[cfg_attr(target_arch="wasm32", wasm_bindgen(start))]
+// web build of a project with code: the project crate has the start function and calls run_app (build.rs: rustl_external_start)
+#[cfg_attr(all(target_arch="wasm32", not(rustl_external_start)), wasm_bindgen(start))]
 pub fn run()
 {
+    window::window::run();
+}
+
+// crates of the engine api - project code uses them from here, so the versions match
+#[cfg(target_arch = "wasm32")]
+pub use wasm_bindgen;
+pub use nalgebra;
+pub use egui;
+pub use winit;
+pub use wgpu;
+pub use rapier3d;
+pub use parry3d;
+pub use serde;
+pub use serde_json;
+pub use typetag;
+pub use log;
+
+// use rustl::prelude::*;
+pub mod prelude
+{
+    pub use crate::interface::app::App;
+    pub use crate::interface::context::Context;
+    pub use crate::state::state::State;
+    pub use crate::state::scene::scene::Scene;
+    pub use crate::state::scene::node::{Node, NodeItem};
+    pub use crate::state::scene::components::transformation::Transformation;
+    pub use crate::{console_log, console_warning, console_error, console_success, console_debug, component_downcast, component_downcast_mut};
+    pub use nalgebra::{Point2, Point3, Vector2, Vector3, Vector4};
+}
+
+// the wiring of a project app (src/app.rs): rustl::app!(Game::default());
+// the engine shared library in the editor, the factory the editor loads and the start of the web export
+#[macro_export]
+macro_rules! app
+{
+    ($create:expr) =>
+    {
+        #[cfg(feature = "dynamic")]
+        #[allow(unused_imports)]
+        use rustl_dylib as _;
+
+        #[unsafe(no_mangle)]
+        pub fn rustl_create_app() -> Box<dyn $crate::interface::app::App>
+        {
+            Box::new($create)
+        }
+
+        // wasm-bindgen of the engine - the project needs no dependency on it
+        #[cfg(target_arch = "wasm32")]
+        #[$crate::wasm_bindgen::prelude::wasm_bindgen(start, wasm_bindgen = $crate::wasm_bindgen)]
+        pub fn rustl_start()
+        {
+            $crate::run_app(rustl_create_app);
+        }
+    };
+}
+
+// app entry point (for apps with code)
+pub fn run_app(factory: interface::app::AppFactory)
+{
+    interface::app::set_project_app_factory(factory);
     window::window::run();
 }

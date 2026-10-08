@@ -2,48 +2,64 @@
 name = "rustl"
 version = "0.0.1"
 edition = "2024"
+repository = "https://github.com/Bastl34/rustl"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+# crates/rustl_dylib: the engine as shared library - crates/rustl_editor (the editor that loads project code) and the code of projects are workspaces of their own
+[workspace]
+#members = [".", "crates/rustl_dylib", "data/projects/**/code",]
+members = [".", "crates/rustl_dylib"]
+exclude = ["crates/rustl_editor"]
+default-members = ["."]
+
+# editor: set by rustl_dylib only - the editor always runs on the engine as shared library, it builds the code of a project as shared library and loads it
+# without features (cargo run, exports): the game without editor
+[features]
+default = []
+editor = ["dep:rfd", "dep:arboard", "dep:egui_plot", "dep:libloading"]
+
 [dependencies]
-simple_logger = "5.0.0"
-log = "0.4.28"
-cfg-if = "1.0.3"
-wgpu = "27.0.1"
-bytemuck = { version = "1.24.0", features = [ "derive" ] }
+simple_logger = "5.2.0"
+log = "0.4.34"
+cfg-if = "1.0.5"
+wgpu = "30.0.1"
+bytemuck = { version = "1.25.2", features = [ "derive" ] }
 web-time = "1.1.0"
-winit = "0.30.12"
-anyhow = "1.0.100"
-nalgebra = { version = "0.34.1", features = ["serde-serialize"]}
-colored = "3.0.0"
-base64 = "0.22.1"
-strum = "0.27.2"
-strum_macros = "0.27.2"
-rfd = "0.15.4"
-chrono = "0.4.42"
+winit = "0.30.13"
+anyhow = "1.0.104"
+nalgebra = { version = "0.35.0", features = ["serde-serialize", "convert-glam033"] }
+colored = "3.1.1"
+base64 = "0.23.1"
+strum = "0.28.0"
+strum_macros = "0.28.0"
+rfd = { version = "0.17.2", optional = true }
+chrono = "0.4.45"
+urlencoding = "2.1.2"
 
-serde = "1.0.228"
-serde_json = "1.0.145"
-typetag = "0.2.21"
+serde = "1.0.229"
+serde_json = "1.0.151"
+typetag = "0.2.23"
 
-regex = "1.12.1"
+regex = "1.13.1"
 # use lewton for ogg (symphonia-vorbis can not seek or loop properly)
-rodio = { version = "0.21.1", default-features = false, features = ["playback", "mp3", "mp4", "lewton", "wav"] }
-gilrs = { version = "0.11.0", features = ["wgi"]}
+rodio = { version = "0.22.2", default-features = false, features = ["playback", "mp3", "mp4", "lewton", "wav"] }
+gilrs = { version = "0.11.2", default-features = false, features = ["xinput"]}
 take_mut = "0.2.2"
-uuid = {version = "1.18.1", features = ["v4"] }
+uuid = {version = "1.26.1", features = ["v4", "v5"] }
 
-xxhash-rust = { version = "0.8.15", features = [ "xxh3"] }
+xxhash-rust = { version = "0.8.19", features = [ "xxh3"] }
 
-parry3d = "0.25.0"
+parry3d = "0.31.1"
+rapier3d = { version = "0.36.0", default-features = false, features = ["dim3", "f32", "std"] }
 
-arboard = "3.6.1"
+arboard = { version = "3.6.1", optional = true }
 
-tobj = { version = "4.0.3", features = ["async"]}
+tobj = { version = "4.0.5", features = ["async"]}
 
 #gltf = { version = "1.4", features = [
-gltf = { git = "https://github.com/gltf-rs/gltf", features = [
+gltf = { git = "https://github.com/gltf-rs/gltf", rev = "3def30c9caf96f2dbc85238179ea5a6152c5cf22", features = [
   "extras",
   "names",
   "KHR_lights_punctual",
@@ -57,48 +73,61 @@ gltf = { git = "https://github.com/gltf-rs/gltf", features = [
 ]}
 
 # jpeg decoder that image includes uses rayon to speed up the decoding with threads. WASM doesn't support threads currently so we need to disable this so that our code won't crash when we try to load a jpeg on the web.
-image = { version = "0.25.8", default-features = false, features = [ "png", "jpeg", "webp"] }
+image = { version = "0.25.10", default-features = false, features = [ "png", "jpeg", "webp"] }
 # image = "0.24.5"
 
-egui = "0.33.0"
-egui-wgpu = "0.33.0"
-egui_plot = "0.34.0"
-egui_extras = "0.33.0"
-#egui = { git = "https://github.com/emilk/egui", branch = "main"  }
-#egui-wgpu = { git = "https://github.com/emilk/egui", branch = "main" }
-#egui_extras = { git = "https://github.com/emilk/egui", branch = "main" }
-#egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
-
-#[patch.crates-io]
-#egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
-#egui = { git = "https://github.com/emilk/egui", branch = "main" }
+#egui = "0.36.2"
+#egui-wgpu = "0.36.2"
+#egui_plot = { version = "0.37.0", optional = true }
+#egui_extras = { version = "0.36.2", features = ["svg"] }
+# egui from main: egui-winit 0.36.2 does not compile on wasm32, fixed on main (#8516) - back to crates.io with the next egui release
+# main bundles no fonts by default anymore (only eframe turns them on) - without them every glyph is a box
+egui = { git = "https://github.com/emilk/egui", branch = "main", features = ["default_fonts", "monochrome_emoji_fonts"] }
+egui-wgpu = { git = "https://github.com/emilk/egui", branch = "main" }
+egui_extras = { git = "https://github.com/emilk/egui", branch = "main", features = ["svg"] }
+egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = "0.33.0"
-#egui-winit = { git ="https://github.com/emilk/egui", branch = "main" }
-pollster = "0.4.0"
+#egui-winit = "0.36.2"
+egui-winit = { git ="https://github.com/emilk/egui", branch = "main" }
+pollster = "1.0.1"
+libloading = { version = "0.9.0", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
-console_log = "1.0.0"
-reqwest = "0.12.23"
-wgpu = { version = "27.0.1", features = ["webgl"]}
-wasm-bindgen = "0.2.104"
-wasm-bindgen-futures = "0.4.54"
-web-sys = { version = "0.3.81", features = [
+console_log = "1.1.0"
+reqwest = "0.13.5"
+wasm-bindgen = "0.2.129"
+wasm-bindgen-futures = "0.4.79"
+js-sys = "0.3.106"
+# web audio output for cpal
+rodio = { version = "0.22.2", default-features = false, features = ["wasm-bindgen"] }
+
+uuid = { version = "1.26.0", features = ["js", "v5"] }
+getrandom = { version = "0.3.4", features = ["wasm_js"] } # needed for ahash (egui, tobj) - must match the version ahash uses
+web-sys = { version = "0.3.106", features = [
     "Document",
     "Window",
     "Element",
     "Location",
+    "XmlHttpRequest",
+    "XmlHttpRequestResponseType",
+    "console",
 ]}
 wasm_thread = { version = "0.3.3", features = ["es_modules"]}
 
-#egui-winit = { git ="https://github.com/emilk/egui", default-features = false, branch = "main", features = [
-egui-winit = { version = "0.33.0", default-features = false, features = [
+egui-winit = { git ="https://github.com/emilk/egui", default-features = false, branch = "main", features = [
+#egui-winit = { version = "0.36.2", default-features = false, features = [
   "links",
 ]}
 
+# --console for release builds without the editor, they open no console window (src/main.rs)
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_System_Console"] }
+
 [build-dependencies]
 fs_extra = "1.3.0"
-glob = "0.3.3"
-anyhow = "1.0.100"
+glob = "0.3.4"
+anyhow = "1.0.104"
+
+# the profiles and the egui patch are in .cargo/config.toml - the editor copies it into the code of projects, so they build with the same

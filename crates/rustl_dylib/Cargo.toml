@@ -1,0 +1,11 @@
+[package]
+name = "rustl_dylib"
+version = "0.0.1"
+edition = "2024"
+
+# the engine as one shared shared library - the editor (crates/rustl_editor) and the code of every project link against it, so there is only one engine in the process
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+rustl = { path = "../..", features = ["editor"] }

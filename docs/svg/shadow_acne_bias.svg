@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <rect width="760" height="400" fill="#f8fafc" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">Shadow acne and depth bias</text>
+
+  <!-- left panel: acne -->
+  <rect x="30" y="55" width="340" height="290" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="200" y="85" text-anchor="middle" font-size="14" font-weight="700" fill="#b91c1c">without bias</text>
+
+  <!-- surface -->
+  <line x1="60" y1="290" x2="340" y2="170" stroke="#475569" stroke-width="3"/>
+  <text x="175" y="300" text-anchor="middle" font-size="12" fill="#475569">real surface</text>
+
+  <!-- depth texel staircase crossing the surface -->
+  <polyline points="60,282 100,282 100,262 140,262 140,246 180,246 180,228 220,228 220,212 260,212 260,194 300,194 300,178 340,178"
+            fill="none" stroke="#8b5cf6" stroke-width="2.5"/>
+  <text x="60" y="130" font-size="11.5" fill="#7c3aed">stored depth (one value per texel)</text>
+  <line x1="140" y1="138" x2="155" y2="238" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="3 3" opacity="0.7"/>
+
+  <!-- acne stripes where staircase is above surface -->
+  <g stroke="#ef4444" stroke-width="5" stroke-linecap="round">
+    <line x1="104" y1="270" x2="122" y2="262"/>
+    <line x1="146" y1="252" x2="164" y2="245"/>
+    <line x1="186" y1="235" x2="204" y2="227"/>
+    <line x1="228" y1="217" x2="246" y2="210"/>
+    <line x1="268" y1="200" x2="286" y2="192"/>
+  </g>
+  <text x="200" y="322" text-anchor="middle" font-size="12" fill="#b91c1c">texels partially "above" the surface</text>
+  <text x="200" y="339" text-anchor="middle" font-size="12" fill="#b91c1c">→ stripes of self-shadowing (acne)</text>
+
+  <!-- right panel: with bias -->
+  <rect x="390" y="55" width="340" height="290" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="560" y="85" text-anchor="middle" font-size="14" font-weight="700" fill="#047857">with bias</text>
+
+  <line x1="420" y1="290" x2="700" y2="170" stroke="#475569" stroke-width="3"/>
+
+  <!-- staircase pushed below the surface -->
+  <polyline points="420,304 460,304 460,286 500,286 500,270 540,270 540,252 580,252 580,236 620,236 620,218 660,218 660,202 700,202"
+            fill="none" stroke="#8b5cf6" stroke-width="2.5"/>
+
+  <!-- bias arrow -->
+  <line x1="610" y1="212" x2="610" y2="231" stroke="#047857" stroke-width="2.5" marker-end="url(#arrow7)"/>
+  <defs>
+    <marker id="arrow7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#047857"/>
+    </marker>
+  </defs>
+  <text x="628" y="231" font-size="12" font-weight="600" fill="#047857" paint-order="stroke" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round">bias</text>
+
+  <text x="560" y="322" text-anchor="middle" font-size="12" fill="#047857">depth pushed away from the light → clean surface</text>
+  <text x="560" y="339" text-anchor="middle" font-size="11.5" fill="#64748b">too much bias detaches shadows ("peter panning")</text>
+</svg>

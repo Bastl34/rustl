@@ -1,0 +1,13 @@
+[package]
+name = "rustl_editor"
+version = "0.0.1"
+edition = "2024"
+
+# a workspace of its own, like the code of a project: rustl and rustl_dylib are outside of both workspaces
+# cargo identifies a path dependency inside a workspace by its path relative to the workspace - in the engine workspace
+# the engine would be another build than in the workspace of a project, and the project build would replace the shared library the editor runs on
+# built by scripts/dev.mjs (cargo dev) - the Cargo.lock is a copy of the one of the engine
+[workspace]
+
+[dependencies]
+rustl_dylib = { path = "../rustl_dylib" }

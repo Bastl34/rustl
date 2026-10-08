@@ -52,6 +52,44 @@ impl AnimationLayerType
     }
 }
 
+// below this a clip does not turn, and has no reliable turn axis (radians)
+const MIN_TURN_ANGLE: f32 = 0.2;
+
+// first and last rotation key of a rotation channel
+fn get_first_and_last_rotation_key(channel: &Channel) -> (UnitQuaternion<f32>, UnitQuaternion<f32>)
+{
+    let len = channel.transform_rotation.len();
+    let (first, last) = if channel.interpolation == Interpolation::CubicSpline { (1, len - 2) } else { (0, len - 1) };
+
+    let key = |i: usize|
+    {
+        let value = &channel.transform_rotation[i];
+        UnitQuaternion::new_normalize(Quaternion::new(value.w, value.x, value.y, value.z))
+    };
+
+    (key(first), key(last))
+}
+
+// Removes the twist around the axis the clip turns about from its first to its last key.
+fn remove_turn_rotation(channel: &Channel, rotation: UnitQuaternion<f32>) -> UnitQuaternion<f32>
+{
+    let (first, last) = get_first_and_last_rotation_key(channel);
+    let total = last * first.inverse();
+
+    let Some(axis) = total.axis().filter(|_| total.angle() > MIN_TURN_ANGLE) else { return rotation; };
+
+    let delta = rotation * first.inverse();
+    let twist = Quaternion::from_parts(delta.w, axis.into_inner() * delta.imag().dot(&axis));
+
+    if twist.norm() < 1e-6
+    {
+        return rotation;
+    }
+
+    let swing = delta * UnitQuaternion::new_normalize(twist).inverse();
+    swing * first
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Channel
 {
@@ -138,6 +176,10 @@ pub struct Animation
 
     pub in_place_axis: Vector3<bool>,
 
+    // also strip the rotation the clip builds up around its turn axis (turn in place clips)
+    #[serde(default)]
+    pub in_place_rotation: bool,
+
     #[serde(serialize_with = "serialization_helper::serialize_component", deserialize_with = "serialization_helper::deserialize_component")]
     pub sound_component: OptionOrId<ComponentItem>,
 
@@ -183,6 +225,7 @@ impl Default for Animation
             joint_filter: vec![],
             in_place_joint_node: OptionOrId::None,
             in_place_axis: Vector3::new(true, true, true),
+            in_place_rotation: false,
 
             sound_component: OptionOrId::None,
 
@@ -383,7 +426,40 @@ impl Animation
 
     pub fn set_speed(&mut self, speed: f32)
     {
+        if speed == self.speed
+        {
+            return;
+        }
+
         self.speed = speed;
+
+        // the local time is derived from start_time and speed - rebase it, so a running clip does not jump
+        if self.start_time.is_some() && speed > 0.0
+        {
+            self.start_time = Some((self.current_time as f64 - self.current_local_time as f64 * 1000.0 * 1000.0 / speed as f64).max(0.0) as u128);
+        }
+    }
+
+    // how fast the clip turns the in place joint in rad/s, None if it does not turn
+    pub fn get_in_place_turn_speed(&self) -> Option<f32>
+    {
+        let joint_id = self.in_place_joint_node.as_ref()?.read().unwrap().id;
+
+        let channel = self.channels.iter().find(|channel|
+        {
+            !channel.transform_rotation.is_empty() && channel.target.as_ref().map_or(false, |target| target.read().unwrap().id == joint_id)
+        })?;
+
+        let (first, last) = get_first_and_last_rotation_key(channel);
+        let angle = (last * first.inverse()).angle();
+        let duration = channel.timestamps.last()? - channel.timestamps.first()?;
+
+        if duration <= 0.0 || angle < MIN_TURN_ANGLE
+        {
+            return None;
+        }
+
+        Some(angle / duration)
     }
 
     pub fn is_over(&self) -> bool
@@ -462,7 +538,7 @@ impl Animation
     }
 }
 
-fn apply_transformation_to_target(target_map: &mut HashMap<u64, TargetMapItem>, target_id: u64, transform: &(Option<Vector3<f32>>, Option<nalgebra::Unit<Quaternion<f32>>>, Option<Vector3<f32>>))
+fn apply_transformation_to_target(target_map: &mut HashMap<u32, TargetMapItem>, target_id: u32, transform: &(Option<Vector3<f32>>, Option<nalgebra::Unit<Quaternion<f32>>>, Option<Vector3<f32>>))
 {
     // transformation
     if let Some(animation_position) = transform.0
@@ -668,6 +744,7 @@ impl Component for Animation
 
             in_place_joint_node: self.in_place_joint_node.clone(),
             in_place_axis: self.in_place_axis,
+            in_place_rotation: self.in_place_rotation,
 
             easing: self.easing,
             layer_type: self.layer_type.clone(),
@@ -762,7 +839,7 @@ impl Component for Animation
             t = 0.0;
         }
 
-        let mut target_map: HashMap<u64, TargetMapItem> = HashMap::new();
+        let mut target_map: HashMap<u32, TargetMapItem> = HashMap::new();
 
         // ********** reset joints and transforms (if needed) **********
         for channel in &self.channels
@@ -1105,6 +1182,9 @@ impl Component for Animation
                             UnitQuaternion::new_normalize(Quaternion::new(res.w, res.x, res.y, res.z))
                         },
                     };
+
+                    let is_in_place = self.in_place_rotation && self.in_place_joint_node.is_some() && self.in_place_joint_node.clone().unwrap().read().unwrap().id == target_node_id;
+                    let rotation = if is_in_place { remove_turn_rotation(channel, rotation) } else { rotation };
 
                     apply_transformation_to_target(&mut target_map, target_component_id, &(None, Some(rotation), None));
                 }
@@ -1532,6 +1612,8 @@ impl Component for Animation
                 ui.checkbox(&mut self.in_place_axis.y, "y");
                 ui.checkbox(&mut self.in_place_axis.z, "z");
             });
+
+            ui.checkbox(&mut self.in_place_rotation, "Rotation").on_hover_text("strips the rotation the clip builds up from its first to its last key - for turn in place clips, so the controller does the turning");
         });
 
         ui.separator();

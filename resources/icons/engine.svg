@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 24 24" version="1.1" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;">
+    <!-- gear teeth - they reach into the ring so they sit on it as one body -->
+    <path d="M8.95,4.6L9.35,1L14.65,1L15.05,4.6Z" style="fill:white;"/>
+    <path d="M16.88,5.66L20.2,4.21L22.85,8.79L19.93,10.94Z" style="fill:white;"/>
+    <path d="M19.93,13.06L22.85,15.21L20.2,19.79L16.88,18.34Z" style="fill:white;"/>
+    <path d="M15.05,19.4L14.65,23L9.35,23L8.95,19.4Z" style="fill:white;"/>
+    <path d="M7.12,18.34L3.8,19.79L1.15,15.21L4.07,13.06Z" style="fill:white;"/>
+    <path d="M4.07,10.94L1.15,8.79L3.8,4.21L7.12,5.66Z" style="fill:white;"/>
+    <!-- outer ring - wide enough that the triangle keeps clear of it -->
+    <circle cx="12" cy="12" r="7.7" style="fill:none;stroke:white;stroke-width:1.8px;"/>
+    <!-- play triangle in the middle - it reads as "the engine is turning" -->
+    <path d="M10.15,8.55L16,12L10.15,15.45Z" style="fill:white;stroke:white;stroke-width:1.2px;"/>
+</svg>
