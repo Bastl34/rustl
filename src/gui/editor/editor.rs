@@ -89,7 +89,7 @@ impl Editor
                     // default cam
                     {
                         let mut cam = Camera::new("Editor Cam".to_string());
-                        cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                        cam.tags.insert_with_color(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
 
                         cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.2, 0.4, false);
 
@@ -112,8 +112,8 @@ impl Editor
                     // quad cam: Top (top left)
                     {
                         let mut cam = Camera::new("Quad Cam Top (top left)".to_string());
-                        cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
-                        cam.tags.insert_with_color_locked(QUAD_CAM, tags::DEFAULT_RED_COLOR, true);
+                        cam.tags.insert_with_color(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
+                        cam.tags.insert_with_color(QUAD_CAM, tags::DEFAULT_RED_COLOR);
                         cam.enabled = false;
 
                         cam.add_controller_pan(MOUSE_WHEEL_SENSIVITY, MOVE_SPEED, MOVE_SPEED_SHIFT, true);
@@ -137,8 +137,8 @@ impl Editor
                     // quad cam: Front (bottom right)
                     {
                         let mut cam = Camera::new("Quad Cam Front (bottom right)".to_string());
-                        cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
-                        cam.tags.insert_with_color_locked(QUAD_CAM, tags::DEFAULT_RED_COLOR, true);
+                        cam.tags.insert_with_color(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
+                        cam.tags.insert_with_color(QUAD_CAM, tags::DEFAULT_RED_COLOR);
                         cam.enabled = false;
 
                         cam.add_controller_pan(MOUSE_WHEEL_SENSIVITY, MOVE_SPEED, MOVE_SPEED_SHIFT, true);
@@ -162,8 +162,8 @@ impl Editor
                     // quad cam: Right (bottom left)
                     {
                         let mut cam = Camera::new("Quad Cam Right (bottom left)".to_string());
-                        cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
-                        cam.tags.insert_with_color_locked(QUAD_CAM, tags::DEFAULT_RED_COLOR, true);
+                        cam.tags.insert_with_color(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
+                        cam.tags.insert_with_color(QUAD_CAM, tags::DEFAULT_RED_COLOR);
                         cam.enabled = false;
 
                         cam.add_controller_pan(MOUSE_WHEEL_SENSIVITY, MOVE_SPEED, MOVE_SPEED_SHIFT, true);
@@ -186,8 +186,8 @@ impl Editor
                     // quad cam: User / Perspective (top right)
                     {
                         let mut cam = Camera::new("Quad Cam User (top right)".to_string());
-                        cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
-                        cam.tags.insert_with_color_locked(QUAD_CAM, tags::DEFAULT_RED_COLOR, true);
+                        cam.tags.insert_with_color(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
+                        cam.tags.insert_with_color(QUAD_CAM, tags::DEFAULT_RED_COLOR);
                         cam.enabled = false;
 
                         cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2, true);
@@ -215,7 +215,7 @@ impl Editor
 
         let editor_utils = scene.add_empty_node(EDITOR_UTILS_NODE_NAME, None);
         {
-            editor_utils.write().unwrap().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+            editor_utils.write().unwrap().tags.insert_with_color(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
         }
 
         let editor_utils_id = editor_utils.read().unwrap().id;

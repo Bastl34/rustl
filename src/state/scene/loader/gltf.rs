@@ -6,7 +6,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId, stopwatch::StopWatch}, resources::resources::load_binary, state::{resources::{mesh_resource::MeshResource, texture::{Texture, TextureItem}, utilities::resource_utils::load_texture_byte}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureAddressMode, TextureFilterMode, TextureState, TextureType}, mesh::{JOINTS_LIMIT, Mesh}, morph_target::MorphTarget, transformation::Transformation}, light::Light, loader::{asset_container::AssetContainer, loader::LoaderOptions}, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras}}}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId, stopwatch::StopWatch}, resources::resources::load_binary, state::{resources::{mesh_resource::MeshResource, texture::{Texture, TextureItem}, utilities::resource_utils::load_texture_byte}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureAddressMode, TextureFilterMode, TextureState, TextureType}, mesh::{JOINTS_LIMIT, Mesh}, morph_target::MorphTarget, transformation::Transformation}, light::Light, loader::{asset_container::AssetContainer, loader::LoaderOptions}, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras, origin::Origin}}}};
 
 
 const INTERNAL_JSON_INDEX: &str = "__internal_json_index";
@@ -710,23 +710,23 @@ pub fn read_extras(obj_extras: &mut Extras, gltf_extras: Option<&Box<serde_json:
                 {
                     if value.is_boolean()
                     {
-                        obj_extras.insert::<bool>(key.as_str(), value.as_bool().unwrap());
+                        obj_extras.insert_with_origin::<bool>(key.as_str(), value.as_bool().unwrap(), Origin::Asset);
                     }
                     else if value.is_f64()
                     {
-                        obj_extras.insert::<f64>(key.as_str(), value.as_f64().unwrap());
+                        obj_extras.insert_with_origin::<f64>(key.as_str(), value.as_f64().unwrap(), Origin::Asset);
                     }
                     else if value.is_i64()
                     {
-                        obj_extras.insert::<i64>(key.as_str(), value.as_i64().unwrap());
+                        obj_extras.insert_with_origin::<i64>(key.as_str(), value.as_i64().unwrap(), Origin::Asset);
                     }
                     else if value.is_string()
                     {
-                        obj_extras.insert::<String>(key.as_str(), value.as_str().unwrap().to_string());
+                        obj_extras.insert_with_origin::<String>(key.as_str(), value.as_str().unwrap().to_string(), Origin::Asset);
                     }
                     else if value.is_u64()
                     {
-                        obj_extras.insert::<u64>(key.as_str(), value.as_u64().unwrap());
+                        obj_extras.insert_with_origin::<u64>(key.as_str(), value.as_u64().unwrap(), Origin::Asset);
                     }
                     else
                     {

@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
+use crate::state::scene::utilities::origin::Origin;
 use egui::{Color32, RichText, Ui};
 use nalgebra::Vector3;
 
 use crate::console_warning;
 use crate::helper::math::{approx_equal, extract_scale_from_transform};
 use crate::state::scene::components::transformation::Transformation;
-use crate::{component_downcast, gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{fit_hierarchy_heading, hierarchy_button_reserve, hierarchy_eye_button, hierarchy_lock_button, hierarchy_row_spacer, layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::{sleep_millis, spawn_thread}}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem, PhysicsBodyType, PhysicsShape}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
+use crate::{component_downcast, gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{extras_list, fit_hierarchy_heading, property_row, hierarchy_button_reserve, hierarchy_eye_button, hierarchy_lock_button, hierarchy_row_spacer, layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::{sleep_millis, spawn_thread}}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem, PhysicsBodyType, PhysicsShape}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -897,12 +898,12 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             let node = node.read().unwrap();
 
-            ui.label(format!("Name: {}", node.name));
-            ui.label(format!("Id: {}", node.id));
-            ui.label(format!("UUID: {}", node.uuid));
+            property_row(ui, "Name", node.name.as_str());
+            property_row(ui, "Id", node.id.to_string());
+            property_row(ui, "UUID", node.uuid.as_str());
             if let Some(source) = &node.source
             {
-                ui.label(format!("Source: {:?}", source.get_full_descriptor()));
+                property_row(ui, "Source", source.get_full_descriptor());
             }
 
             if let Some(bounding_box_info) = bounding_box_info
@@ -919,11 +920,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         ui.scope(|ui|
         {
             let node = node.read().unwrap();
-
-            for (key, value) in node.extras.iter()
-            {
-                ui.label(format!("⚫ {}: {:?}", key, value));
-            }
+            extras_list(ui, &node.extras);
         });
     });
 
@@ -948,9 +945,9 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                             let color_u8 = Color32::from_rgb((data.color.x * 255.0) as u8, (data.color.y * 255.0) as u8,(data.color.z * 255.0) as u8);
                             label_with_background(ui, tag, color_u8, None);
 
-                            ui.add_enabled_ui(!data.locked, |ui|
+                            ui.add_enabled_ui(data.origin != Origin::Runtime, |ui|
                             {
-                                let hover_text = if data.locked { "locked - can not be deleted via ui" } else { "delete tag" };
+                                let hover_text = if data.origin == Origin::Runtime { "set by code - can not be deleted, not saved" } else { "delete tag" };
 
                                 if ui.button(RichText::new("✖").size(16.0).color(Color32::WHITE)).on_hover_text(hover_text).clicked()
                                 {
@@ -980,7 +977,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                         let mut node = node.write().unwrap();
                         if !editor_state.tag_input.is_empty()
                         {
-                            node.tags.insert(editor_state.tag_input.as_str());
+                            node.tags.insert_with_origin(editor_state.tag_input.as_str(), Origin::Scene);
                             editor_state.tag_input.clear();
                         }
                     }

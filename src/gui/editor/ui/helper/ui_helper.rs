@@ -1,8 +1,74 @@
 use egui::{Color32, RichText};
 
-use crate::{gui::editor::editor_state::EditorState, helper::math::approx_zero, state::scene::layers::{LAYER_USER_COUNT, LAYER_USER_FIRST_BIT}};
+use crate::{gui::editor::editor_state::EditorState, helper::math::approx_zero, state::scene::{layers::{LAYER_USER_COUNT, LAYER_USER_FIRST_BIT}, utilities::{extras::Extras, origin::Origin}}};
 
 const USER_LAYER_BITS_PER_ROW: u32 = 10;
+
+const ORIGIN_COLUMN_WIDTH: f32 = 48.0;
+
+// the width of the key column: a share of the panel, within limits
+fn key_column_width(ui: &egui::Ui) -> f32
+{
+    (ui.available_width() * 0.35).clamp(70.0, 220.0)
+}
+
+// a column of a fixed width in a horizontal row
+fn fixed_column<R>(ui: &mut egui::Ui, width: f32, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> R
+{
+    ui.allocate_ui_with_layout(egui::vec2(width, 0.0), egui::Layout::top_down(egui::Align::Min), |ui|
+    {
+        ui.set_width(width);
+        add_contents(ui)
+    }).inner
+}
+
+/// "key  value" over the whole width - the key is cut with "…", the value wraps (long paths, ids, ...).
+pub fn property_row(ui: &mut egui::Ui, key: impl Into<RichText>, value: impl Into<RichText>)
+{
+    let key_width = key_column_width(ui);
+    ui.horizontal_top(|ui|
+    {
+        fixed_column(ui, key_width, |ui| ui.add(egui::Label::new(key.into()).truncate()));
+        let value_width = ui.available_width();
+        fixed_column(ui, value_width, |ui| ui.add(egui::Label::new(value.into()).wrap()));
+    });
+}
+
+/// The extras of a node or a scene over the whole width: sorted by key, internal ones (leading _) dimmed, long values wrap, origin on the right.
+pub fn extras_list(ui: &mut egui::Ui, extras: &Extras)
+{
+    let mut entries: Vec<_> = extras.iter_with_origin().collect();
+    entries.sort_by(|a, b| a.0.cmp(b.0));
+
+    if entries.is_empty()
+    {
+        ui.label(RichText::new("none").weak());
+        return;
+    }
+
+    let key_width = key_column_width(ui);
+    ui.spacing_mut().item_spacing.y = 0.0;
+    for (i, (key, value, origin)) in entries.into_iter().enumerate()
+    {
+        let fill = if i % 2 == 1 { ui.visuals().faint_bg_color } else { Color32::TRANSPARENT };
+        egui::Frame::new().fill(fill).inner_margin(egui::Margin::symmetric(2, 1)).show(ui, |ui|
+        {
+            ui.set_width(ui.available_width());
+            ui.horizontal_top(|ui|
+            {
+                let key_text = if key.starts_with('_') { RichText::new(key).weak() } else { RichText::new(key) };
+                fixed_column(ui, key_width, |ui| ui.add(egui::Label::new(key_text).truncate()));
+
+                let value_width = (ui.available_width() - ORIGIN_COLUMN_WIDTH - ui.spacing().item_spacing.x).max(40.0);
+                fixed_column(ui, value_width, |ui| ui.add(egui::Label::new(value.to_string()).wrap()));
+
+                let origin_text = RichText::new(origin.name()).small().weak();
+                ui.label(if origin == Origin::Scene { origin_text.color(Color32::from_rgb(110, 170, 255)) } else { origin_text })
+                    .on_hover_text(origin.description());
+            });
+        });
+    }
+}
 
 pub const HIERARCHY_BUTTON_SIZE: egui::Vec2 = egui::vec2(20.0, 18.0);
 pub const HIERARCHY_BUTTON_IMG_SIZE: egui::Vec2 = egui::vec2(18.0, 18.0);

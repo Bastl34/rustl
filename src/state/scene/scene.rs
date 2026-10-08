@@ -812,7 +812,7 @@ impl Scene
         let material = Material::new("default");
 
         let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
-        material_arc.write().unwrap().get_base_mut().tags.insert_with_color_locked(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+        material_arc.write().unwrap().get_base_mut().tags.insert_with_color(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
         self.add_material(&material_arc);
 
         material_arc

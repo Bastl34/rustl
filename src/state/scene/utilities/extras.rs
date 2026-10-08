@@ -1,9 +1,11 @@
 #![allow(dead_code)]
 
-use std::collections::{hash_map::Iter, HashMap};
+use std::collections::HashMap;
 
 use nalgebra::{Vector2, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
+
+use super::origin::Origin;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ExtraType
@@ -22,11 +24,35 @@ pub enum ExtraType
     Vec4(Vector4<f32>),
 }
 
-#[derive(Clone, Serialize, Deserialize, Default)]
+// for the editor: plain values, lists (newline separated strings) on one line
+impl std::fmt::Display for ExtraType
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    {
+        match self
+        {
+            ExtraType::Bool(v) => write!(f, "{v}"),
+            ExtraType::String(v) => write!(f, "\"{}\"", v.lines().collect::<Vec<_>>().join(", ")),
+            ExtraType::Int32(v) => write!(f, "{v}"),
+            ExtraType::Int64(v) => write!(f, "{v}"),
+            ExtraType::UInt32(v) => write!(f, "{v}"),
+            ExtraType::UInt64(v) => write!(f, "{v}"),
+            ExtraType::USize(v) => write!(f, "{v}"),
+            ExtraType::Float32(v) => write!(f, "{v}"),
+            ExtraType::Float64(v) => write!(f, "{v}"),
+            ExtraType::Vec2(v) => write!(f, "({}, {})", v.x, v.y),
+            ExtraType::Vec3(v) => write!(f, "({}, {}, {})", v.x, v.y, v.z),
+            ExtraType::Vec4(v) => write!(f, "({}, {}, {}, {})", v.x, v.y, v.z, v.w),
+        }
+    }
+}
+
+// value + origin per key
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Extras
 {
-    pub extras: HashMap<String, ExtraType>,
+    extras: HashMap<String, (ExtraType, Origin)>,
 }
 
 impl From<bool> for ExtraType
@@ -129,101 +155,92 @@ impl Extras
 {
     pub fn new() -> Extras
     {
-        Extras
-        {
-            extras: HashMap::new()
-        }
+        Extras { extras: HashMap::new() }
     }
 
     pub fn contains(&self, key: &str) -> bool
     {
-        let key = key.to_string();
-        self.extras.contains_key(&key)
+        self.extras.contains_key(key)
     }
 
     pub fn get<'a, T>(&'a self, key: &str) -> Option<&'a T>
     where
-            T: 'static,
+        T: 'static,
     {
-        if let Some(extra) = self.extras.get(key)
+        let (extra, _) = self.extras.get(key)?;
+        match extra
         {
-            match extra
-            {
-                ExtraType::Bool(value) => value as &dyn std::any::Any,
-                ExtraType::String(value) => value as &dyn std::any::Any,
-                ExtraType::Int32(value) => value as &dyn std::any::Any,
-                ExtraType::Int64(value) => value as &dyn std::any::Any,
-                ExtraType::UInt32(value) => value as &dyn std::any::Any,
-                ExtraType::UInt64(value) => value as &dyn std::any::Any,
-                ExtraType::USize(value) => value as &dyn std::any::Any,
-                ExtraType::Float32(value) => value as &dyn std::any::Any,
-                ExtraType::Float64(value) => value as &dyn std::any::Any,
-                ExtraType::Vec2(value) => value as &dyn std::any::Any,
-                ExtraType::Vec3(value) => value as &dyn std::any::Any,
-                ExtraType::Vec4(value) => value as &dyn std::any::Any,
-            }.downcast_ref::<T>()
-        }
-        else
-        {
-            None
-        }
+            ExtraType::Bool(value) => value as &dyn std::any::Any,
+            ExtraType::String(value) => value as &dyn std::any::Any,
+            ExtraType::Int32(value) => value as &dyn std::any::Any,
+            ExtraType::Int64(value) => value as &dyn std::any::Any,
+            ExtraType::UInt32(value) => value as &dyn std::any::Any,
+            ExtraType::UInt64(value) => value as &dyn std::any::Any,
+            ExtraType::USize(value) => value as &dyn std::any::Any,
+            ExtraType::Float32(value) => value as &dyn std::any::Any,
+            ExtraType::Float64(value) => value as &dyn std::any::Any,
+            ExtraType::Vec2(value) => value as &dyn std::any::Any,
+            ExtraType::Vec3(value) => value as &dyn std::any::Any,
+            ExtraType::Vec4(value) => value as &dyn std::any::Any,
+        }.downcast_ref::<T>()
     }
 
     pub fn get_mut<'a, T>(&'a mut self, key: &str) -> Option<&'a mut T>
     where
         T: 'static,
     {
-        if let Some(extra) = self.extras.get_mut(key)
+        let (extra, _) = self.extras.get_mut(key)?;
+        match extra
         {
-            if let Some(value) = match extra
-            {
-                ExtraType::Bool(value) => value as &mut dyn std::any::Any,
-                ExtraType::String(value) => value as &mut dyn std::any::Any,
-                ExtraType::Int32(value) => value as &mut dyn std::any::Any,
-                ExtraType::Int64(value) => value as &mut dyn std::any::Any,
-                ExtraType::UInt32(value) => value as &mut dyn std::any::Any,
-                ExtraType::UInt64(value) => value as &mut dyn std::any::Any,
-                ExtraType::USize(value) => value as &mut dyn std::any::Any,
-                ExtraType::Float32(value) => value as &mut dyn std::any::Any,
-                ExtraType::Float64(value) => value as &mut dyn std::any::Any,
-                ExtraType::Vec2(value) => value as &mut dyn std::any::Any,
-                ExtraType::Vec3(value) => value as &mut dyn std::any::Any,
-                ExtraType::Vec4(value) => value as &mut dyn std::any::Any,
-            }.downcast_mut::<T>()
-            {
-                Some(value)
-            }
-            else
-            {
-                None
-            }
-        }
-        else
-        {
-            None
-        }
+            ExtraType::Bool(value) => value as &mut dyn std::any::Any,
+            ExtraType::String(value) => value as &mut dyn std::any::Any,
+            ExtraType::Int32(value) => value as &mut dyn std::any::Any,
+            ExtraType::Int64(value) => value as &mut dyn std::any::Any,
+            ExtraType::UInt32(value) => value as &mut dyn std::any::Any,
+            ExtraType::UInt64(value) => value as &mut dyn std::any::Any,
+            ExtraType::USize(value) => value as &mut dyn std::any::Any,
+            ExtraType::Float32(value) => value as &mut dyn std::any::Any,
+            ExtraType::Float64(value) => value as &mut dyn std::any::Any,
+            ExtraType::Vec2(value) => value as &mut dyn std::any::Any,
+            ExtraType::Vec3(value) => value as &mut dyn std::any::Any,
+            ExtraType::Vec4(value) => value as &mut dyn std::any::Any,
+        }.downcast_mut::<T>()
     }
 
+    // a new key is runtime, an existing one keeps its origin - so code can change a scene value and it is saved
     pub fn insert<T>(&mut self, key: &str, value: T) where T: Into<ExtraType>,
     {
-        let key = key.to_string();
-        let extra_type = value.into();
-        self.extras.insert(key, extra_type);
+        let origin = self.origin(key).unwrap_or_default();
+        self.extras.insert(key.to_string(), (value.into(), origin));
+    }
+
+    pub fn insert_with_origin<T>(&mut self, key: &str, value: T, origin: Origin) where T: Into<ExtraType>,
+    {
+        self.extras.insert(key.to_string(), (value.into(), origin));
+    }
+
+    pub fn origin(&self, key: &str) -> Option<Origin>
+    {
+        self.extras.get(key).map(|(_, origin)| *origin)
     }
 
     pub fn remove(&mut self, key: &str)
     {
-        let key = key.to_string();
-        self.extras.remove(&key);
+        self.extras.remove(key);
     }
 
-    pub fn iter(&self) -> Iter<'_, String, ExtraType>
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &ExtraType)>
     {
-        self.extras.iter()
+        self.extras.iter().map(|(key, (value, _))| (key, value))
+    }
+
+    pub fn iter_with_origin(&self) -> impl Iterator<Item = (&String, &ExtraType, Origin)>
+    {
+        self.extras.iter().map(|(key, (value, origin))| (key, value, *origin))
     }
 
     // a json value of a project file: bool, number, string or an array of 2 to 4 numbers - false if not supported
-    pub fn insert_json(&mut self, key: &str, value: &serde_json::Value) -> bool
+    pub fn insert_json(&mut self, key: &str, value: &serde_json::Value, origin: Origin) -> bool
     {
         let numbers: Option<Vec<f32>> = value.as_array().map(|a| a.iter().filter_map(|v| v.as_f64()).map(|v| v as f32).collect());
         let extra = match value
@@ -243,14 +260,15 @@ impl Extras
             _ => return false,
         };
 
-        self.extras.insert(key.to_string(), extra);
+        self.extras.insert(key.to_string(), (extra, origin));
         true
     }
 
     // the value as json for a project file, the counterpart of insert_json
     pub fn get_json(&self, key: &str) -> Option<serde_json::Value>
     {
-        Some(match self.extras.get(key)?
+        let (extra, _) = self.extras.get(key)?;
+        Some(match extra
         {
             ExtraType::Bool(v) => serde_json::json!(v),
             ExtraType::String(v) => serde_json::json!(v),

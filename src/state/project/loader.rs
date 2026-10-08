@@ -14,7 +14,8 @@ use crate::helper::file::resolve_relative_path;
 use crate::helper::option_or_id::OptionOrId;
 use crate::resources::resources::{RESOURCE_SCHEME, load_binary, load_string};
 use crate::state::resources::sound_source::SoundSource;
-use crate::state::project::project::{EDITOR_VIEW_EXTRA, SceneObject, SceneObjectOptions, ProjectFile, SceneFile, SceneSound, LoadingGuard, ProjectDoneCallback, ProjectSettings, RESUSE_MATERIALS_TAG, SCENE_EXTRAS_KEYS};
+use crate::state::project::project::{EDITOR_VIEW_EXTRA, SceneObject, SceneObjectOptions, ProjectFile, SceneFile, SceneSound, LoadingGuard, ProjectDoneCallback, ProjectSettings, RESUSE_MATERIALS_TAG};
+use crate::state::scene::utilities::{extras::Extras, origin::Origin};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::component::{ComponentBox, ComponentItem, DeserializationContext};
 use crate::state::scene::components::transformation::Transformation;
@@ -91,6 +92,7 @@ struct PreparedSceneObject
     container: Option<AssetContainer>,
     components: Vec<serde_json::Value>,
     extras: serde_json::Map<String, serde_json::Value>,
+    tags: Vec<String>,
     children: Vec<PreparedSceneObject>,
 }
 
@@ -191,32 +193,26 @@ fn load_editor_object(obj: &SceneObject, base_path: &str, create_mipmaps: bool, 
         container,
         components: obj.components.clone(),
         extras: obj.extras.clone(),
+        tags: obj.tags.clone(),
         children,
     }
 }
 
-// the extras of the scene object onto the node, the keys remembered so the editor saves exactly those again
-fn apply_scene_extras(node_extras: &mut crate::state::scene::utilities::extras::Extras, name: &str, extras: &serde_json::Map<String, serde_json::Value>)
+// the extras of the scene object onto the node - origin scene, so the editor saves them again
+fn apply_scene_extras(node_extras: &mut Extras, name: &str, extras: &serde_json::Map<String, serde_json::Value>)
 {
-    let mut keys = vec![];
     for (key, value) in extras
     {
-        if node_extras.insert_json(key, value)
-        {
-            keys.push(key.as_str());
-        }
-        else
+        if !node_extras.insert_json(key, value, Origin::Scene)
         {
             console_warning!("object '{}': extra '{}' has an unsupported type {:?}", name, key, value);
         }
     }
-    node_extras.insert(SCENE_EXTRAS_KEYS, keys.join("
-"));
 }
 
 fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate::state::scene::node::NodeItem>, object: PreparedSceneObject, pending: &mut PendingComponents)
 {
-    let PreparedSceneObject { uuid, name, options, position, rotation, rotation_quat, scale, source, container, components, extras, children } = object;
+    let PreparedSceneObject { uuid, name, options, position, rotation, rotation_quat, scale, source, container, components, extras, tags, children } = object;
 
     let node: Option<crate::state::scene::node::NodeItem> = match container
     {
@@ -308,6 +304,15 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
     if let Some(node) = node.as_ref().filter(|_| !extras.is_empty())
     {
         apply_scene_extras(&mut node.write().unwrap().extras, &name, &extras);
+    }
+
+    if let Some(node) = node.as_ref()
+    {
+        let mut node = node.write().unwrap();
+        for tag in &tags
+        {
+            node.tags.insert_with_origin(tag, Origin::Scene);
+        }
     }
 
     if let Some(node) = node.as_ref().filter(|_| !components.is_empty())
@@ -476,6 +481,11 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(SceneFil
             if let Some(physics) = editor_scene.physics
             {
                 scene.physics.settings = physics;
+            }
+
+            for tag in &editor_scene.tags
+            {
+                scene.tags.insert_with_origin(tag, Origin::Scene);
             }
 
             if !editor_scene.editor_cameras.is_empty()

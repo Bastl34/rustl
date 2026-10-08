@@ -61,20 +61,20 @@ fn create_preview_scene(state: &mut State)
         scene.active = false;
         scene.visible = false;
 
-        scene.tags.insert_with_color_locked(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
-        scene.tags.insert_with_color_locked(PREVIEW_SCENE_TAG, tags::DEFAULT_RED_COLOR, true);
+        scene.tags.insert_with_color(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
+        scene.tags.insert_with_color(PREVIEW_SCENE_TAG, tags::DEFAULT_RED_COLOR);
 
         // key light
         let key = scene.add_light_directional("preview key light", Point3::<f32>::new(4.0, 6.0, 6.0), Vector3::<f32>::new(-0.5, -0.7, -0.6), Vector3::<f32>::new(1.0, 1.0, 1.0), 2.0);
-        key.borrow_mut().get_mut().tags.insert_with_color_locked(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+        key.borrow_mut().get_mut().tags.insert_with_color(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
 
         // soft ambient fill
         let hemi = scene.add_light_hemispherical("preview ambient", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.2, 0.2, 0.2), 0.6);
-        hemi.borrow_mut().get_mut().tags.insert_with_color_locked(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+        hemi.borrow_mut().get_mut().tags.insert_with_color(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
 
         // camera (framing is refined via align_camera_to_scene once the sphere is loaded)
         let mut cam = Camera::new("preview cam".to_string());
-        cam.tags.insert_with_color_locked(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+        cam.tags.insert_with_color(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
 
         let cam_data = cam.get_data_mut().get_mut();
         cam_data.fovy = 45.0f32.to_radians();
@@ -114,7 +114,7 @@ fn create_preview_scene(state: &mut State)
                 let mut node = node.write().unwrap();
                 if !node.tags.contains(ENGINE_INTERNAL_TAG)
                 {
-                    node.tags.insert_with_color_locked(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                    node.tags.insert_with_color(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
                 }
             }
 
@@ -132,7 +132,7 @@ pub fn create_and_assign_preview_material(scene: &mut Scene) -> Option<MaterialI
     else
     {
         let mut material = Material::new(PREVIEW_MATERIAL_NAME);
-        material.get_base_mut().tags.insert_with_color_locked(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+        material.get_base_mut().tags.insert_with_color(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
 
         let material: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
         scene.add_material(&material);

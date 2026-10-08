@@ -1130,6 +1130,33 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     if (material.unlit_shading != 0u || light_amount == 0)
     {
         color = object_color.rgb;
+
+        // unlit (pre-lit, baked) surfaces still take the shadows of the lights - the darkest one counts
+        if (material.unlit_shading != 0u && material.receive_shadow != 0u)
+        {
+            var shadow = 1.0;
+            for (var i = 0; i < min(light_amount, MAX_LIGHTS); i += 1)
+            {
+                if (lights[i].light_type == 0u || lights[i].light_type == 4u || lights[i].shadow_index < 0)
+                {
+                    continue;
+                }
+
+                // surfaces facing away from the light are skipped like in the lit path (no shadow acne on back sides)
+                var direction_to_light = normalize(lights[i].position.xyz - in.position);
+                if (lights[i].light_type == 1u)
+                {
+                    direction_to_light = -normalize(lights[i].dir.xyz);
+                }
+                if (dot(normal, direction_to_light) <= 0.0)
+                {
+                    continue;
+                }
+
+                shadow = min(shadow, mix(1.0, shadow_factor(i, in.position), lights[i].shadow_strength));
+            }
+            color *= shadow;
+        }
     }
     else
     {

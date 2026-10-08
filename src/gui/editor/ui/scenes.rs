@@ -1,5 +1,6 @@
 use std::mem::swap;
 
+use crate::state::scene::utilities::origin::Origin;
 use egui::{Ui, RichText, Color32};
 
 use crate::{component_downcast, gui::{editor::editor_state::EditorState, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::concurrency::thread::spawn_thread, state::{scene::{components::{material::{Material, TextureType}, mesh::Mesh}, scene::Scene, scene_controller::scene_controller::{ControllerPhase, ControllerUiContext}}, state::State}};
@@ -90,10 +91,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
     {
         ui.scope(|ui|
         {
-            for (key, value) in scene.extras.iter()
-            {
-                ui.label(format!("⚫ {}: {:?}", key, value));
-            }
+            crate::gui::editor::ui::helper::ui_helper::extras_list(ui, &scene.extras);
         });
     });
 
@@ -117,9 +115,9 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
                             let color_u8 = Color32::from_rgb((data.color.x * 255.0) as u8, (data.color.y * 255.0) as u8,(data.color.z * 255.0) as u8);
                             label_with_background(ui, tag, color_u8, None);
 
-                            ui.add_enabled_ui(!data.locked, |ui|
+                            ui.add_enabled_ui(data.origin != Origin::Runtime, |ui|
                             {
-                                let hover_text = if data.locked { "locked - can not be deleted via ui" } else { "delete tag" };
+                                let hover_text = if data.origin == Origin::Runtime { "set by code - can not be deleted, not saved" } else { "delete tag" };
 
                                 if ui.button(RichText::new("✖").size(16.0).color(Color32::WHITE)).on_hover_text(hover_text).clicked()
                                 {
@@ -147,7 +145,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
                     {
                         if !editor_state.tag_input.is_empty()
                         {
-                            scene.tags.insert(editor_state.tag_input.as_str());
+                            scene.tags.insert_with_origin(editor_state.tag_input.as_str(), Origin::Scene);
                             editor_state.tag_input.clear();
                         }
                     }

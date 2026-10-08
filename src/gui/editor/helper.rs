@@ -382,7 +382,7 @@ pub fn set_internal_tag_for_utils_nodes(scene: &mut Scene)
     for node in all_child_nodes
     {
         let mut node = node.write().unwrap();
-        node.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+        node.tags.insert_with_color(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
 
         // materials
         {
@@ -390,12 +390,12 @@ pub fn set_internal_tag_for_utils_nodes(scene: &mut Scene)
             for material in materials
             {
                 component_downcast_mut!(material, Material);
-                material.get_base_mut().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                material.get_base_mut().tags.insert_with_color(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
 
                 // textures
                 for tex in material.get_all_textures()
                 {
-                    tex.write().unwrap().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                    tex.write().unwrap().tags.insert_with_color(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
                 }
             }
         }
@@ -408,7 +408,7 @@ pub fn set_internal_tag_for_utils_nodes(scene: &mut Scene)
                 component_downcast_mut!(mesh, Mesh);
                 if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
                 {
-                    mesh_resource.write().unwrap().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                    mesh_resource.write().unwrap().tags.insert_with_color(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
                 }
             }
         }
@@ -421,7 +421,7 @@ pub fn set_internal_tag_for_utils_nodes(scene: &mut Scene)
                 component_downcast_mut!(sound, Sound);
                 if let Some(sound_source) = sound.sound_source.as_ref()
                 {
-                    sound_source.write().unwrap().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                    sound_source.write().unwrap().tags.insert_with_color(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR);
                 }
             }
         }
