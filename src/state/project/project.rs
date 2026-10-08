@@ -14,6 +14,10 @@ pub const EDITOR_VIEW_EXTRA: &str = "editor_view";
 /// Node extra flag: reuse already loaded materials with the same name instead of duplicating them.
 pub const RESUSE_MATERIALS_TAG: &str = "reuse_materials_by_name";
 
+/// Node extra: the keys of the extras that came from the scene file, newline separated - only those are saved again.
+/// The extras of the asset (glTF) stay in the asset, so a re-exported asset is not overridden by an old copy.
+pub const SCENE_EXTRAS_KEYS: &str = "_scene_extras";
+
 const PROJECT_FILE_VERSION: &str = "1.0.0";
 
 pub type ProjectDoneCallback = Option<Box<dyn FnOnce(&mut State) + Send + Sync + 'static>>;
@@ -253,6 +257,10 @@ pub struct SceneObject
     // components added in the editor (sounds, ...) - serde of the runtime types, parsed one by one
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub components: Vec<serde_json::Value>,
+
+    // node extras (game data of converters, ...): bool, number, string or an array of 2 to 4 numbers
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub extras: serde_json::Map<String, serde_json::Value>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objects: Vec<SceneObject>,

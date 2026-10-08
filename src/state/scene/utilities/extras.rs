@@ -221,4 +221,49 @@ impl Extras
     {
         self.extras.iter()
     }
+
+    // a json value of a project file: bool, number, string or an array of 2 to 4 numbers - false if not supported
+    pub fn insert_json(&mut self, key: &str, value: &serde_json::Value) -> bool
+    {
+        let numbers: Option<Vec<f32>> = value.as_array().map(|a| a.iter().filter_map(|v| v.as_f64()).map(|v| v as f32).collect());
+        let extra = match value
+        {
+            serde_json::Value::Bool(v) => ExtraType::Bool(*v),
+            serde_json::Value::String(v) => ExtraType::String(v.clone()),
+            serde_json::Value::Number(n) if n.is_i64() => ExtraType::Int64(n.as_i64().unwrap()),
+            serde_json::Value::Number(n) if n.is_u64() => ExtraType::UInt64(n.as_u64().unwrap()),
+            serde_json::Value::Number(n) => ExtraType::Float64(n.as_f64().unwrap_or_default()),
+            serde_json::Value::Array(a) => match numbers.as_deref()
+            {
+                Some([x, y]) if a.len() == 2 => ExtraType::Vec2(Vector2::new(*x, *y)),
+                Some([x, y, z]) if a.len() == 3 => ExtraType::Vec3(Vector3::new(*x, *y, *z)),
+                Some([x, y, z, w]) if a.len() == 4 => ExtraType::Vec4(Vector4::new(*x, *y, *z, *w)),
+                _ => return false,
+            },
+            _ => return false,
+        };
+
+        self.extras.insert(key.to_string(), extra);
+        true
+    }
+
+    // the value as json for a project file, the counterpart of insert_json
+    pub fn get_json(&self, key: &str) -> Option<serde_json::Value>
+    {
+        Some(match self.extras.get(key)?
+        {
+            ExtraType::Bool(v) => serde_json::json!(v),
+            ExtraType::String(v) => serde_json::json!(v),
+            ExtraType::Int32(v) => serde_json::json!(v),
+            ExtraType::Int64(v) => serde_json::json!(v),
+            ExtraType::UInt32(v) => serde_json::json!(v),
+            ExtraType::UInt64(v) => serde_json::json!(v),
+            ExtraType::USize(v) => serde_json::json!(v),
+            ExtraType::Float32(v) => serde_json::json!(v),
+            ExtraType::Float64(v) => serde_json::json!(v),
+            ExtraType::Vec2(v) => serde_json::json!([v.x, v.y]),
+            ExtraType::Vec3(v) => serde_json::json!([v.x, v.y, v.z]),
+            ExtraType::Vec4(v) => serde_json::json!([v.x, v.y, v.z, v.w]),
+        })
+    }
 }

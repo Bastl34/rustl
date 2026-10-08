@@ -17,7 +17,7 @@ use crate::gui::editor::editor_state::EditorState;
 use crate::gui::editor::project_code;
 use crate::resources::resources::{self, RESOURCE_SCHEME};
 use crate::state::project::loader::{apply_editor_project, apply_editor_scene, load_editor_project};
-use crate::state::project::project::{AudioSettings, SceneObject, SceneObjectOptions, ProjectFile, ProjectFileFormat, ProjectSceneRef, SceneFile, SceneSettings, SceneSound, ProjectSettings, RESUSE_MATERIALS_TAG};
+use crate::state::project::project::{AudioSettings, SceneObject, SceneObjectOptions, ProjectFile, ProjectFileFormat, ProjectSceneRef, SceneFile, SceneSettings, SceneSound, ProjectSettings, RESUSE_MATERIALS_TAG, SCENE_EXTRAS_KEYS};
 use crate::state::resources::sound_source::SoundSourceItem;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::scene_controller::scene_controller::SceneControllerBox;
@@ -209,6 +209,11 @@ fn extract_node(node_item: &crate::state::scene::node::NodeItem, path: &str) -> 
         })
         .collect();
 
+    // only the extras that came from the scene file - the ones of the asset stay in the asset
+    let extras = node.extras.get::<String>(SCENE_EXTRAS_KEYS)
+        .map(|keys| keys.lines().filter_map(|key| node.extras.get_json(key).map(|value| (key.to_string(), value))).collect())
+        .unwrap_or_default();
+
     let objects = node.nodes.iter()
         .filter_map(|child| extract_node(child, path))
         .collect();
@@ -224,6 +229,7 @@ fn extract_node(node_item: &crate::state::scene::node::NodeItem, path: &str) -> 
         rotation_quat,
         scale,
         components,
+        extras,
         objects,
     })
 }

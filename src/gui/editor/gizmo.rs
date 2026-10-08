@@ -999,7 +999,9 @@ pub fn update_gizmo_transforms_and_visibility(editor_state: &mut EditorState, st
     };
 
     // pick the active camera (the one the pointer is over), fallback to the perspective cam
-    let mut camera = scene.cameras.iter().find(|c| scene.is_camera_active(c, run_mode) && c.get_data().projection_type == CameraProjectionType::Perspective).unwrap();
+    let camera = scene.cameras.iter().find(|c| scene.is_camera_active(c, run_mode) && c.get_data().projection_type == CameraProjectionType::Perspective)
+        .or_else(|| scene.get_active_camera(run_mode));
+    let Some(mut camera) = camera else { return; };
     if let Some(pointer_pos) = pointer_pos
     {
         camera = scene.cameras.iter().find(|c| scene.is_camera_active(c, run_mode) && c.is_point_in_viewport(&pointer_pos)).unwrap_or(camera);
