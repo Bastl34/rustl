@@ -114,24 +114,15 @@ impl EGui
         let viewports = &mut *self.viewports.borrow_mut();
         viewports.renderer.update_buffers(device, queue, encoder, &clipped_primitives, &self.screen_descriptor);
 
-        let mut textures_delta = std::mem::take(&mut viewports.pending_textures_delta);
-
-        for (tex_id, img_deltas) in &textures_delta.set
-        {
-            for img_delta in img_deltas
-            {
-                viewports.renderer.update_texture(&device, &queue, *tex_id, img_delta);
-            }
-        }
-
-        for tex_id in &textures_delta.free
-        {
-            viewports.renderer.free_texture(tex_id);
-        }
-
-        textures_delta.clear();
+        viewports.apply_pending_textures();
 
         clipped_primitives
+    }
+
+    // play mode: the main window paints no ui, but pending uploads/frees must not pile up
+    pub fn flush_textures(&mut self)
+    {
+        self.viewports.borrow_mut().apply_pending_textures();
     }
 
     pub fn resize(&mut self, width: u32, height: u32, scale_factor: Option<f64>)
@@ -270,6 +261,15 @@ pub struct EGuiViewports
     max_texture_side: usize,
 }
 
+impl Drop for EGuiViewports
+{
+    fn drop(&mut self)
+    {
+        // shutdown: unapplied deltas don't matter anymore (egui asserts on dropping a non-empty delta)
+        self.pending_textures_delta.clear();
+    }
+}
+
 impl EGuiViewports
 {
     pub fn new(renderer: egui_wgpu::Renderer, device: wgpu::Device, queue: wgpu::Queue, max_texture_side: usize) -> Self
@@ -289,6 +289,27 @@ impl EGuiViewports
             queue,
             max_texture_side,
         }
+    }
+
+    // uploads and frees all pending texture changes - call only after every window of this frame is rendered
+    pub fn apply_pending_textures(&mut self)
+    {
+        let mut textures_delta = std::mem::take(&mut self.pending_textures_delta);
+
+        for (tex_id, img_deltas) in &textures_delta.set
+        {
+            for img_delta in img_deltas
+            {
+                self.renderer.update_texture(&self.device, &self.queue, *tex_id, img_delta);
+            }
+        }
+
+        for tex_id in &textures_delta.free
+        {
+            self.renderer.free_texture(tex_id);
+        }
+
+        textures_delta.clear();
     }
 
     // window positions/sizes of all viewports - each pass gets all of them to map positions between the windows

@@ -739,6 +739,10 @@ impl MainInterface
                         // gpu time of the egui pass (read back from the previous frame)
                         state.stats.gpu_egui_time = self.context.egui.gpu_render_time();
                     }
+                    else
+                    {
+                        self.context.egui.flush_textures();
+                    }
                     state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
                 }
             }

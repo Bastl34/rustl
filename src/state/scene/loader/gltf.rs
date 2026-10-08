@@ -624,9 +624,10 @@ fn read_node(gltf_node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_pat
                 scene_node.parent = OptionOrId::Some(parent_node.clone());
             }
 
-            // extras
+            // extras - the material ones first (surface hints of converters), the node ones win on the same key
             {
                 let mut scene_node = node_arc.write().unwrap();
+                read_extras(&mut scene_node.extras, primitive.material().extras().as_ref());
                 read_extras(&mut scene_node.extras, gltf_node.extras().as_ref());
             }
 
