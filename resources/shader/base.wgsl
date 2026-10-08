@@ -88,18 +88,20 @@ struct VertexInput
 
     @location(6) joints: vec4<u32>,
     @location(7) weights: vec4<f32>,
+
+    @location(8) color: vec4<f32>,
 };
 
 struct InstanceInput
 {
-    @location(8) model_matrix_0: vec4<f32>,
-    @location(9) model_matrix_1: vec4<f32>,
-    @location(10) model_matrix_2: vec4<f32>,
-    @location(11) model_matrix_3: vec4<f32>,
+    @location(9) model_matrix_0: vec4<f32>,
+    @location(10) model_matrix_1: vec4<f32>,
+    @location(11) model_matrix_2: vec4<f32>,
+    @location(12) model_matrix_3: vec4<f32>,
 
-    @location(12) color: vec4<f32>,
-    @location(13) highlight: f32,
-    @location(14) locked: f32,
+    @location(13) color: vec4<f32>,
+    @location(14) highlight: f32,
+    @location(15) locked: f32,
 };
 
 struct VertexOutput
@@ -403,6 +405,10 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     out.model_rotation = rotation_to_quat(normalize(model_matrix[0].xyz), normalize(model_matrix[1].xyz), normalize(model_matrix[2].xyz));
 
     out.color = instance.color;
+    if (material.vertex_colors != 0u)
+    {
+        out.color *= model.color;
+    }
     out.highlight = instance.highlight;
     out.locked = instance.locked;
 
@@ -464,6 +470,8 @@ struct MaterialUniform
     shadow_softness: f32,
 
     no_fog: u32,
+
+    vertex_colors: u32, // struct size gets rounded up to 16 bytes (matches the rust side padding)
 };
 
 @group(0) @binding(0) var<uniform> material: MaterialUniform;
@@ -1366,7 +1374,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     }
 
     // alpha
-    var alpha = in.color.a * object_color.a * material.alpha;
+    // object_color already contains in.color (instance + vertex color)
+    var alpha = object_color.a * material.alpha;
     if (has_alpha_texture())
     {
         let tex_color = sample_material_texture(tex_alpha, tex_alpha_sampler, in, TEXTURE_INDEX_ALPHA);

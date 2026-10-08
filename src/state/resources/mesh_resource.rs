@@ -58,6 +58,9 @@ pub struct MeshResourceData
     pub normals_indices: Vec<[u32; 3]>,
 
     #[serde(skip, default)]
+    pub colors: Vec<[f32; 4]>, // vertex colors (COLOR_0) - empty means white
+
+    #[serde(skip, default)]
     pub joints: Vec<[u32; JOINTS_LIMIT]>,
     #[serde(skip, default)]
     pub weights: Vec<[f32; JOINTS_LIMIT]>,
@@ -91,6 +94,8 @@ impl MeshResourceData
 
         self.normals.clear();
         self.normals_indices.clear();
+
+        self.colors.clear();
 
         self.joints.clear();
         self.weights.clear();
@@ -170,6 +175,8 @@ impl Default for MeshResource
                 normals: vec![],
                 normals_indices: vec![],
 
+                colors: vec![],
+
                 joints: vec![],
                 weights: vec![],
 
@@ -230,6 +237,8 @@ impl MeshResource
 
                 normals: normals,
                 normals_indices: normals_indices,
+
+                colors: vec![],
 
                 joints: vec![],
                 weights: vec![],
@@ -354,6 +363,7 @@ impl MeshResource
             let uvs_1 = source.uvs_1.clone();
             let uvs_2 = source.uvs_2.clone();
             let uvs_3 = source.uvs_3.clone();
+            let colors = source.colors.clone();
             let joints = source.joints.clone();
             let weights = source.weights.clone();
             let morph_target_positions = source.morph_target_positions.clone();
@@ -365,6 +375,8 @@ impl MeshResource
             data.uvs_1 = uvs_1;
             data.uvs_2 = uvs_2;
             data.uvs_3 = uvs_3;
+
+            data.colors = colors;
 
             data.joints = joints;
             data.weights = weights;
@@ -544,6 +556,11 @@ impl MeshResource
             bytes.extend_from_slice(cast_slice(tri));
         }
 
+        for color in &mesh_data.colors
+        {
+            bytes.extend_from_slice(cast_slice(color));
+        }
+
         for joint in &mesh_data.joints
         {
             bytes.extend_from_slice(cast_slice(joint));
@@ -633,6 +650,14 @@ impl MeshResource
             data.normals_indices.push([i0, i1, i2]);
         }
 
+        // vertex colors - pad the side without colors with white so they stay aligned to the vertices
+        if !data.colors.is_empty() || !mesh_data.colors.is_empty()
+        {
+            data.colors.resize(vertices_offset as usize, [1.0; 4]);
+            data.colors.extend(&mesh_data.colors);
+            data.colors.resize(data.vertices.len(), [1.0; 4]);
+        }
+
         let vertices_vec3: Vec<Vec3> = data.vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
         let mesh_res = TriMesh::new(vertices_vec3, data.indices.clone());
         let mesh = match mesh_res
@@ -664,6 +689,8 @@ impl MeshResource
         let cloned_normals;
         let cloned_normals_indices;
 
+        let cloned_colors;
+
         {
             let data = self.get_data();
 
@@ -678,6 +705,8 @@ impl MeshResource
 
             cloned_normals = data.normals.clone();
             cloned_normals_indices = data.indices.clone();
+
+            cloned_colors = data.colors.clone();
         }
 
         {
@@ -722,6 +751,8 @@ impl MeshResource
                 data.uvs_1.extend(&cloned_uvs_2);
                 data.uvs_2.extend(&cloned_uvs_3);
                 data.uvs_3.extend(&cloned_uvs_4);
+
+                data.colors.extend(&cloned_colors);
 
                 for i in &cloned_uv_indices
                 {
@@ -834,6 +865,8 @@ impl MeshResource
 
         ui.label(format!(" ⚫ normals: {}", data.normals.len()));
         ui.label(format!(" ⚫ normals_indices: {}", data.normals_indices.len()));
+
+        ui.label(format!(" ⚫ colors: {}", data.colors.len()));
 
         ui.label(format!(" ⚫ joints: {}", data.joints.len()));
         ui.label(format!(" ⚫ weights: {}", data.weights.len()));
