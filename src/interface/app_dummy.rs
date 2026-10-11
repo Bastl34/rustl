@@ -737,6 +737,7 @@ impl App for AppDummy
     {
         let state = &mut *(context.state.borrow_mut());
 
+        /*
         // ********** sound on collision **********
         // the sound resources of the scene by name (exports), else the ones from resourcesLocal
         let sound_by_name = |name: &str| state.resources.sound_sources.values().find(|source| source.read().unwrap().name == name).cloned();
@@ -780,6 +781,7 @@ impl App for AppDummy
                 state.play_one_shot_sound_source(source, volume);
             }
         }
+        */
 
         // ********** scene cycling **********
         if state.scenes.len() > 1

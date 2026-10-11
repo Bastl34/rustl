@@ -22,6 +22,13 @@ use super::{scene_controller::{ControllerUiContext, SceneController}, vehicle::{
 
 const EARTH_GRAVITY: f32 = 9.81;
 
+// the pull of the scene, m/s² - earth when it has none
+fn scene_gravity(physics: &PhysicsWorld) -> f32
+{
+    let gravity = physics.settings.gravity.norm();
+    if gravity > 0.01 { gravity } else { EARTH_GRAVITY }
+}
+
 // the wheel name search - the exclude keeps the steering wheel and the spare wheel out
 const WHEEL_NAME_REGEX: &str = r"(?i)(wheel|tire|tyre|reifen|felge|rim\b|(^|[ _.:-])rad([ _.:-]|$))";
 const WHEEL_NAME_EXCLUDE_REGEX: &str = r"(?i)(steer|lenk|spare|reserve|ersatz)";
@@ -84,6 +91,23 @@ const CHASE_MIN_DISTANCE: f32 = 2.0;
 
 // m/s - below it the travel direction is too shaky for the camera, twice as fast it counts fully
 const SLIDE_FOLLOW_MIN_SPEED: f32 = 2.0;
+
+// a contact counts as a wall below this normal.y - steeper is ground or ceiling
+const WALL_NORMAL_MAX_Y: f32 = 0.5;
+// 1/s the heading turns along a wall at full wall slide, per radian it is off
+const WALL_ALIGN_RATE: f32 = 6.0;
+// s the heading keeps turning along a wall after the body left it - the turn the hit gave would swing it away
+const WALL_MEMORY: f32 = 0.3;
+// steering below this share leaves the heading to the wall slide
+const WALL_STEER_FREE: f32 = 0.1;
+
+// m/s the body slides along something at for the full scrape sound
+const SCRAPE_FULL_SPEED: f32 = 15.0;
+
+// the chase camera lifts along the vehicle up while a wheel touches or it stands upright like this (up.y) - else along the world up
+const CAMERA_VEHICLE_UP_MIN: f32 = 0.5;
+// 1/s the camera up turns between the two
+const CAMERA_UP_RATE: f32 = 4.0;
 
 // slip angle of a wheel, degrees: the normal few degrees of a fast corner are not sliding yet - from here it squeals and marks, fully at the second
 const SLIDE_MIN_ANGLE: f32 = 10.0;
@@ -280,7 +304,13 @@ pub struct VehicleChassisSettings
     pub center_of_mass_height: f32, // auto: share of the chassis height, from its bottom
     pub center_of_mass: Vector3<f32>, // chassis space, m
 
-    pub friction: f32,
+    // auto: a box of the chassis size - wheels far outside a narrow body (monster trucks) need more around the roll axis
+    #[serde(default = "default_true")]
+    pub inertia_auto: bool,
+    #[serde(default)]
+    pub inertia: Vector3<f32>, // kg m² around the chassis x, y, z axes
+
+    pub friction: f32, // of the body against anything - the lower of the two counts
     pub restitution: f32,
     pub linear_damping: f32,
     pub angular_damping: f32,
@@ -300,6 +330,10 @@ pub struct VehicleChassisSettings
     // m the edges of the collision body are rounded by - a hard edge catches on every ramp start and loop entry
     #[serde(default = "default_rounding")]
     pub rounding: f32,
+
+    // 0..1 while the body touches a wall: no roll or pitch, the heading turns along the wall - it scrapes along instead of tipping over
+    #[serde(default)]
+    pub wall_slide: f32,
 }
 
 fn default_min_clearance() -> f32 { 1.0 }
@@ -318,6 +352,9 @@ impl Default for VehicleChassisSettings
             center_of_mass_height: 0.3,
             center_of_mass: Vector3::zeros(),
 
+            inertia_auto: true,
+            inertia: Vector3::zeros(),
+
             friction: 0.5,
             restitution: 0.1,
             linear_damping: 0.0,
@@ -327,6 +364,7 @@ impl Default for VehicleChassisSettings
             wheel_bumpers: false,
             sloped_ends: true,
             rounding: default_rounding(),
+            wall_slide: 0.0,
         }
     }
 }
@@ -526,6 +564,8 @@ pub struct VehicleCameraSettings
     pub distance_auto: bool,
     pub distance: f32,
     pub height: f32, // above the chassis center
+    #[serde(default = "default_cam_pitch")]
+    pub pitch: f32, // degrees above the horizon at the start and after the cockpit view
 
     pub follow: bool, // swing in behind while driving
     pub follow_speed: f32, // 1/s
@@ -540,6 +580,7 @@ pub struct VehicleCameraSettings
 }
 
 fn default_slide_follow() -> f32 { 0.8 }
+fn default_cam_pitch() -> f32 { DEFAULT_CAM_PITCH }
 
 impl Default for VehicleCameraSettings
 {
@@ -552,6 +593,7 @@ impl Default for VehicleCameraSettings
             distance_auto: true,
             distance: 7.0,
             height: 1.0,
+            pitch: DEFAULT_CAM_PITCH,
 
             follow: true,
             follow_speed: 3.0,
@@ -870,39 +912,60 @@ struct VehicleInput
 
 // ********** controller **********
 
+// missing fields take the defaults - a tool can write just the node, the auto setup does the rest
 #[derive(Serialize, Deserialize)]
 pub struct VehicleController
 {
+    #[serde(default = "default_base")]
     base: SceneControllerBase,
 
+    #[serde(default)]
     pub node_name: String,
+    #[serde(default)]
     pub cam_name: String,
 
+    #[serde(default)]
     pub vehicle_type: VehicleType,
+    #[serde(default)]
     pub forward_axis: VehicleForward,
+    #[serde(default)]
     pub drive: VehicleDrive,
 
     // measured by the auto setup - None means it never ran
+    #[serde(default)]
     pub frame: Option<VehicleFrame>,
 
+    #[serde(default)]
     pub wheels: Vec<VehicleWheel>,
 
+    #[serde(default)]
     pub chassis: VehicleChassisSettings,
+    #[serde(default)]
     pub suspension: VehicleSuspensionSettings,
+    #[serde(default)]
     pub tires: VehicleTireSettings,
+    #[serde(default)]
     pub steering: VehicleSteeringSettings,
+    #[serde(default)]
     pub brakes: VehicleBrakeSettings,
+    #[serde(default)]
     pub drift: VehicleDriftSettings,
+    #[serde(default)]
     pub balance: VehicleBalanceSettings,
+    #[serde(default)]
     pub tracks: VehicleTrackSettings,
+    #[serde(default)]
     pub engine: EngineSettings,
+    #[serde(default)]
     pub camera: VehicleCameraSettings,
     #[serde(default)]
     pub seats: Vec<VehicleSeat>,
     // older scenes had one driver entry - moved into the seats after loading
     #[serde(default, skip_serializing, rename = "driver")]
     legacy_driver: Option<VehicleSeat>,
+    #[serde(default)]
     pub recover: VehicleRecoverSettings,
+    #[serde(default)]
     pub sound: VehicleSoundSettings,
     #[serde(default)]
     pub tire_marks: TireMarkSettings,
@@ -911,7 +974,7 @@ pub struct VehicleController
     #[serde(default)]
     pub hitch: VehicleHitchSettings,
 
-    #[serde(serialize_with = "serialize_node", deserialize_with = "deserialize_node")]
+    #[serde(default, serialize_with = "serialize_node", deserialize_with = "deserialize_node")]
     pub node: OptionOrId<NodeItem>,
 
     #[serde(default, serialize_with = "serialize_node", deserialize_with = "deserialize_node")]
@@ -958,6 +1021,12 @@ pub struct VehicleController
     #[serde(skip, default)]
     orbit_idle_time: f32, // since the mouse last orbited the camera
     #[serde(skip, default)]
+    camera_up: Option<Vector3<f32>>, // world space, the chase camera height goes along it
+    #[serde(skip, default)]
+    last_wall: Option<(Vector3<f32>, f32)>, // flat normal towards the wall and the time since it was touched
+    #[serde(skip, default)]
+    scrape: f32, // 0..1, how fast the body slides along what it touches
+    #[serde(skip, default)]
     chase_controller: Option<CameraControllerBox>, // waits here while the cockpit controller is on the camera
 
     #[serde(skip, default)]
@@ -980,6 +1049,11 @@ pub struct VehicleController
     telemetry: VehicleTelemetry,
 }
 
+fn default_base() -> SceneControllerBase
+{
+    SceneControllerBase::new("Vehicle Controller".to_string(), "🚗".to_string())
+}
+
 impl Drop for VehicleController
 {
     fn drop(&mut self)
@@ -994,7 +1068,7 @@ impl VehicleController
     {
         let mut controller = VehicleController
         {
-            base: SceneControllerBase::new("Vehicle Controller".to_string(), "🚗".to_string()),
+            base: default_base(),
 
             node_name: "".to_string(),
             cam_name: "".to_string(),
@@ -1043,6 +1117,9 @@ impl VehicleController
             lean_goal: 0.0,
             upside_down_time: 0.0,
             orbit_idle_time: 0.0,
+            camera_up: None,
+            last_wall: None,
+            scrape: 0.0,
             chase_controller: None,
 
             steering_runtime: None,
@@ -1239,6 +1316,18 @@ impl VehicleController
         None
     }
 
+    // the chase camera again from the current camera settings - after code changed distance, height or pitch
+    pub fn reset_chase_camera(&mut self, scene: &mut Scene)
+    {
+        let Some(node) = self.node.as_ref().cloned() else { return; };
+        let controller = self.new_chase_controller(&node);
+        if let Some(cam) = scene.get_game_camera_mut(&self.cam_name)
+        {
+            cam.controller = Some(Box::new(controller));
+        }
+        self.chase_controller = None;
+    }
+
     // starts behind the vehicle
     fn new_chase_controller(&self, node: &NodeItem) -> TargetRotationController
     {
@@ -1250,7 +1339,7 @@ impl VehicleController
 
         let mut controller = TargetRotationController::default();
         controller.data.get_mut().alpha = alpha;
-        controller.data.get_mut().beta = DEFAULT_CAM_PITCH.to_radians();
+        controller.data.get_mut().beta = self.camera.pitch.to_radians();
         controller.data.get_mut().radius = self.camera.distance;
         controller.follow_smoothing = 0.03;
         controller.follow_smoothing_vertical = 0.08;
@@ -1544,7 +1633,12 @@ impl VehicleController
     fn collect_chassis_points(&mut self, node: &NodeItem, to_chassis: &Matrix4<f32>, wheel_ids: &HashSet<u32>, driver_ids: &HashSet<u32>)
     {
         let skip: HashSet<u32> = wheel_ids.union(driver_ids).copied().collect();
-        let meshes = Self::mesh_bounds(node, to_chassis, &skip);
+
+        // parts switched off for collision stay out (aerials, a visible body next to its hull) - unless that leaves nothing
+        let mut no_collision = skip.clone();
+        no_collision.extend(Scene::list_all_child_nodes(&node.read().unwrap().nodes).iter().filter(|part| !part.read().unwrap().settings.collision).map(|part| part.read().unwrap().id));
+        let colliding = Self::mesh_bounds(node, to_chassis, &no_collision);
+        let meshes = if colliding.is_empty() { Self::mesh_bounds(node, to_chassis, &skip) } else { colliding };
 
         self.chassis_parts = meshes.into_values().map(|(_, points)| points).collect();
         self.chassis_points = self.chassis_parts.concat();
@@ -1735,6 +1829,7 @@ impl VehicleController
         let volume = factor * factor * factor;
 
         self.chassis.mass *= volume;
+        self.chassis.inertia *= volume * factor * factor;
 
         self.suspension.rest_length *= factor;
         self.suspension.travel *= factor;
@@ -1754,6 +1849,12 @@ impl VehicleController
         self.engine.max_torque *= volume;
 
         self.mark_physics_dirty();
+    }
+
+    // the chassis points of the setup, chassis space (min, max)
+    pub fn chassis_bounds(&self) -> Option<(Vector3<f32>, Vector3<f32>)>
+    {
+        self.chassis_bounds
     }
 
     // the length of the set up vehicle along its forward axis, m
@@ -2007,13 +2108,20 @@ impl VehicleController
             };
         }
 
-        // a box of the chassis size is close enough for the inertia
-        self.principal_inertia = Vector3::new
-        (
-            mass / 12.0 * (extent.y * extent.y + extent.z * extent.z),
-            mass / 12.0 * (extent.x * extent.x + extent.z * extent.z),
-            mass / 12.0 * (extent.x * extent.x + extent.y * extent.y)
-        );
+        // a box of the chassis size is close enough for the inertia - unless it is set
+        self.principal_inertia = if !self.chassis.inertia_auto && self.chassis.inertia.min() > 0.0
+        {
+            self.chassis.inertia
+        }
+        else
+        {
+            Vector3::new
+            (
+                mass / 12.0 * (extent.y * extent.y + extent.z * extent.z),
+                mass / 12.0 * (extent.x * extent.x + extent.z * extent.z),
+                mass / 12.0 * (extent.x * extent.x + extent.y * extent.y)
+            )
+        };
 
         let chassis = VehicleChassisDesc
         {
@@ -2031,9 +2139,10 @@ impl VehicleController
         };
 
         let wheel_amount = self.wheels.len().max(1) as f32;
-        self.sag = if self.suspension.keep_ride_height { (EARTH_GRAVITY / (wheel_amount * self.suspension.stiffness.max(0.01))).min(self.suspension.travel) } else { 0.0 };
+        let gravity = scene_gravity(&scene.physics);
+        self.sag = if self.suspension.keep_ride_height { (gravity / (wheel_amount * self.suspension.stiffness.max(0.01))).min(self.suspension.travel) } else { 0.0 };
 
-        let tuning = self.wheel_tuning(mass);
+        let tuning = self.wheel_tuning(mass, gravity);
 
         let wheels: Vec<VehicleWheelDesc> = self.wheels.iter().map(|wheel| VehicleWheelDesc
         {
@@ -2061,7 +2170,7 @@ impl VehicleController
         }).collect()
     }
 
-    fn wheel_tuning(&self, mass: f32) -> WheelTuning
+    fn wheel_tuning(&self, mass: f32, gravity: f32) -> WheelTuning
     {
         WheelTuning
         {
@@ -2071,7 +2180,7 @@ impl VehicleController
             max_suspension_travel: self.suspension.travel,
             side_friction_stiffness: self.tires.side_grip,
             friction_slip: self.tires.grip,
-            max_suspension_force: mass * EARTH_GRAVITY * self.suspension.max_force_factor,
+            max_suspension_force: mass * gravity * self.suspension.max_force_factor,
         }
     }
 
@@ -2337,7 +2446,8 @@ impl VehicleController
     }
 
     // rotation: the pose the node shows this frame, the camera must not use the last physics step instead
-    fn update_camera(&mut self, scene: &mut Scene, io: &mut InputOutput, rotation: &UnitQuaternion<f32>, speed: f32, lateral_left: f32, input: &VehicleInput, dt: f32)
+    // grounded: a wheel touches - in a loop the vehicle up still counts, on the roof the world up
+    fn update_camera(&mut self, scene: &mut Scene, io: &mut InputOutput, rotation: &UnitQuaternion<f32>, speed: f32, lateral_left: f32, grounded: bool, input: &VehicleInput, dt: f32)
     {
         let Some(frame) = self.frame else { return; };
 
@@ -2402,14 +2512,24 @@ impl VehicleController
             let Some(cam) = scene.get_game_camera_mut(&self.cam_name) else { return; };
             let Some(controller) = cam.controller.as_mut().and_then(|controller| controller.as_any_mut().downcast_mut::<TargetRotationController>()) else { return; };
 
+            // on the roof the vehicle up points into the ground - the camera and its collision ray would start below the track
+            let vehicle_up = rotation * frame.up;
+            let wanted_up = if grounded || vehicle_up.y > CAMERA_VEHICLE_UP_MIN { vehicle_up } else { Vector3::y() };
+            let camera_up = match self.camera_up
+            {
+                Some(up) => (up + (wanted_up - up) * (1.0 - (-CAMERA_UP_RATE * dt).exp())).try_normalize(0.001).unwrap_or(wanted_up),
+                None => wanted_up,
+            };
+            self.camera_up = Some(camera_up);
+
             let center = self.chassis_bounds.map(|(min, max)| (min + max) * 0.5).unwrap_or_else(Vector3::zeros);
-            controller.data.get_mut().offset = rotation * (center + frame.up * self.camera.height);
+            controller.data.get_mut().offset = rotation * center + camera_up * self.camera.height;
 
             if restored
             {
                 let data = controller.data.get_mut();
                 data.alpha = behind;
-                data.beta = DEFAULT_CAM_PITCH.to_radians();
+                data.beta = self.camera.pitch.to_radians();
 
                 // its smoothing still trails where the vehicle was when the cockpit came on
                 controller.apply_to_camera(node, &mut cam.data);
@@ -2467,6 +2587,7 @@ impl VehicleController
             engine_load: self.engine_state.load,
             idling,
             squeal,
+            scrape: self.scrape,
             speed,
             limiter: self.engine_state.rpm >= self.engine.max_rpm * 0.99,
             electric: self.engine.engine_type == super::vehicle::engine::EngineType::Electric,
@@ -2880,7 +3001,8 @@ impl SceneController for VehicleController
         // ********** camera **********
         if !self.vehicle_type.is_trailer()
         {
-            self.update_camera(scene, io, &rotation, speed, lateral_left, &input, dt);
+            let grounded = telemetry_wheels.iter().any(|wheel| wheel.contact);
+            self.update_camera(scene, io, &rotation, speed, lateral_left, grounded, &input, dt);
         }
 
         // ********** sound **********
@@ -2945,6 +3067,7 @@ impl VehicleController
     {
         let frame = *frame;
         let fixed_dt = physics.settings.fixed_timestep.max(0.0001);
+        let gravity = scene_gravity(physics);
 
         // ********** read the body **********
         let (rotation, linvel, angvel, contacts, side_torque) =
@@ -2993,7 +3116,7 @@ impl VehicleController
         if self.balance.enabled && speed.abs() > ASSIST_MIN_SPEED
         {
             let wheelbase = self.wheelbase(&frame).max(0.3);
-            max_angle = max_angle.min((wheelbase * EARTH_GRAVITY * self.balance.max_lean.to_radians().tan() / (speed * speed)).atan());
+            max_angle = max_angle.min((wheelbase * gravity * self.balance.max_lean.to_radians().tan() / (speed * speed)).atan());
         }
 
         if input.steer_analog
@@ -3077,7 +3200,7 @@ impl VehicleController
 
             if behind > 0.0 && height > 0.0
             {
-                drive_force = drive_force.min(self.chassis.mass * EARTH_GRAVITY * behind / height * WHEELIE_MARGIN);
+                drive_force = drive_force.min(self.chassis.mass * gravity * behind / height * WHEELIE_MARGIN);
             }
         }
 
@@ -3209,7 +3332,7 @@ impl VehicleController
         if self.balance.enabled
         {
             let wheelbase = self.wheelbase(&frame).max(0.3);
-            let target = if speed.abs() > ASSIST_MIN_SPEED { (speed * speed * steer_angle.tan() / (wheelbase * EARTH_GRAVITY)).atan() * self.balance.lean_factor } else { 0.0 };
+            let target = if speed.abs() > ASSIST_MIN_SPEED { (speed * speed * steer_angle.tan() / (wheelbase * gravity)).atan() * self.balance.lean_factor } else { 0.0 };
             let target = target.clamp(-self.balance.max_lean.to_radians(), self.balance.max_lean.to_radians());
 
             // eases in at the end instead of stopping at once, which would make the lean overshoot
@@ -3225,7 +3348,7 @@ impl VehicleController
             let ground = self.wheels.iter().map(|wheel| wheel.center.dot(&frame.up) - wheel.radius).sum::<f32>() / wheel_amount;
             let height = (self.chassis.center_of_mass.dot(&frame.up) - ground).max(0.0);
             let grounded = contacts.iter().filter(|contact| contact.contact).count() as f32 / wheel_amount;
-            let tipping = mass * EARTH_GRAVITY * height * lean.sin() * grounded;
+            let tipping = mass * gravity * height * lean.sin() * grounded;
 
             torque_world += lean_axis * (inertia_along(&lean_axis) * (self.balance.stiffness * (self.lean_goal - lean) + self.balance.damping * (goal_rate - roll_rate)) - tipping);
         }
@@ -3242,13 +3365,27 @@ impl VehicleController
             torque_world += up_world * (inertia_along(&up_world) * self.tracks.turn_assist * (wanted - current) - scrub);
         }
 
+        // ********** scraping **********
+        // the fastest slide at a contact of the last step - the wheels are rays and never count
+        let scraping = physics.contacts_of(node_id)
+            .filter(|contact| contact.started() || contact.touching())
+            .map(|contact| (contact.relative_velocity - contact.normal * contact.relative_velocity.dot(&contact.normal)).norm())
+            .fold(0.0, f32::max);
+        self.scrape = (scraping / SCRAPE_FULL_SPEED).min(1.0);
+
+        // ********** wall slide **********
+        if self.chassis.wall_slide > 0.0
+        {
+            self.slide_along_walls(physics, node_id, &forward_world, dt);
+        }
+
         // ********** recover **********
         self.upside_down_time = if up_world.y < UPSIDE_DOWN_DOT { self.upside_down_time + dt } else { 0.0 };
         let recover = input.recover || (self.recover.auto && self.upside_down_time > self.recover.delay);
 
         // ********** write the physics **********
         {
-            let tuning = self.wheel_tuning(mass);
+            let tuning = self.wheel_tuning(mass, gravity);
 
             // the springs carry what rests on them through the couplings too - same ride height and damping as alone
             let load = physics.vehicle_load_factor(node_id);
@@ -3299,6 +3436,67 @@ impl VehicleController
         Some(DriveState { speed, lateral_left, steer_angle: wheel_angle, brake, wheelspin: self.wheelspin, lean, lean_target, telemetry_wheels })
     }
 
+    // The body touches a wall: the roll and pitch it got from the hit are taken away, the heading turns along the wall, nothing goes into it.
+    fn slide_along_walls(&mut self, physics: &mut PhysicsWorld, node_id: u32, forward_world: &Vector3<f32>, dt: f32)
+    {
+        // the walls of the last step, from the body towards the wall, flat - other vehicles and characters are rammed, not slid along
+        let normals: Vec<Vector3<f32>> = physics.contacts_of(node_id)
+            .filter(|contact| (contact.started() || contact.touching()) && contact.normal.y.abs() < WALL_NORMAL_MAX_Y)
+            .filter(|contact| !matches!(contact.other, ContactTarget::Vehicle { .. } | ContactTarget::Character { .. }))
+            .filter_map(|contact| Vector3::new(contact.normal.x, 0.0, contact.normal.z).try_normalize(0.001))
+            .collect();
+        let touching = normals.iter().sum::<Vector3<f32>>().try_normalize(0.001);
+
+        self.last_wall = match (touching, self.last_wall)
+        {
+            (Some(wall), _) => Some((wall, 0.0)),
+            (None, Some((wall, time))) if time + dt < WALL_MEMORY => Some((wall, time + dt)),
+            _ => None,
+        };
+        let Some((wall, _)) = self.last_wall else { return; };
+
+        // any steering is the driver's turn - in a curve the car steers into the wall it scrapes along
+        let steering = self.steer.abs() > WALL_STEER_FREE;
+
+        let Some((_, body)) = physics.vehicle_mut(node_id) else { return; };
+        let slide = self.chassis.wall_slide.clamp(0.0, 1.0);
+        let mut linvel = Vector3::new(body.linvel().x, body.linvel().y, body.linvel().z);
+        let mut angvel = Vector3::new(body.angvel().x, body.angvel().y, body.angvel().z);
+        let flat = Vector3::new(forward_world.x, 0.0, forward_world.z);
+
+        // only the yaw stays - the hit below the center of mass rolls the vehicle over the wall
+        let yaw = Vector3::y() * angvel.y;
+        angvel = yaw + (angvel - yaw) * (1.0 - slide);
+
+        if touching.is_some()
+        {
+            // nothing into the wall - the speed along it stays
+            let into = linvel.dot(&wall);
+            if into > 0.0
+            {
+                linvel -= wall * into * slide;
+            }
+        }
+
+        // away from the wall only as fast as the heading takes it - the rest is the bounce of the hit
+        let heading_out = (linvel.dot(forward_world) * -flat.dot(&wall)).max(0.0);
+        let out = -linvel.dot(&wall);
+        if out > heading_out
+        {
+            linvel += wall * (out - heading_out) * slide;
+        }
+
+        // the heading turns to the wall direction it points along more - also back, the hit swings it past
+        if let (Some(along), false) = ((flat - wall * flat.dot(&wall)).try_normalize(0.001), steering)
+        {
+            let off = flat.normalize().cross(&along).y.clamp(-1.0, 1.0).asin();
+            angvel.y += (off * WALL_ALIGN_RATE - angvel.y) * slide;
+        }
+
+        body.set_linvel(Vector::new(linvel.x, linvel.y, linvel.z), true);
+        body.set_angvel(Vector::new(angvel.x, angvel.y, angvel.z), true);
+    }
+
     fn wheelbase(&self, frame: &VehicleFrame) -> f32
     {
         let along: Vec<f32> = self.wheels.iter().map(|wheel| wheel.center.dot(&frame.forward)).collect();
@@ -3323,7 +3521,10 @@ impl VehicleController
 
         let upright = UnitQuaternion::from_matrix(&(world_basis * chassis_basis.transpose()));
 
-        let pose = Pose::from_parts(Vector::new(position.x, position.y + self.recover.lift, position.z), Rotation::from_xyzw(upright.i, upright.j, upright.k, upright.w));
+        // out of the walls first, then the lift - lifted first it can land on top of the wall it leaned on
+        let pose = Pose::from_parts(position, Rotation::from_xyzw(upright.i, upright.j, upright.k, upright.w));
+        let mut pose = physics.free_vehicle_pose(node_id, pose);
+        pose.translation.y += self.recover.lift;
         physics.place_vehicle(node_id, pose);
 
         self.engine_state.reset(&self.engine);
@@ -3543,6 +3744,13 @@ impl VehicleController
                 dirty |= vector_edit(ui, "Center Of Mass", "chassis space, m", &mut self.chassis.center_of_mass);
             }
 
+            dirty |= ui.checkbox(&mut self.chassis.inertia_auto, "Auto Inertia").on_hover_text("a box of the chassis size - wheels far outside a narrow body need more inertia around the roll axis, or the springs make it shake").changed();
+
+            if !self.chassis.inertia_auto
+            {
+                dirty |= vector_edit(ui, "Inertia", "kg m² around the chassis x, y, z axes", &mut self.chassis.inertia);
+            }
+
             dirty |= slider(ui, "Friction", "of the body against walls and other objects", &mut self.chassis.friction, 0.0..=2.0, 2);
             dirty |= slider(ui, "Restitution", "", &mut self.chassis.restitution, 0.0..=1.0, 2);
             dirty |= slider(ui, "Linear Damping", "", &mut self.chassis.linear_damping, 0.0..=2.0, 2);
@@ -3550,6 +3758,7 @@ impl VehicleController
             dirty |= slider(ui, "Min Ground Clearance", "share of the wheel radius the collision body stays above the wheel bottom - a body reaching down to the ground catches on every ramp edge", &mut self.chassis.min_clearance, 0.0..=2.0, 2);
             dirty |= slider(ui, "Edge Rounding", "m the edges of the collision body are rounded by - they slide up a ramp start or a loop entry instead of catching on it. The body keeps its outer size", &mut self.chassis.rounding, 0.0..=1.0, 2);
             dirty |= ui.checkbox(&mut self.chassis.sloped_ends, "Sloped Ends").on_hover_text("the collision bottom rises above the axles in front of the front and behind the rear axle - the approach and departure angle of a real car, so the nose does not catch on ramps and loop entries").changed();
+            slider(ui, "Wall Slide", "while the body touches a wall: 0 = only physics, 1 = no roll or pitch, the heading turns along the wall - it scrapes along instead of tipping over", &mut self.chassis.wall_slide, 0.0..=1.0, 2);
             dirty |= ui.checkbox(&mut self.chassis.wheel_bumpers, "Wheel Bumpers").on_hover_text("frictionless balls at the wheels - the wheel rays only see an edge once the wheel is above it, the balls slide the vehicle up over curbs and ramps").changed();
         });
 
@@ -3697,6 +3906,7 @@ impl VehicleController
                 ui.checkbox(&mut self.camera.distance_auto, "Auto Distance").on_hover_text("from the vehicle size, on the next auto setup");
                 slider(ui, "Distance", "chase camera, used by the setup - scroll to change it while driving", &mut self.camera.distance, 1.0..=50.0, 1);
                 slider(ui, "Height", "above the chassis center", &mut self.camera.height, -2.0..=10.0, 2);
+                slider(ui, "Pitch", "degrees above the horizon at the start", &mut self.camera.pitch, -10.0..=80.0, 1);
                 ui.checkbox(&mut self.camera.follow, "Swing In Behind").on_hover_text("the camera turns behind the vehicle while driving forward");
                 slider(ui, "Follow Speed", "1/s", &mut self.camera.follow_speed, 0.1..=15.0, 1);
                 slider(ui, "Follow Delay", "s after orbiting with the mouse or stick", &mut self.camera.follow_delay, 0.0..=10.0, 1);
@@ -3934,7 +4144,7 @@ impl VehicleController
                     self.sound.engine_layers.push(EngineSoundLayer { sound: OptionOrId::None, rpm: 3000.0, load: 1.0 });
                 }
 
-                for (label, hint, sound, prefix) in [("Squeal: ", "the tires sliding sideways or locked by the brakes", &mut self.sound.squeal, "Squeal "), ("Road: ", "rolling noise, rises with the speed", &mut self.sound.road, "Road ")]
+                for (label, hint, sound, prefix) in [("Squeal: ", "the tires sliding sideways or locked by the brakes", &mut self.sound.squeal, "Squeal "), ("Road: ", "rolling noise, rises with the speed", &mut self.sound.road, "Road "), ("Scrape: ", "the body sliding along a wall, the ground or another vehicle - louder and higher the faster", &mut self.sound.scrape, "Scrape ")]
                 {
                     ui.horizontal(|ui|
                     {
@@ -3942,6 +4152,8 @@ impl VehicleController
                         sound_component_combo(ui, format!("vehicle_sound_{}", label), sound, &components, sources, node.as_ref(), prefix);
                     });
                 }
+
+                ui.checkbox(&mut self.sound.electric_fade, "Electric Fade").on_hover_text("an electric motor fades under the road noise above walking pace, like a real one - off keeps it audible (toys, games)");
             });
         }
 

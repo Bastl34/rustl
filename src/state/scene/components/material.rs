@@ -669,12 +669,24 @@ impl Material
 
     pub fn has_transparency(&self) -> bool
     {
+        // the shader forces alpha 1 for opaque and discards below the cutoff for mask - only blend is see-through
+        if self.get_data().blend_mode != BlendMode::Blend
+        {
+            return false;
+        }
+
         if self.has_alpha_texture_transparency()
         {
             return true;
         }
 
         !approx_equal(self.get_data().alpha, 1.0)
+    }
+
+    // cut out by the alpha test (mask) - solid, but the depth pre-pass has no alpha test and would close its holes
+    pub fn is_alpha_tested(&self) -> bool
+    {
+        self.get_data().blend_mode == BlendMode::Mask && self.has_alpha_texture_transparency()
     }
 
     // transparency driven by a texture (alpha texture or base texture alpha channel)

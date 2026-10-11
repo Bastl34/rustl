@@ -9,6 +9,7 @@ todo:
  * move editor to extra crate
  * null engine
  * PBR
+ * LODs
 
 done:
  * winit + wgpu update

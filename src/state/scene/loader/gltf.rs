@@ -6,7 +6,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId, stopwatch::StopWatch}, resources::resources::load_binary, state::{resources::{mesh_resource::MeshResource, texture::{Texture, TextureItem}, utilities::resource_utils::load_texture_byte}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureAddressMode, TextureFilterMode, TextureState, TextureType}, mesh::{JOINTS_LIMIT, Mesh}, morph_target::MorphTarget, transformation::Transformation}, light::Light, loader::{asset_container::AssetContainer, loader::LoaderOptions}, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras, origin::Origin}}}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId, stopwatch::StopWatch}, resources::resources::load_binary, state::{resources::{mesh_resource::MeshResource, texture::{Texture, TextureItem}, utilities::resource_utils::load_texture_byte}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureAddressMode, TextureFilterMode, TextureState, TextureType}, mesh::{JOINTS_LIMIT, Mesh}, morph_target::MorphTarget, transformation::Transformation}, light::Light, loader::{asset_container::AssetContainer, loader::LoaderOptions}, node::{Node, NodeItem, PhysicsBodyType, PhysicsShape}, scene::Scene, utilities::{extras::Extras, origin::Origin}}}};
 
 
 const INTERNAL_JSON_INDEX: &str = "__internal_json_index";
@@ -644,6 +644,7 @@ fn read_node(gltf_node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_pat
                 let mut scene_node = node_arc.write().unwrap();
                 read_extras(&mut scene_node.extras, primitive.material().extras().as_ref());
                 read_extras(&mut scene_node.extras, gltf_node.extras().as_ref());
+                apply_settings_extras(&mut scene_node);
             }
 
             console_log!("{} - {} ({}) (mesh {})", " ".repeat(level * 2), name.as_str(), node_index, mesh_name);
@@ -681,6 +682,7 @@ fn read_node(gltf_node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_pat
             {
                 let mut scene_node = scene_node.write().unwrap();
                 read_extras(&mut scene_node.extras, gltf_node.extras().as_ref());
+                apply_settings_extras(&mut scene_node);
             }
 
             Node::add_node(parent_node.clone(), scene_node.clone());
@@ -738,6 +740,50 @@ pub fn read_extras(obj_extras: &mut Extras, gltf_extras: Option<&Box<serde_json:
     }
 }
 
+// node settings from reserved extras - converters set visibility, collision and physics per node
+pub fn apply_settings_extras(node: &mut Node)
+{
+    let flag = |key: &str| node.extras.get::<bool>(key).copied();
+    let number = |key: &str| node.extras.get::<f64>(key).copied().or_else(|| node.extras.get::<i64>(key).map(|v| *v as f64)).map(|v| v as f32);
+    let text = |key: &str| node.extras.get::<String>(key).map(|v| v.to_lowercase());
+
+    let (visible, collision, camera_collision) = (flag("rustl_visible"), flag("rustl_collision"), flag("rustl_camera_collision"));
+    let (friction, restitution, density) = (number("rustl_friction"), number("rustl_restitution"), number("rustl_density"));
+    let (combine_children, react_on_first_hit) = (flag("rustl_combine_children"), flag("rustl_react_on_first_hit"));
+
+    let body_type = text("rustl_body_type").and_then(|value| match value.as_str()
+    {
+        "static" => Some(PhysicsBodyType::Static),
+        "dynamic" => Some(PhysicsBodyType::Dynamic),
+        "kinematic" => Some(PhysicsBodyType::Kinematic),
+        _ => { console_warning!("extras: unknown rustl_body_type '{}'", value); None },
+    });
+    let shape = text("rustl_shape").and_then(|value| match value.as_str()
+    {
+        "auto" => Some(PhysicsShape::Auto),
+        "trimesh" => Some(PhysicsShape::TriMesh),
+        "convex_hull" => Some(PhysicsShape::ConvexHull),
+        "convex_decomposition" => Some(PhysicsShape::ConvexDecomposition),
+        "box" => Some(PhysicsShape::Box),
+        "sphere" => Some(PhysicsShape::Sphere),
+        "capsule" => Some(PhysicsShape::Capsule),
+        _ => { console_warning!("extras: unknown rustl_shape '{}'", value); None },
+    });
+
+    if let Some(visible) = visible { node.settings.visible = visible; }
+    if let Some(collision) = collision { node.settings.collision = collision; }
+    if let Some(camera_collision) = camera_collision { node.settings.camera_collision = camera_collision; }
+
+    let physics = &mut node.settings.physics;
+    if let Some(body_type) = body_type { physics.body_type = body_type; }
+    if let Some(shape) = shape { physics.shape = shape; }
+    if let Some(combine_children) = combine_children { physics.combine_children = combine_children; }
+    if let Some(density) = density { physics.density = density; }
+    if let Some(friction) = friction { physics.friction = friction; }
+    if let Some(restitution) = restitution { physics.restitution = restitution; }
+    if let Some(react_on_first_hit) = react_on_first_hit { physics.react_on_first_hit = react_on_first_hit; }
+}
+
 pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, animations: Animations<'_>, buffers: &Vec<gltf::buffer::Data>)
 {
     let all_nodes = Scene::list_all_child_nodes(&root_node.read().unwrap().nodes);
@@ -758,29 +804,27 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, animations: Animations
             let target = channel.target();
             let target_node_index = target.node().index();
 
-            let mut target_node = None;
+            // find the target nodes - a mesh with several primitives is a node per primitive, the channel moves all of them
+            let target_nodes: Vec<NodeItem> = all_nodes.iter().filter(|node| node.read().unwrap().extras.get::<usize>(INTERNAL_JSON_INDEX) == Some(&target_node_index)).cloned().collect();
 
-            // find target node
-            for node in &all_nodes
-            {
-                if let Some(json_index) = node.read().unwrap().extras.get::<usize>(INTERNAL_JSON_INDEX)
-                {
-                    if *json_index == target_node_index
-                    {
-                        target_node = Some(node.clone());
-                        break;
-                    }
-                }
-            }
-
-            if target_node.is_none()
+            if target_nodes.is_empty()
             {
                 dbg!("can not find target node");
                 continue;
             }
 
-            let target_node = target_node.unwrap();
-            target_map.insert(target_node.read().unwrap().id, target_node.clone());
+            for target_node in &target_nodes
+            {
+                target_map.insert(target_node.read().unwrap().id, target_node.clone());
+
+                // a node at the identity got no transformation - the animation needs one to write into
+                if target_node.read().unwrap().find_component::<Transformation>().is_none()
+                {
+                    let identity = Transformation::new("Transform", Vector3::zeros(), Vector3::zeros(), Vector3::new(1.0, 1.0, 1.0));
+                    target_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(identity))));
+                }
+            }
+            let target_node = target_nodes[0].clone();
 
             let mut animation_channel = Channel::new(target_node);
 
@@ -841,6 +885,12 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, animations: Animations
                 }
             };
 
+            for other in &target_nodes[1..]
+            {
+                let mut channel = animation_channel.clone();
+                channel.target = OptionOrId::Some(other.clone());
+                animation_component.channels.push(channel);
+            }
             animation_component.channels.push(animation_channel);
         }
 
@@ -1582,6 +1632,17 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, loaded_textures: &Vec<(
 
 fn set_texture_name(texture: Arc<RwLock<Box<Texture>>>, material_name: String, resource_name: String, texture_type: TextureType)
 {
+    let linear = !texture_type.is_srgb();
+
+    // cached textures may already be live in another scene: no write lock if nothing changes
+    {
+        let texture = texture.read().unwrap();
+        if texture.name != "unknown" && texture.get_data().linear == linear
+        {
+            return;
+        }
+    }
+
     let mut texture = texture.write().unwrap();
 
     if texture.name == "unknown"
@@ -1599,7 +1660,6 @@ fn set_texture_name(texture: Arc<RwLock<Box<Texture>>>, material_name: String, r
     }
 
     // mark the texture as linear (data) or sRGB (color) depending on the slot it is assigned to
-    let linear = !texture_type.is_srgb();
     if texture.get_data().linear != linear
     {
         texture.get_data_mut().get_mut().linear = linear;

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use parry3d::bounding_volume::{Aabb, BoundingVolume};
 use parry3d::mass_properties::MassProperties;
 use parry3d::query::DefaultQueryDispatcher;
-use parry3d::shape::{Shape, TypedShape};
+use parry3d::shape::{Shape, TriMeshFlags, TypedShape};
 use rapier3d::prelude::*;
 use rapier3d::control::{DynamicRayCastVehicleController, WheelTuning};
 
@@ -153,6 +153,10 @@ pub struct PhysicsWorldSettings
     // never counts that way, whatever is stacked on top, and 1.0 is a drop from about 5 cm.
     #[serde(default = "default_hit_speed")]
     pub hit_speed: f32,
+
+    // mesh colliders look at the neighbour triangles for contacts - without, something sliding along a wall or floor is bumped at every triangle edge
+    #[serde(default)]
+    pub smooth_mesh_edges: bool,
 }
 
 fn default_solver_iterations() -> usize { 8 }
@@ -194,6 +198,7 @@ impl Default for PhysicsWorldSettings
 
             solver_iterations: default_solver_iterations(),
             hit_speed: default_hit_speed(),
+            smooth_mesh_edges: false,
         }
     }
 }
@@ -680,6 +685,10 @@ pub struct HitchEntry
 }
 
 // a torn off pair stays without contacts this long - the drawbar still sits in the tow vehicle's body, s
+// a recovered vehicle steps out of walls: share of its size per step, steps at most
+const FREE_POSE_STEP: f32 = 0.05;
+const FREE_POSE_ROUNDS: usize = 40;
+
 const HITCH_RELEASE_TIME: f32 = 0.5;
 
 // s the hitch force is smoothed over - a single step spike, e.g. a landing, does not tear the trailer off
@@ -1322,7 +1331,7 @@ impl PhysicsWorld
     }
 
     // reads the node mesh and bakes the scale into the shape
-    fn build_shape(node: &NodeItem, scale: &Vector3<f32>) -> Option<SharedShape>
+    fn build_shape(node: &NodeItem, scale: &Vector3<f32>, smooth_edges: bool) -> Option<SharedShape>
     {
         let shape_kind = Self::resolved_shape_kind(node);
 
@@ -1335,12 +1344,12 @@ impl PhysicsWorld
             (node.name.clone(), node.id)
         };
 
-        Self::shape_from_geometry(shape_kind, vertices, indices, &name, node_id)
+        Self::shape_from_geometry(shape_kind, vertices, indices, &name, node_id, smooth_edges)
     }
 
     // One shape from one set of vertices. Everything that turns geometry into a collider goes
     // through here.
-    fn shape_from_geometry(shape_kind: PhysicsShape, vertices: Vec<Vector>, indices: Vec<[u32; 3]>, name: &str, node_id: u32) -> Option<SharedShape>
+    fn shape_from_geometry(shape_kind: PhysicsShape, vertices: Vec<Vector>, indices: Vec<[u32; 3]>, name: &str, node_id: u32, smooth_edges: bool) -> Option<SharedShape>
     {
         if vertices.is_empty() || indices.is_empty()
         {
@@ -1369,7 +1378,12 @@ impl PhysicsWorld
         {
             PhysicsShape::TriMesh | PhysicsShape::Auto =>
             {
-                SharedShape::trimesh(vertices, indices).ok()?
+                // two sided: the converted levels have no reliable outside
+                match smooth_edges
+                {
+                    true => SharedShape::trimesh_with_flags(vertices, indices, TriMeshFlags::FIX_INTERNAL_EDGES_TWO_SIDED).ok()?,
+                    false => SharedShape::trimesh(vertices, indices).ok()?,
+                }
             }
             PhysicsShape::ConvexHull =>
             {
@@ -1648,7 +1662,7 @@ impl PhysicsWorld
             let local = Self::part_local_transform(&anchor, &anchor_scale, &node, &instance);
             let (offset, scale) = Self::split_transform(&local);
 
-            let Some(shape) = Self::build_shape(&node, &scale) else { continue; };
+            let Some(shape) = Self::build_shape(&node, &scale, self.settings.smooth_mesh_edges) else { continue; };
 
             let collider = Self::part_collider(shape, &offset, &anchor_pose, &physics, node_id, instance_id, body.is_some(), Self::reports_contacts(&node));
 
@@ -3431,7 +3445,7 @@ impl PhysicsWorld
                 let shape = if Self::scale_differs(&scale, &self.entries[index].parts[part_index].scale)
                 {
                     rebuilds += 1;
-                    Self::build_shape(&node, &scale)
+                    Self::build_shape(&node, &scale, self.settings.smooth_mesh_edges)
                 }
                 else
                 {
@@ -4015,9 +4029,11 @@ impl PhysicsWorld
         let com = Vector::new(chassis.center_of_mass.x, chassis.center_of_mass.y, chassis.center_of_mass.z);
         let inertia = Vector::new(chassis.principal_inertia.x.max(0.001), chassis.principal_inertia.y.max(0.001), chassis.principal_inertia.z.max(0.001));
 
+        // min: the body slides with its own friction - averaged with a grippy wall it stuck to it
         let collider = ColliderBuilder::new(chassis.shape)
             .user_data(Self::pack_user_data(node_id, 0))
             .friction(chassis.friction.max(0.0))
+            .friction_combine_rule(CoefficientCombineRule::Min)
             .restitution(chassis.restitution.clamp(0.0, 1.0))
             .active_collision_types(ActiveCollisionTypes::default() | ActiveCollisionTypes::KINEMATIC_FIXED)
             .active_events(ActiveEvents::COLLISION_EVENTS) // a vehicle always reports, running into something is its main event
@@ -4171,6 +4187,50 @@ impl PhysicsWorld
     }
 
     // Puts a vehicle somewhere else at a standstill, without an interpolated slide there. Its trailers follow, coupled again and straight behind.
+    // The pose moved out of the static geometry the vehicle colliders would overlap there - uprighting next to a wall turns half of it into the wall.
+    // Steps away from the overlaps towards the vehicle center: a level surface has no inside, its normal can point either way.
+    pub fn free_vehicle_pose(&self, node_id: u32, mut pose: Pose) -> Pose
+    {
+        let Some((_, body)) = self.vehicle(node_id) else { return pose; };
+        let parts: Vec<(Pose, SharedShape)> = body.colliders().iter()
+            .filter_map(|handle| self.colliders.get(*handle))
+            .map(|collider| (collider.position_wrt_parent().copied().unwrap_or_default(), collider.shared_shape().clone()))
+            .collect();
+
+        let size = parts.iter().map(|(local, shape)| shape.compute_aabb(local).half_extents().max_element() + local.translation.length()).fold(0.0, f32::max);
+        let step = size * FREE_POSE_STEP;
+
+        let queries = self.query_pipeline(QueryFilter::only_fixed());
+
+        for _ in 0..FREE_POSE_ROUNDS
+        {
+            let mut away = Vector::ZERO;
+
+            for (local, shape) in &parts
+            {
+                let world = pose * *local;
+
+                for (_, other) in queries.intersect_shape(world, shape.as_ref())
+                {
+                    let Ok(Some(contact)) = parry3d::query::contact(&world, shape.as_ref(), other.position(), other.shape(), 0.0) else { continue; };
+                    away += (pose.translation - contact.point2).normalize_or_zero();
+                }
+            }
+
+            // never down - a vehicle already under the floor would be pushed further down
+            away.y = away.y.max(0.0);
+
+            if away.length() < 0.001
+            {
+                break;
+            }
+
+            pose.translation += away.normalize() * step;
+        }
+
+        pose
+    }
+
     pub fn place_vehicle(&mut self, node_id: u32, pose: Pose)
     {
         let Some((vehicle, body)) = self.vehicle_mut(node_id) else { return; };

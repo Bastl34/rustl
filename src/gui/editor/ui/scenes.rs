@@ -278,6 +278,10 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
 
             ui.separator();
 
+            ui.checkbox(&mut physics.smooth_mesh_edges, "Smooth Mesh Edges").on_hover_text("mesh colliders take the neighbour triangles into account - something sliding along a wall or a floor is no longer bumped at every triangle edge. Applies to colliders built after the change (reload the scene)");
+
+            ui.separator();
+
             ui.checkbox(&mut physics.ground_plane, "Endless Ground Plane").on_hover_text("a floor everything can always land on - the editor grid is only a visual helper and is rebuilt whenever the grid settings change, so it cannot be used for this");
 
             ui.add_enabled_ui(physics.ground_plane, |ui|

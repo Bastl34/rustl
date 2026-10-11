@@ -60,10 +60,18 @@ pub struct VehicleSoundSettings
     pub squeal: OptionOrId<ComponentItem>, // tires sliding sideways or locked by the brakes
     #[serde(default, serialize_with = "serialize_component", deserialize_with = "deserialize_component")]
     pub road: OptionOrId<ComponentItem>, // rolling noise, rises with the speed
+    #[serde(default, serialize_with = "serialize_component", deserialize_with = "deserialize_component")]
+    pub scrape: OptionOrId<ComponentItem>, // the body sliding along a wall, the ground or another vehicle
 
     // random rpm wobble, as a share of the rpm - keeps full throttle from turning into one flat tone
     pub pitch_variation: f32,
+
+    // electric: the motor fades under the road noise above walking pace like a real one - off keeps it audible (toys, games)
+    #[serde(default = "default_true")]
+    pub electric_fade: bool,
 }
+
+fn default_true() -> bool { true }
 
 impl Default for VehicleSoundSettings
 {
@@ -75,7 +83,9 @@ impl Default for VehicleSoundSettings
             engine_layers: vec![],
             squeal: OptionOrId::None,
             road: OptionOrId::None,
+            scrape: OptionOrId::None,
             pitch_variation: 0.02,
+            electric_fade: true,
         }
     }
 }
@@ -84,12 +94,12 @@ impl VehicleSoundSettings
 {
     fn sounds_mut(&mut self) -> impl Iterator<Item = &mut OptionOrId<ComponentItem>>
     {
-        self.engine_layers.iter_mut().map(|layer| &mut layer.sound).chain([&mut self.squeal, &mut self.road])
+        self.engine_layers.iter_mut().map(|layer| &mut layer.sound).chain([&mut self.squeal, &mut self.road, &mut self.scrape])
     }
 
     fn sounds(&self) -> impl Iterator<Item = &OptionOrId<ComponentItem>>
     {
-        self.engine_layers.iter().map(|layer| &layer.sound).chain([&self.squeal, &self.road])
+        self.engine_layers.iter().map(|layer| &layer.sound).chain([&self.squeal, &self.road, &self.scrape])
     }
 
     pub fn has_sounds(&self) -> bool
@@ -238,6 +248,7 @@ pub struct VehicleSoundInput
     pub engine_load: f32, // 0..1, how hard the engine works - the smoothed throttle
     pub idling: f32, // 1 at idle rpm - picks the on throttle loops there, without making it louder
     pub squeal: f32, // 0..1, tires sliding sideways or locked
+    pub scrape: f32, // 0..1, the body sliding along something
     pub speed: f32, // m/s
     pub limiter: bool,
     pub electric: bool, // the motor fades under the road noise above walking pace, like the AVAS
@@ -249,6 +260,7 @@ pub struct VehicleSoundPlayer
     playing: Vec<ComponentItem>, // started by the player - silenced once they are no longer assigned
 
     squeal_level: f32,
+    scrape_level: f32,
     smoothed_engine_load: f32,
 
     random_state: u32, // seeded per vehicle, so the wobble sounds the same every run
@@ -267,6 +279,7 @@ impl VehicleSoundPlayer
             playing: vec![],
 
             squeal_level: 0.0,
+            scrape_level: 0.0,
             smoothed_engine_load: 0.0,
 
             random_state: seed | 1, // xorshift stays at 0 forever
@@ -333,7 +346,7 @@ impl VehicleSoundPlayer
             loudness *= 0.8;
         }
 
-        if input.electric
+        if input.electric && settings.electric_fade
         {
             let t = ((input.speed.abs() - ELECTRIC_FADE_START) / (ELECTRIC_FADE_END - ELECTRIC_FADE_START)).clamp(0.0, 1.0);
             let t = t * t * (3.0 - 2.0 * t);
@@ -361,6 +374,17 @@ impl VehicleSoundPlayer
         {
             // a harder slide squeals a little higher - the loops are recordings, pitched far they sound slowed down
             Self::drive(component, self.squeal_level, 0.92 + 0.16 * self.squeal_level);
+            active.push(component.clone());
+        }
+
+        // ********** scraping **********
+        let target = input.scrape.clamp(0.0, 1.0);
+        let rate = if target > self.scrape_level { TIRE_ATTACK } else { TIRE_RELEASE };
+        self.scrape_level += (target - self.scrape_level) * (1.0 - (-rate * dt).exp());
+
+        if let Some(component) = settings.scrape.as_ref()
+        {
+            Self::drive(component, self.scrape_level, 0.85 + 0.3 * self.scrape_level);
             active.push(component.clone());
         }
 
