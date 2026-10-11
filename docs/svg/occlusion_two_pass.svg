@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 460" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="oc_arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
+    </marker>
+    <marker id="oc_arrow2g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#059669"/>
+    </marker>
+  </defs>
+  <rect width="760" height="460" fill="#f8fafc" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">One frame of two-pass occlusion culling (per camera)</text>
+
+  <!-- step 1: pass 1 -->
+  <rect x="30" y="58" width="330" height="88" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2" rx="10"/>
+  <text x="46" y="82" font-size="13.5" font-weight="700" fill="#7c3aed">1 · Pass 1 — depth + color</text>
+  <text x="46" y="103" font-size="12" fill="#334155">draw the objects that were visible</text>
+  <text x="46" y="120" font-size="12" fill="#334155">in the <tspan font-weight="600">previous frame</tspan> (indirect draws,</text>
+  <text x="46" y="137" font-size="12" fill="#334155">masked by <tspan font-family="ui-monospace, Menlo, monospace" font-size="11">args_visible</tspan>)</text>
+
+  <line x1="360" y1="102" x2="410" y2="102" stroke="#475569" stroke-width="2" marker-end="url(#oc_arrow2)"/>
+
+  <!-- step 2: hzb -->
+  <rect x="415" y="58" width="315" height="88" fill="#fffbeb" stroke="#f59e0b" stroke-width="2" rx="10"/>
+  <text x="431" y="82" font-size="13.5" font-weight="700" fill="#d97706">2 · Build the HZB</text>
+  <text x="431" y="103" font-size="12" fill="#334155">export the pass-1 depth into the hzb</text>
+  <text x="431" y="120" font-size="12" fill="#334155">texture (camera viewport) and build the</text>
+  <text x="431" y="137" font-size="12" fill="#334155">max-mip chain with a compute shader</text>
+
+  <line x1="572" y1="146" x2="572" y2="188" stroke="#475569" stroke-width="2" marker-end="url(#oc_arrow2)"/>
+
+  <!-- step 3: compute -->
+  <rect x="240" y="192" width="490" height="106" fill="#eff6ff" stroke="#3b82f6" stroke-width="2" rx="10"/>
+  <text x="256" y="216" font-size="13.5" font-weight="700" fill="#2563eb">3 · Occlusion check (one compute pass, ALL objects)</text>
+  <text x="256" y="237" font-size="12" fill="#334155">project every bounding box, test it against the HZB and write:</text>
+  <text x="270" y="256" font-size="12" fill="#334155">· <tspan font-family="ui-monospace, Menlo, monospace" font-size="11">visibility</tspan> — visible now? (copied to <tspan font-family="ui-monospace, Menlo, monospace" font-size="11">prev</tspan> for the next frame)</text>
+  <text x="270" y="274" font-size="12" fill="#334155">· <tspan font-family="ui-monospace, Menlo, monospace" font-size="11">args_visible</tspan> — indirect draw args for everything visible now</text>
+  <text x="270" y="292" font-size="12" fill="#334155">· <tspan font-family="ui-monospace, Menlo, monospace" font-size="11">args_new</tspan> — only objects that <tspan font-weight="600">became</tspan> visible this frame</text>
+
+  <line x1="240" y1="245" x2="196" y2="245" stroke="#475569" stroke-width="2" marker-end="url(#oc_arrow2)"/>
+
+  <!-- step 4: pass 2 -->
+  <rect x="30" y="192" width="165" height="106" fill="#ecfdf5" stroke="#10b981" stroke-width="2" rx="10"/>
+  <text x="46" y="216" font-size="13.5" font-weight="700" fill="#059669">4 · Pass 2 — color</text>
+  <text x="46" y="237" font-size="12" fill="#334155">newly visible objects</text>
+  <text x="46" y="254" font-size="12" fill="#334155">(<tspan font-family="ui-monospace, Menlo, monospace" font-size="11">args_new</tspan>), plus</text>
+  <text x="46" y="271" font-size="12" fill="#334155">non-occluders and</text>
+  <text x="46" y="288" font-size="12" fill="#334155">transparent objects</text>
+
+  <!-- feedback loop -->
+  <path d="M 485 298 L 485 340 L 120 340 L 120 306" fill="none" stroke="#059669" stroke-width="2" stroke-dasharray="7 5"/>
+  <path d="M 485 340 L 485 370 L 195 370" fill="none" stroke="#059669" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#oc_arrow2g)"/>
+  <text x="495" y="330" font-size="11.5" fill="#059669" font-weight="600">args_visible + visibility feed</text>
+  <text x="495" y="346" font-size="11.5" fill="#059669" font-weight="600">pass 1 of the NEXT frame</text>
+
+  <rect x="30" y="352" width="165" height="36" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="8"/>
+  <text x="112" y="374" text-anchor="middle" font-size="12" fill="#334155">next frame, pass 1</text>
+
+  <!-- bottom note -->
+  <rect x="30" y="406" width="700" height="42" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="380" y="424" text-anchor="middle" font-size="12.5" fill="#334155">The visibility never leaves the GPU — no CPU readback, no stall. Pass 2 corrects the mistakes of pass 1</text>
+  <text x="380" y="441" text-anchor="middle" font-size="12.5" fill="#334155">in the same frame, so objects never pop in one frame late.</text>
+</svg>

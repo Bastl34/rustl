@@ -251,7 +251,7 @@ impl Component for Delay
             0
         };
 
-        let mut components: Vec<(u64, ComponentItem)> = vec![];
+        let mut components: Vec<(u32, ComponentItem)> = vec![];
 
         if let Some(node) = node
         {

@@ -4,6 +4,11 @@ use serde::{Deserialize, Deserializer, Serializer};
 
 use crate::{helper::option_or_id::OptionOrId, state::{resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::component::{Component, ComponentItem}, node::NodeItem}}};
 
+
+pub fn default_true() -> bool { true }
+pub fn is_false(v: &bool) -> bool { !*v }
+
+
 // ******************** node serialization ********************
 
 pub fn serialize_node<S>(item: &OptionOrId<NodeItem>, serializer: S) -> Result<S::Ok, S::Error>
@@ -167,6 +172,13 @@ where
         OptionOrId::Some(item) =>
         {
             let guard = item.read().map_err(serde::ser::Error::custom)?;
+
+            // deleted, only the reference was not released yet
+            if guard.get_base().delete_later_request
+            {
+                return serializer.serialize_none();
+            }
+
             serializer.serialize_str(&guard.get_base().uuid)
         }
         OptionOrId::Id(uuid) =>

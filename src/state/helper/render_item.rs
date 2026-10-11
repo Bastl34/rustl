@@ -7,6 +7,7 @@ pub trait RenderItem: Any
 {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn gpu_usage(&self) -> u64 { 0 }
 }
 
 #[macro_export]
@@ -26,6 +27,19 @@ macro_rules! render_item_impl_default
     };
 }
 
+// wgpu objects hold JS handles and are not Send/Sync on wasm with threads - render items are only used and dropped on the main thread
+#[macro_export]
+macro_rules! render_item_send_sync
+{
+    ($type:ty) =>
+    {
+        #[cfg(target_arch = "wasm32")]
+        unsafe impl Send for $type {}
+        #[cfg(target_arch = "wasm32")]
+        unsafe impl Sync for $type {}
+    };
+}
+
 pub fn get_render_item<T>(render_item: &RenderItemType) -> Box<&T> where T: 'static
 {
     let any = render_item.as_any();
@@ -36,4 +50,13 @@ pub fn get_render_item_mut<T>(render_item: &mut RenderItemType) -> Box<&mut T> w
 {
     let any = render_item.as_any_mut();
     Box::new(any.downcast_mut::<T>().unwrap())
+}
+
+pub fn render_item_gpu_usage(render_item: &RenderItemOption) -> u64
+{
+    match render_item
+    {
+        Some(item) => item.gpu_usage(),
+        None => 0,
+    }
 }

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="fo_arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect width="760" height="360" fill="#f8fafc" rx="12"/>
+  <text x="380" y="30" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">Why the transform sync sits after the node update</text>
+
+  <!-- ============ wrong order ============ -->
+  <text x="40" y="66" font-size="13" font-weight="600" fill="#b91c1c">Sync before the animations (broken)</text>
+
+  <line x1="40" y1="112" x2="720" y2="112" stroke="#cbd5e1" stroke-width="2"/>
+
+  <rect x="46" y="80" width="104" height="30" fill="#fee2e2" stroke="#ef4444" rx="5"/>
+  <text x="98" y="99" text-anchor="middle" font-size="11" fill="#7f1d1d">sync colliders</text>
+
+  <rect x="170" y="80" width="120" height="30" fill="#e2e8f0" stroke="#94a3b8" rx="5"/>
+  <text x="230" y="99" text-anchor="middle" font-size="11" fill="#1e293b">character moves</text>
+
+  <rect x="310" y="80" width="150" height="30" fill="#e2e8f0" stroke="#94a3b8" rx="5"/>
+  <text x="385" y="99" text-anchor="middle" font-size="11" fill="#1e293b">animations move the lift</text>
+
+  <rect x="480" y="80" width="80" height="30" fill="#e2e8f0" stroke="#94a3b8" rx="5"/>
+  <text x="520" y="99" text-anchor="middle" font-size="11" fill="#1e293b">render</text>
+
+  <text x="590" y="92" font-size="11" fill="#b91c1c">collider is one</text>
+  <text x="590" y="106" font-size="11" fill="#b91c1c">frame behind</text>
+
+  <!-- illustration of the gap -->
+  <rect x="170" y="132" width="200" height="52" fill="#ffffff" stroke="#cbd5e1" rx="6"/>
+  <line x1="186" y1="148" x2="290" y2="148" stroke="#ef4444" stroke-width="3"/>
+  <text x="300" y="152" font-size="10.5" fill="#b91c1c">visible platform</text>
+  <line x1="186" y1="170" x2="290" y2="170" stroke="#94a3b8" stroke-width="3" stroke-dasharray="5 3"/>
+  <text x="300" y="174" font-size="10.5" fill="#64748b">collider</text>
+  <text x="186" y="200" font-size="10.5" fill="#64748b">the character stands on the dashed one and sinks into the floor</text>
+
+  <!-- divider -->
+  <line x1="40" y1="222" x2="720" y2="222" stroke="#e2e8f0"/>
+
+  <!-- ============ right order ============ -->
+  <text x="40" y="252" font-size="13" font-weight="600" fill="#15803d">Sync after the animations (current)</text>
+
+  <line x1="40" y1="298" x2="720" y2="298" stroke="#cbd5e1" stroke-width="2"/>
+
+  <rect x="46" y="266" width="120" height="30" fill="#e2e8f0" stroke="#94a3b8" rx="5"/>
+  <text x="106" y="285" text-anchor="middle" font-size="11" fill="#1e293b">scan for new nodes</text>
+
+  <rect x="186" y="266" width="120" height="30" fill="#e2e8f0" stroke="#94a3b8" rx="5"/>
+  <text x="246" y="285" text-anchor="middle" font-size="11" fill="#1e293b">pre controller</text>
+
+  <rect x="326" y="266" width="150" height="30" fill="#e2e8f0" stroke="#94a3b8" rx="5"/>
+  <text x="401" y="285" text-anchor="middle" font-size="11" fill="#1e293b">node update (animations)</text>
+
+  <rect x="496" y="266" width="104" height="30" fill="#dcfce7" stroke="#22c55e" rx="5"/>
+  <text x="548" y="285" text-anchor="middle" font-size="11" fill="#14532d">sync colliders</text>
+
+  <rect x="620" y="266" width="100" height="30" fill="#e2e8f0" stroke="#94a3b8" rx="5"/>
+  <text x="670" y="285" text-anchor="middle" font-size="11" fill="#1e293b">post controller</text>
+
+  <line x1="548" y1="306" x2="670" y2="322" stroke="#475569" marker-end="url(#fo_arrow)"/>
+  <text x="470" y="332" font-size="11" fill="#334155">a character in the post slot sees colliders from the very same frame</text>
+</svg>

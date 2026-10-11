@@ -1,21 +1,31 @@
 use gilrs::Gilrs;
 
-use crate::{input::gamepad::{Gamepad, GamepadAxis, GamepadButton, GamepadPowerInfo}, state::state::State};
+use crate::{helper::generic::get_secs, input::gamepad::{Gamepad, GamepadAxis, GamepadButton, GamepadPowerInfo}, state::state::State};
 
 pub fn gilrs_initialize(state: &mut State, gilrs: &mut Gilrs)
 {
-    for (id, gamepad) in gilrs.gamepads()
+    // gilrs lists only the connected ones - the rest keeps its player id until it times out
+    let connected_uids: Vec<usize> = gilrs.gamepads().map(|(uid, _)| uid.into()).collect();
+    for gamepad in state.io.input_manager.gamepads.values_mut()
     {
-        let id: usize = id.into();
-        let mut gamepad_input = state.io.input_manager.gamepads.get_mut(&id);
-
-        if gamepad_input.is_none()
+        if gamepad.connected && !connected_uids.contains(&gamepad.uid)
         {
-            state.io.input_manager.gamepads.insert(id, Gamepad::new(id, gamepad.name().to_string()));
-            gamepad_input = state.io.input_manager.gamepads.get_mut(&id);
+            gamepad.connected = false;
+            gamepad.last_update = get_secs();
+        }
+    }
+
+    for (uid, gamepad) in gilrs.gamepads()
+    {
+        let uid: usize = uid.into();
+
+        if state.io.input_manager.gamepad_by_uid_mut(uid).is_none()
+        {
+            let id = state.io.input_manager.free_gamepad_id();
+            state.io.input_manager.gamepads.insert(id, Gamepad::new(uid, id, gamepad.name().to_string()));
         }
 
-        let gamepad_input = gamepad_input.unwrap();
+        let gamepad_input = state.io.input_manager.gamepad_by_uid_mut(uid).unwrap();
 
         gamepad_input.connected = gamepad.is_connected();
         gamepad_input.has_force_feedback = gamepad.is_ff_supported();
@@ -33,10 +43,21 @@ pub fn gilrs_event(state: &mut State, gilrs: &mut Gilrs, engine_frame: u64)
 {
     let mut re_init = false;
 
-    while let Some(gilrs::Event { id, event, time: _ , .. }) = gilrs.next_event()
+    while let Some(gilrs::Event { id: uid, event, time: _ , .. }) = gilrs.next_event()
     {
-        let id: usize = id.into();
-        let gamepad = state.io.input_manager.gamepads.get_mut(&id);
+        let uid: usize = uid.into();
+
+        match event
+        {
+            gilrs::EventType::Connected | gilrs::EventType::Disconnected =>
+            {
+                re_init = true;
+                continue;
+            },
+            _ => {},
+        }
+
+        let gamepad = state.io.input_manager.gamepad_by_uid_mut(uid);
 
         if gamepad.is_none()
         {
@@ -67,8 +88,6 @@ pub fn gilrs_event(state: &mut State, gilrs: &mut Gilrs, engine_frame: u64)
             {
                 gamepad.set_axis(gilrs_map_axis(axis), value, engine_frame);
             },
-            gilrs::EventType::Connected => re_init = true,
-            gilrs::EventType::Disconnected => re_init = true,
             gilrs::EventType::Dropped => {},
             gilrs::EventType::ForceFeedbackEffectCompleted => {},
             _ => {},

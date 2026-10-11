@@ -1,0 +1,5 @@
+# mandatory resources
+shader
+designs/logo/logo.png
+sounds/screenshot.ogg
+textures/environment/footprint_court.jpg

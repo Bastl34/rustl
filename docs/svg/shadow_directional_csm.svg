@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 440" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#b45309"/>
+    </marker>
+  </defs>
+  <rect width="760" height="440" fill="#f8fafc" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">Directional light: cascaded shadow maps (CSM)</text>
+
+  <!-- sun rays (parallel) -->
+  <g stroke="#f6b73c" stroke-width="2.5" marker-end="url(#arrow4)">
+    <line x1="200" y1="66" x2="180" y2="116"/>
+    <line x1="330" y1="66" x2="310" y2="116"/>
+    <line x1="460" y1="66" x2="440" y2="116"/>
+    <line x1="590" y1="66" x2="570" y2="116"/>
+  </g>
+  <text x="655" y="86" text-anchor="middle" font-size="12.5" fill="#b45309">parallel sun rays</text>
+
+  <!-- camera -->
+  <rect x="30" y="238" width="44" height="30" fill="#3b82f6" rx="6"/>
+  <path d="M74 245 L92 238 L92 268 L74 261 Z" fill="#3b82f6"/>
+  <text x="52" y="292" text-anchor="middle" font-size="12.5" fill="#1d4ed8">camera</text>
+
+  <!-- frustum -->
+  <line x1="92" y1="253" x2="710" y2="150" stroke="#3b82f6" stroke-width="2"/>
+  <line x1="92" y1="253" x2="710" y2="380" stroke="#3b82f6" stroke-width="2"/>
+
+  <!-- cascade regions (quads inside frustum) -->
+  <!-- top edge y(x) = 253 - (x-92)*103/618 ; bottom edge y(x) = 253 + (x-92)*127/618 -->
+  <polygon points="112,250 260,225 260,288 112,257" fill="#22c55e" opacity="0.28"/>
+  <polygon points="260,225 460,192 460,329 260,288" fill="#f59e0b" opacity="0.25"/>
+  <polygon points="460,192 700,152 700,378 460,329" fill="#ef4444" opacity="0.18"/>
+
+  <!-- ortho boxes -->
+  <rect x="104" y="212" width="164" height="88"  fill="none" stroke="#16a34a" stroke-width="2.5" stroke-dasharray="7 5" rx="4"/>
+  <rect x="252" y="180" width="216" height="160" fill="none" stroke="#d97706" stroke-width="2.5" stroke-dasharray="7 5" rx="4"/>
+  <rect x="452" y="140" width="256" height="248" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="7 5" rx="4"/>
+
+  <text x="186" y="205" text-anchor="middle" font-size="12.5" font-weight="600" fill="#16a34a">cascade 0</text>
+  <text x="360" y="173" text-anchor="middle" font-size="12.5" font-weight="600" fill="#d97706">cascade 1</text>
+  <text x="580" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#dc2626">cascade 2</text>
+
+  <text x="380" y="412" text-anchor="middle" font-size="12.5" fill="#334155">the camera frustum is split into slices — each slice gets its own orthographic light projection</text>
+  <text x="380" y="430" text-anchor="middle" font-size="12.5" fill="#64748b">same map resolution per cascade, but a growing area → sharp shadows up close, coarser far away</text>
+</svg>

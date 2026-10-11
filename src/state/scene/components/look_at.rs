@@ -6,7 +6,7 @@ use egui::{Color32, RichText};
 use nalgebra::{UnitQuaternion, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_post_deserialization, component_impl_no_update_instance, console_debug, console_warning, helper::{math::{approx_zero_vec3, extract_rotation_quat_from_transform, extract_translation_from_transform, look_at_rotation}, option_or_id::OptionOrId}, state::{scene::{components::{animation::{Animation, AnimationLayerType}, component::{Component, ComponentBase}, joint::Joint}, node::{Node, NodeItem}, scene::Scene}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_post_deserialization, component_impl_no_update_instance, console_warning, helper::{math::{approx_zero_vec3, extract_rotation_quat_from_transform, extract_translation_from_transform, look_at_rotation}, option_or_id::OptionOrId}, state::{scene::{components::{animation::{Animation, AnimationLayerType}, component::{Component, ComponentBase}, joint::Joint}, node::{Node, NodeItem}, scene::Scene}, state::InputOutput}};
 use crate::state::scene::exporter::serialization_helper;
 
 #[derive(Serialize, Deserialize)]
@@ -18,7 +18,7 @@ pub struct LookAt
     pub target_joint_item: OptionOrId<NodeItem>,
 
     #[serde(skip, default)]
-    pub animation: Option<u64>,
+    pub animation: Option<u32>,
 
     #[serde(skip, default)]
     pub parent_rotation: Option<UnitQuaternion<f32>>,
@@ -285,7 +285,7 @@ impl Component for LookAt
             offset = self.offset;
         }
 
-        let mut animations: Vec<(u64, String)> = vec![];
+        let mut animations: Vec<(u32, String)> = vec![];
 
         if let Some(node) = &node
         {

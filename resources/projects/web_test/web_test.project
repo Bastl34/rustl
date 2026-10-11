@@ -1,0 +1,22 @@
+{
+  "format": {
+    "generator": "rustl v0.0.1",
+    "version": "1.0.0"
+  },
+  "project": {
+    "name": "web_test",
+    "version": "0.0.1",
+    "author": "",
+    "description": "test project for the web build - only bundled resources",
+    "license": "",
+    "url": "",
+    "build": 1,
+    "editing_time_secs": 0
+  },
+  "scenes": [
+    {
+      "path": "web_test_main_scene.scene",
+      "active": true
+    }
+  ]
+}

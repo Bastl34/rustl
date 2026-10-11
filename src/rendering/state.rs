@@ -29,7 +29,11 @@ pub fn update_textures(wgpu: &mut WGpu, state: &mut State)
                 let mut format = TextureFormat::Srgba;
                 if texture.channels() == 1
                 {
-                    format = TextureFormat::Gray;
+                    format = TextureFormat::Gray; // R8Unorm is already linear
+                }
+                else if texture.get_data().linear
+                {
+                    format = TextureFormat::Rgba; // linear data textures (normal / roughness / ao / ...)
                 }
 
                 let render_item = Texture::new_from_texture(wgpu, texture.name.as_str(), &texture, format);
@@ -54,7 +58,8 @@ pub fn update_textures(wgpu: &mut WGpu, state: &mut State)
         // mark material as "dirty" if the buffer needs a recreate
         if buffer_recreate_needed
         {
-            let texture = texture.read().unwrap();
+            // only the id: holding the guard while has_texture_id reads it again deadlocks once a writer waits
+            let texture_id = texture.read().unwrap().id;
 
             for scene in &mut state.scenes
             {
@@ -63,7 +68,7 @@ pub fn update_textures(wgpu: &mut WGpu, state: &mut State)
                     let mut material = material.write().unwrap();
                     let material = material.as_any_mut().downcast_mut::<Material>().unwrap();
 
-                    if material.has_texture_id(texture.id)
+                    if material.has_texture_id(texture_id)
                     {
                         material.get_data_mut().force_change();
                     }
