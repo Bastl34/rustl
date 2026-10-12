@@ -429,7 +429,7 @@ impl MainInterface
             // frame scale
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();
 
-            if state.stats.frame_update_time > 0 && now - state.stats.frame_update_time > 0
+            if state.stats.frame_update_time > 0 && now > state.stats.frame_update_time
             {
                 state.stats.frame_scale = REFERENCE_UPDATE_FRAMES / (1000000.0 / (now - state.stats.frame_update_time) as f32);
             }
