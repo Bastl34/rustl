@@ -896,6 +896,17 @@ struct PendingFrame
     state: DriveState,
 }
 
+// the driving part of the input from code instead of the bindings: bots, a locked start, replays - the camera stays with the bindings
+#[derive(Default, Clone, Copy, Debug)]
+pub struct VehicleDriveInput
+{
+    pub throttle: f32, // 0..1
+    pub brake: f32, // 0..1
+    pub steer: f32, // -1..1, positive = left, applied directly like a stick
+    pub handbrake: bool,
+    pub recover: bool,
+}
+
 #[derive(Default, Clone, Copy)]
 struct VehicleInput
 {
@@ -1047,6 +1058,10 @@ pub struct VehicleController
 
     #[serde(skip, default)]
     telemetry: VehicleTelemetry,
+
+    // Some: drives instead of the input bindings (set by code every frame or once, None gives the control back)
+    #[serde(skip, default)]
+    pub input_override: Option<VehicleDriveInput>,
 }
 
 fn default_base() -> SceneControllerBase
@@ -1133,6 +1148,7 @@ impl VehicleController
             pending: None,
 
             telemetry: VehicleTelemetry::default(),
+            input_override: None,
         };
 
         controller.apply_preset();
@@ -1849,6 +1865,12 @@ impl VehicleController
         self.engine.max_torque *= volume;
 
         self.mark_physics_dirty();
+    }
+
+    // speed, rpm, wheels, contacts of the last update - for HUDs and debugging
+    pub fn telemetry(&self) -> &VehicleTelemetry
+    {
+        &self.telemetry
     }
 
     // the chassis points of the setup, chassis space (min, max)
@@ -2947,7 +2969,16 @@ impl SceneController for VehicleController
         self.sync_hitch(scene, node_id);
 
         // a trailer has no driver - it brakes with its tow vehicle
-        let input = if self.vehicle_type.is_trailer() { VehicleInput::default() } else { self.read_input(io) };
+        let mut input = if self.vehicle_type.is_trailer() { VehicleInput::default() } else { self.read_input(io) };
+        if let Some(drive) = self.input_override.filter(|_| !self.vehicle_type.is_trailer())
+        {
+            input.throttle = drive.throttle.clamp(0.0, 1.0);
+            input.brake = drive.brake.clamp(0.0, 1.0);
+            input.steer = drive.steer.clamp(-1.0, 1.0);
+            input.steer_analog = true;
+            input.handbrake = drive.handbrake;
+            input.recover = drive.recover;
+        }
 
         let Some(state) = self.drive(&mut scene.physics, node_id, &frame, &input, dt) else { return false; };
         self.pending = Some(PendingFrame { input, state });

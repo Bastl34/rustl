@@ -15,6 +15,12 @@ pub trait App
         let _ = context;
     }
 
+    // the ui of the game: every frame while it runs and the editor ui is hidden (Play, exports) - a HUD, menus, ...
+    fn ui(&mut self, context: &mut Context, ui: &mut egui::Ui)
+    {
+        let _ = (context, ui);
+    }
+
     fn resize(&mut self, context: &mut Context)
     {
         let _ = context;

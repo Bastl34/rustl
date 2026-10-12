@@ -300,6 +300,7 @@ pub fn run()
 pub use wasm_bindgen;
 pub use nalgebra;
 pub use egui;
+pub use image;
 pub use winit;
 pub use wgpu;
 pub use rapier3d;

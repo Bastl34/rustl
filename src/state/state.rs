@@ -304,6 +304,8 @@ pub struct Statistics
     pub editor_update_time: f32,
 
     pub egui_update_time: f32,
+    pub editor_ui_time: f32,
+    pub app_ui_time: f32,
     pub egui_render_time: f32,
 
     pub shadow_views: u32,
@@ -653,6 +655,8 @@ impl State
                 editor_update_time: 0.0,
 
                 egui_update_time: 0.0,
+                editor_ui_time: 0.0,
+                app_ui_time: 0.0,
                 egui_render_time: 0.0,
 
                 shadow_views: 0,

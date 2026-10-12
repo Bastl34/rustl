@@ -57,6 +57,9 @@ pub struct MainInterface
     project_app: Option<Box<dyn App>>,
     project_app_started: bool,
 
+    // an app drew its ui into the main window this frame (play mode / exports)
+    game_ui: bool,
+
     gilrs: Option<Gilrs>,
 
     // the game releases the mouse on Esc or focus loss, a click captures it again
@@ -140,6 +143,7 @@ impl MainInterface
 
             project_app: None,
             project_app_started: false,
+            game_ui: false,
 
             gilrs,
 
@@ -509,27 +513,7 @@ impl MainInterface
         }
 
         // ******************** build ui ********************
-        #[cfg(feature = "editor")]
-        if let Some(editor_gui) = &mut self.editor_gui
-        {
-            let now = Instant::now();
-            let state = &mut *(self.context.state.borrow_mut());
-
-            if editor_gui.editor_state.visible
-            {
-                let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui, None);
-                self.context.egui.set_output(gui_output, &self.context.window);
-
-                //self.gui.request_repaint();
-            }
-            else
-            {
-                // play mode: the assets and code windows stay open (disabled) - the main window shows only the game
-                let gui_output = editor_gui.build_own_windows(state, &self.context.window, &mut self.context.egui);
-                self.context.egui.set_output(gui_output, &self.context.window);
-            }
-            state.stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
-        }
+        self.build_ui();
 
 
         // ******************** app update ********************
@@ -726,13 +710,11 @@ impl MainInterface
                     state.stats.engine_render_time = engine_render_time.elapsed().as_micros() as f32 / 1000.0;
                 }
 
-                // render egui
-                #[cfg(feature = "editor")]
-                if let Some(editor_gui) = &mut self.editor_gui
+                // render egui - the editor ui or the ui of the game
                 {
                     let now = Instant::now();
 
-                    if editor_gui.editor_state.visible
+                    if self.editor_visible() || self.game_ui
                     {
                         self.context.egui.render(&mut self.context.wgpu, &view, &mut egui_encoder);
 
@@ -741,6 +723,7 @@ impl MainInterface
                     }
                     else
                     {
+                        // the main window paints no ui - only the own windows of the editor
                         self.context.egui.flush_textures();
                     }
                     state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
@@ -961,6 +944,82 @@ impl MainInterface
     }
 
     // the project app runs while playing - created on the switch to Play, ended on the switch back
+    fn editor_visible(&self) -> bool
+    {
+        #[cfg(feature = "editor")]
+        if let Some(editor_gui) = &self.editor_gui
+        {
+            return editor_gui.editor_state.visible;
+        }
+
+        false
+    }
+
+    // one egui pass per frame: the editor ui (or only its own windows in play mode) and the ui of the apps while the editor ui is hidden
+    fn build_ui(&mut self)
+    {
+        let now = Instant::now();
+        let editor_visible = self.editor_visible();
+        self.game_ui = !editor_visible && (self.app.is_some() || self.project_app.is_some());
+
+        #[cfg(not(feature = "editor"))]
+        if !self.game_ui
+        {
+            return;
+        }
+
+        let ctx = self.context.egui.ctx.clone();
+        let window = self.context.window.clone();
+        let mut raw_input = self.context.egui.take_input(&window);
+
+        // ensure egui always knows the window has focus so text cursor blinks correctly
+        if editor_visible
+        {
+            raw_input.focused = true;
+        }
+
+        let game_ui = self.game_ui;
+        #[cfg_attr(not(feature = "editor"), allow(unused_mut))]
+        let mut editor_ui_time = 0.0;
+        let mut app_ui_time = 0.0;
+        let output = ctx.run_ui(raw_input, |ui|
+        {
+            #[cfg(feature = "editor")]
+            if let Some(editor_gui) = &mut self.editor_gui
+            {
+                let now = Instant::now();
+                let state = &mut *self.context.state.borrow_mut();
+                editor_gui.ui(ui, state);
+                editor_ui_time += now.elapsed().as_micros() as f32 / 1000.0;
+            }
+
+            if game_ui
+            {
+                let now = Instant::now();
+                if let Some(app) = &mut self.app { app.ui(&mut self.context, ui); }
+                if let Some(app) = &mut self.project_app { app.ui(&mut self.context, ui); }
+                app_ui_time = now.elapsed().as_micros() as f32 / 1000.0;
+            }
+        });
+
+        #[cfg(feature = "editor")]
+        if let Some(editor_gui) = &mut self.editor_gui
+        {
+            let now = Instant::now();
+            let state = &mut *self.context.state.borrow_mut();
+            editor_gui.after_ui(state, &ctx);
+            editor_ui_time += now.elapsed().as_micros() as f32 / 1000.0;
+        }
+
+        self.context.egui.ui_state.handle_platform_output(&window, output.platform_output.clone());
+        self.context.egui.set_output(output, &window);
+
+        let stats = &mut self.context.state.borrow_mut().stats;
+        stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+        stats.editor_ui_time = editor_ui_time;
+        stats.app_ui_time = app_ui_time;
+    }
+
     fn update_project_app(&mut self)
     {
         let playing = self.context.state.borrow().run_mode.runs_game_logic();
@@ -1076,10 +1135,13 @@ impl MainInterface
             _ => {}
         }
 
+        // the ui of the game gets every event, it takes only those over its widgets (or for a focused text field)
+        let game_ui = self.game_ui;
+
         #[cfg(feature = "editor")]
         let egui_consumed = if let Some(editor_gui) = &mut self.editor_gui
         {
-            if editor_gui.editor_state.visible
+            if editor_gui.editor_state.visible || game_ui
             {
                 self.context.egui.on_event(event, self.context.window.clone())
             }
@@ -1096,11 +1158,11 @@ impl MainInterface
         }
         else
         {
-            false
+            game_ui && self.context.egui.on_event(event, self.context.window.clone())
         };
 
         #[cfg(not(feature = "editor"))]
-        let egui_consumed = false;
+        let egui_consumed = game_ui && self.context.egui.on_event(event, self.context.window.clone());
 
 
         // Always forward mouse button releases to the input manager, even if egui consumed the event.

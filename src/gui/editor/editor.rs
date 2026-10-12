@@ -269,19 +269,31 @@ impl Editor
         full_output
     }
 
-    // while the editor ui is hidden (play mode): only its own native windows - the main window gets no ui
-    pub fn build_own_windows(&mut self, state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
+    // the editor part of the egui pass of the main interface - hidden (play mode): only its own native windows
+    pub fn ui(&mut self, ui: &mut egui::Ui, state: &mut State)
     {
-        let raw_input = egui.take_input(window);
-
-        let full_output = egui.ctx.run_ui(raw_input, |ui|
+        match self.editor_state.visible
         {
-            main_frame::create_own_windows(ui, &mut self.editor_state, state);
-        });
+            true => main_frame::create_frame(ui, &mut self.editor_state, state),
+            false => main_frame::create_own_windows(ui, &mut self.editor_state, state),
+        }
+    }
 
-        egui.ui_state.handle_platform_output(window, full_output.platform_output.clone());
+    // after the egui pass of frame_ui
+    pub fn after_ui(&mut self, state: &mut State, ctx: &egui::Context)
+    {
+        if !self.editor_state.visible
+        {
+            return;
+        }
 
-        full_output
+        self.apply_internal_asset_drag(state, ctx);
+
+        // stop text input when the user wants to move/navigate in 3d space
+        if state.io.input_manager.mouse.is_any_button_holding()
+        {
+            ctx.memory_mut(|mem| { mem.stop_text_input() });
+        }
     }
 
     pub fn update(&mut self, state: &mut State, wgpu: &mut WGpu, egui_ctx: &egui::Context)
