@@ -559,6 +559,10 @@ impl Default for VehicleTrackSettings
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct VehicleCameraSettings
 {
+    // off: no camera of its own (vehicles driven by code) - an empty camera name would take the main camera
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
     pub mode: VehicleCameraMode,
 
     pub distance_auto: bool,
@@ -588,6 +592,7 @@ impl Default for VehicleCameraSettings
     {
         Self
         {
+            enabled: true,
             mode: VehicleCameraMode::Chase,
 
             distance_auto: true,
@@ -1160,6 +1165,12 @@ impl VehicleController
         self.node.as_ref().map(|node| node.read().unwrap().id)
     }
 
+    // a trailer or a vehicle with the camera switched off leaves the cameras alone
+    fn has_camera(&self) -> bool
+    {
+        !self.vehicle_type.is_trailer() && self.camera.enabled
+    }
+
     // ********** setup **********
 
     pub fn auto_setup(&mut self, scene: &mut Scene, vehicle_node: &str, cam_name: &str) -> Option<String>
@@ -1299,7 +1310,7 @@ impl VehicleController
         }
 
         // a trailer has no camera of its own - an empty name would take the main camera
-        if !self.vehicle_type.is_trailer()
+        if self.has_camera()
         {
             match self.setup_camera(scene, &node, cam_name)
             {
@@ -1332,9 +1343,18 @@ impl VehicleController
         None
     }
 
+    // The camera follows this vehicle from now on (watching another car) - the vehicle that had it gets camera.enabled = false.
+    pub fn attach_camera(&mut self, scene: &mut Scene, cam_name: &str) -> Option<String>
+    {
+        let Some(node) = self.node.as_ref().cloned() else { return Some("no vehicle node".to_string()); };
+        self.camera.enabled = true;
+        self.setup_camera(scene, &node, cam_name)
+    }
+
     // the chase camera again from the current camera settings - after code changed distance, height or pitch
     pub fn reset_chase_camera(&mut self, scene: &mut Scene)
     {
+        if !self.has_camera() { return; }
         let Some(node) = self.node.as_ref().cloned() else { return; };
         let controller = self.new_chase_controller(&node);
         if let Some(cam) = scene.get_game_camera_mut(&self.cam_name)
@@ -2805,7 +2825,7 @@ impl SceneController for VehicleController
             self.set_cockpit_visibility(false);
 
             // the editor gets the upright chase camera back, play puts the cockpit on again
-            if !self.vehicle_type.is_trailer()
+            if self.has_camera()
             {
                 self.put_chase_controller(scene);
             }
@@ -2872,7 +2892,7 @@ impl SceneController for VehicleController
 
         self.release_exclusions(scene);
 
-        if !self.vehicle_type.is_trailer()
+        if self.has_camera()
         {
             self.put_chase_controller(scene);
         }
@@ -3030,7 +3050,7 @@ impl SceneController for VehicleController
         self.start_sit_animations();
 
         // ********** camera **********
-        if !self.vehicle_type.is_trailer()
+        if self.has_camera()
         {
             let grounded = telemetry_wheels.iter().any(|wheel| wheel.contact);
             self.update_camera(scene, io, &rotation, speed, lateral_left, grounded, &input, dt);
@@ -3537,20 +3557,46 @@ impl VehicleController
         if along.is_empty() { 0.0 } else { max - min }
     }
 
-    // Back on the wheels, facing where it faced, a bit above where it lay.
-    fn recover_vehicle(&mut self, physics: &mut PhysicsWorld, node_id: u32, rotation: &UnitQuaternion<f32>, frame: &VehicleFrame)
+    // Puts the vehicle upright at a standstill, facing along the heading - a respawn of a game. Out of walls first like the recover.
+    pub fn place(&mut self, scene: &mut Scene, position: Vector3<f32>, heading: Vector3<f32>)
     {
-        let Some((_, body)) = physics.vehicle(node_id) else { return; };
-        let position = body.position().translation;
+        let (Some(node_id), Some(frame)) = (self.node_id(), self.frame) else { return; };
+        let upright = Self::upright_rotation(heading, &frame);
 
-        let heading = rotation * frame.forward;
+        let pose = Pose::from_parts(Vector::new(position.x, position.y, position.z), Rotation::from_xyzw(upright.i, upright.j, upright.k, upright.w));
+        let pose = scene.physics.free_vehicle_pose(node_id, pose);
+        scene.physics.place_vehicle(node_id, pose);
+        self.reset_drive_state();
+    }
+
+    // the chassis forward along the flat heading, its up along the world up
+    fn upright_rotation(heading: Vector3<f32>, frame: &VehicleFrame) -> UnitQuaternion<f32>
+    {
         let heading = Vector3::new(heading.x, 0.0, heading.z);
         let heading = if heading.norm() > 0.01 { heading.normalize() } else { -Vector3::z() };
 
         let world_basis = Matrix3::from_columns(&[heading, Vector3::y(), heading.cross(&Vector3::y())]);
         let chassis_basis = Matrix3::from_columns(&[frame.forward, frame.up, frame.right()]);
 
-        let upright = UnitQuaternion::from_matrix(&(world_basis * chassis_basis.transpose()));
+        UnitQuaternion::from_matrix(&(world_basis * chassis_basis.transpose()))
+    }
+
+    fn reset_drive_state(&mut self)
+    {
+        self.engine_state.reset(&self.engine);
+        self.drift_amount = 0.0;
+        self.wheelspin = 0.0;
+        self.lean_goal = 0.0;
+        self.upside_down_time = 0.0;
+    }
+
+    // Back on the wheels, facing where it faced, a bit above where it lay.
+    fn recover_vehicle(&mut self, physics: &mut PhysicsWorld, node_id: u32, rotation: &UnitQuaternion<f32>, frame: &VehicleFrame)
+    {
+        let Some((_, body)) = physics.vehicle(node_id) else { return; };
+        let position = body.position().translation;
+
+        let upright = Self::upright_rotation(rotation * frame.forward, frame);
 
         // out of the walls first, then the lift - lifted first it can land on top of the wall it leaned on
         let pose = Pose::from_parts(position, Rotation::from_xyzw(upright.i, upright.j, upright.k, upright.w));
@@ -3558,11 +3604,7 @@ impl VehicleController
         pose.translation.y += self.recover.lift;
         physics.place_vehicle(node_id, pose);
 
-        self.engine_state.reset(&self.engine);
-        self.drift_amount = 0.0;
-        self.wheelspin = 0.0;
-        self.lean_goal = 0.0;
-        self.upside_down_time = 0.0;
+        self.reset_drive_state();
     }
 }
 
@@ -3933,6 +3975,7 @@ impl VehicleController
         {
             egui::CollapsingHeader::new("Camera").id_salt("vehicle_camera").show(ui, |ui|
             {
+                ui.checkbox(&mut self.camera.enabled, "Camera").on_hover_text("off: the vehicle drives no camera (vehicles driven by code)");
                 combo(ui, "vehicle_camera_mode", "Mode", "C or the right stick switches while driving", &mut self.camera.mode, &[VehicleCameraMode::Chase, VehicleCameraMode::Cockpit]);
                 ui.checkbox(&mut self.camera.distance_auto, "Auto Distance").on_hover_text("from the vehicle size, on the next auto setup");
                 slider(ui, "Distance", "chase camera, used by the setup - scroll to change it while driving", &mut self.camera.distance, 1.0..=50.0, 1);

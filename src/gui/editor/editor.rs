@@ -420,8 +420,9 @@ impl Editor
         }
 
         // back to edit mode
-        if (state.run_mode == RunMode::Play || state.run_mode == RunMode::Simulate) && state.io.input_manager.keyboard.is_pressed(Key::Escape)
+        if (state.run_mode == RunMode::Play || state.run_mode == RunMode::Simulate) && (state.stop_request || state.io.input_manager.keyboard.is_pressed(Key::Escape))
         {
+            state.stop_request = false;
             self.editor_state.set_run_mode(state, RunMode::Edit, false);
         }
 

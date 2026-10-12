@@ -495,6 +495,9 @@ pub struct State
 
     pub exit: bool,
 
+    // the game asks to end its run (a Quit in its menu): the editor goes back to edit mode, without the editor the app exits
+    pub stop_request: bool,
+
     pub scenes: Vec<SceneItem>,
 
     // scenes the project loader is still filling - and the ones it finished since the last frame (App::scene_loaded)
@@ -588,6 +591,7 @@ impl State
             run_mode: RunMode::Play,
             pause: false,
             exit: false,
+            stop_request: false,
 
             scenes: vec![],
 

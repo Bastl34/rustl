@@ -922,7 +922,19 @@ impl MainInterface
 
     pub fn check_exit(&mut self) -> bool
     {
-        self.context.state.borrow().exit
+        let state = self.context.state.borrow();
+        state.exit || (state.stop_request && !self.has_editor())
+    }
+
+    fn has_editor(&self) -> bool
+    {
+        #[cfg(feature = "editor")]
+        if self.editor_gui.is_some()
+        {
+            return true;
+        }
+
+        false
     }
 
     pub fn request_exit(&mut self) -> bool
