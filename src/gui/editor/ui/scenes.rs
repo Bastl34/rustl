@@ -91,7 +91,10 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
     {
         ui.scope(|ui|
         {
-            crate::gui::editor::ui::helper::ui_helper::extras_list(ui, &scene.extras);
+            if let Some((key, value)) = crate::gui::editor::ui::helper::ui_helper::extras_list(ui, &scene.extras)
+            {
+                editor_state.show_text_dialog(&key, &value);
+            }
         });
     });
 

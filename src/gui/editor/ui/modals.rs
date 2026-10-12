@@ -54,6 +54,61 @@ pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &eg
     {
         create_alert_dialog(editor_state, state, ctx);
     }
+    if editor_state.text_dialog.is_some()
+    {
+        create_text_dialog(editor_state, ctx);
+    }
+}
+
+pub fn create_text_dialog(editor_state: &mut EditorState, ctx: &egui::Context)
+{
+    let Some(dialog) = &editor_state.text_dialog else { return; };
+
+    let mut close = false;
+
+    let response = egui::Modal::new(egui::Id::unique("text_dialog")).show(ctx, |ui|
+    {
+        ui.set_width(520.0);
+        ui.add_space(4.0);
+
+        ui.label(egui::RichText::new(&dialog.title).size(16.0).strong());
+
+        ui.add_space(8.0);
+
+        egui::ScrollArea::vertical().max_height(400.0).auto_shrink([false, true]).show(ui, |ui|
+        {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+            ui.add(egui::Label::new(egui::RichText::new(&dialog.content).monospace()).selectable(true));
+        });
+
+        ui.add_space(12.0);
+        ui.separator();
+        ui.add_space(8.0);
+
+        ui.horizontal(|ui|
+        {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+            {
+                let button_size = egui::vec2(78.0, 28.0);
+                if ui.add(egui::Button::new("Close").min_size(button_size)).clicked()
+                {
+                    close = true;
+                }
+                if ui.add(egui::Button::new("📋 Copy").min_size(button_size)).clicked()
+                {
+                    ui.ctx().copy_text(dialog.content.clone());
+                }
+            });
+        });
+
+        ui.add_space(4.0);
+    });
+
+    // should_close covers a click on the backdrop and the escape key
+    if close || response.should_close()
+    {
+        editor_state.text_dialog = None;
+    }
 }
 
 pub fn create_alert_dialog(editor_state: &mut EditorState, _state: &mut State, ctx: &egui::Context)

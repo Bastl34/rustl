@@ -185,6 +185,13 @@ pub struct ConfirmDialog
     pub callback: Box<dyn FnOnce(&mut EditorState, &mut State)>,
 }
 
+// generic dialog with a title and a long text (scrollable, selectable, copyable) - shown while present
+pub struct TextDialog
+{
+    pub title: String,
+    pub content: String,
+}
+
 // "New Project" dialog - the project gets the new folder <location>/<name>
 pub struct NewProjectDialog
 {
@@ -329,6 +336,7 @@ pub struct EditorState
     pub export: ExportDialog,
 
     pub confirm_dialog: Option<ConfirmDialog>,
+    pub text_dialog: Option<TextDialog>,
     pub new_project_dialog: Option<NewProjectDialog>,
 
     pub asset_filter: String,
@@ -484,6 +492,7 @@ impl EditorState
             export: ExportDialog::new(),
 
             confirm_dialog: None,
+            text_dialog: None,
             new_project_dialog: None,
 
             asset_filter: "".to_string(),
@@ -530,6 +539,12 @@ impl EditorState
             save_option: false,
             callback: Box::new(callback),
         });
+    }
+
+    // shows a long text in a modal (extras values, ...)
+    pub fn show_text_dialog(&mut self, title: &str, content: &str)
+    {
+        self.text_dialog = Some(TextDialog { title: title.to_string(), content: content.to_string() });
     }
 
     // shows a Save / Don't Save / Cancel modal - the callback runs after saving or on "Don't Save"

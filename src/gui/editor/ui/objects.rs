@@ -920,7 +920,10 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         ui.scope(|ui|
         {
             let node = node.read().unwrap();
-            extras_list(ui, &node.extras);
+            if let Some((key, value)) = extras_list(ui, &node.extras)
+            {
+                editor_state.show_text_dialog(&key, &value);
+            }
         });
     });
 

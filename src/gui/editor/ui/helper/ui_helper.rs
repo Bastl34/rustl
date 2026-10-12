@@ -34,8 +34,24 @@ pub fn property_row(ui: &mut egui::Ui, key: impl Into<RichText>, value: impl Int
     });
 }
 
-/// The extras of a node or a scene over the whole width: sorted by key, internal ones (leading _) dimmed, long values wrap, origin on the right.
-pub fn extras_list(ui: &mut egui::Ui, extras: &Extras)
+/// A value cut after `max_rows` lines with "…" - returns true when its "more" link was clicked (only shown if it was cut).
+pub fn text_preview(ui: &mut egui::Ui, text: &str, max_rows: usize) -> bool
+{
+    let font_id = egui::TextStyle::Body.resolve(ui.style());
+    let mut job = egui::text::LayoutJob::simple(text.to_string(), font_id, ui.visuals().text_color(), ui.available_width());
+    job.wrap.max_rows = max_rows;
+    job.wrap.overflow_character = Some('…');
+
+    let galley = ui.painter().layout_job(job);
+    let elided = galley.elided;
+    ui.add(egui::Label::new(galley));
+
+    elided && ui.link(RichText::new("more").small()).clicked()
+}
+
+/// The extras of a node or a scene over the whole width: sorted by key, internal ones (leading _) dimmed, long values cut after 2 lines, origin on the right.
+/// Returns (key, value) of the entry whose "more" link was clicked.
+pub fn extras_list(ui: &mut egui::Ui, extras: &Extras) -> Option<(String, String)>
 {
     let mut entries: Vec<_> = extras.iter_with_origin().collect();
     entries.sort_by(|a, b| a.0.cmp(b.0));
@@ -43,9 +59,10 @@ pub fn extras_list(ui: &mut egui::Ui, extras: &Extras)
     if entries.is_empty()
     {
         ui.label(RichText::new("none").weak());
-        return;
+        return None;
     }
 
+    let mut more = None;
     let key_width = key_column_width(ui);
     ui.spacing_mut().item_spacing.y = 0.0;
     for (i, (key, value, origin)) in entries.into_iter().enumerate()
@@ -60,7 +77,11 @@ pub fn extras_list(ui: &mut egui::Ui, extras: &Extras)
                 fixed_column(ui, key_width, |ui| ui.add(egui::Label::new(key_text).truncate()));
 
                 let value_width = (ui.available_width() - ORIGIN_COLUMN_WIDTH - ui.spacing().item_spacing.x).max(40.0);
-                fixed_column(ui, value_width, |ui| ui.add(egui::Label::new(value.to_string()).wrap()));
+                let value = value.to_string();
+                if fixed_column(ui, value_width, |ui| text_preview(ui, &value, 2))
+                {
+                    more = Some((key.to_string(), value));
+                }
 
                 let origin_text = RichText::new(origin.name()).small().weak();
                 ui.label(if origin == Origin::Scene { origin_text.color(Color32::from_rgb(110, 170, 255)) } else { origin_text })
@@ -68,6 +89,8 @@ pub fn extras_list(ui: &mut egui::Ui, extras: &Extras)
             });
         });
     }
+
+    more
 }
 
 pub const HIERARCHY_BUTTON_SIZE: egui::Vec2 = egui::vec2(20.0, 18.0);
