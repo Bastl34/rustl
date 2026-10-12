@@ -10,7 +10,7 @@ use crate::gui::editor::helper::get_object_and_pointer_world_position;
 use crate::gui::editor::ui::console::create_console_section;
 use crate::gui::editor::ui::debug::create_debug_settings;
 use crate::gui::editor::ui::dialogs::{load_sound_dialog, load_texture_dialog};
-use crate::gui::editor::ui::helper::ui_helper::loading_progress_bar;
+use crate::gui::editor::ui::helper::ui_helper::{fit_hierarchy_heading, hierarchy_count_width, loading_progress_bar, paint_hierarchy_count};
 use crate::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
 use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut, execute_on_state_mut, move_nodes_to};
 use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX};
@@ -858,7 +858,7 @@ fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &m
         let content_top = ui.cursor().min.y;
 
         // chart
-        collapse_with_title(ui, "chart", true, "📈 Chart", None, |ui|
+        collapse_with_title(ui, "chart", false, "📈 Chart", None, |ui|
         {
             create_chart(editor_state, state, ui);
         });
@@ -1088,6 +1088,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         }
 
         let scene_id = scene.id;
+        let amounts = SceneAmounts::new(scene, editor_state.show_internal_entries);
         let id = format!("scene_{}", scene_id);
         let ui_id = ui.make_persistent_id(id.clone());
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, scene.active).show_header(ui, |ui|
@@ -1096,7 +1097,8 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None { selection = true; } else { selection = false; }
 
-                let mut heading = RichText::new(format!("🎬 {}", scene.name)).strong();
+                let total = amounts.total();
+                let mut heading = RichText::new(fit_hierarchy_heading(ui, "🎬 ", &scene.name, "", hierarchy_count_width(ui, total))).strong();
 
                 if scene.active
                 {
@@ -1104,8 +1106,9 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 }
 
                 let mut toggle = ui.toggle_value(&mut selection, heading);
+                paint_hierarchy_count(ui, toggle.rect, total);
 
-                toggle = toggle.on_hover_text(format!("Scene ID: {}", scene.id));
+                toggle = toggle.on_hover_text(format!("Scene ID: {}\nobjects: {}, cameras: {}, lights: {}, materials: {}", scene.id, amounts.objects, amounts.cameras, amounts.lights, amounts.materials));
 
                 if toggle.double_clicked()
                 {
@@ -1194,7 +1197,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         }).body(|ui|
         {
             //self.build_node_list(ui, &scene.nodes, scene_id, true);
-            create_hierarchy_type_entries(state, editor_state, exec_queue.clone(), scene, ui);
+            create_hierarchy_type_entries(state, editor_state, exec_queue.clone(), scene, &amounts, ui);
         });
     }
 
@@ -1205,6 +1208,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     // ******************* resources *******************
 
     let exec_queue = state.main_thread_execution_queue.clone();
+    let amounts = ResourceAmounts::new(state, editor_state.show_internal_entries);
 
     let ui_id = ui.make_persistent_id("resources");
     egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
@@ -1213,6 +1217,8 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         {
             let mut selection; if editor_state.selected_scene_id == None && editor_state.settings_panel == SettingsPanel::Resources && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None { selection = true; } else { selection = false; }
             let toggle = ui.toggle_value(&mut selection, RichText::new("🗄 Resources").strong());
+            paint_hierarchy_count(ui, toggle.rect, amounts.total());
+            let toggle = toggle.on_hover_text(format!("textures: {}, mesh resources: {}, sound sources: {}", amounts.textures, amounts.mesh_resources, amounts.sound_sources));
 
             if toggle.clicked()
             {
@@ -1233,7 +1239,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     }).body(|ui|
     {
         //self.build_node_list(ui, &scene.nodes, scene_id, true);
-        create_resources_entries(state, editor_state, exec_queue.clone(), ui);
+        create_resources_entries(state, editor_state, exec_queue.clone(), &amounts, ui);
     });
 
     // ******************* code *******************
@@ -1244,11 +1250,75 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     }
 }
 
-fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui)
+// the amounts of the scene tree (internal entries only if they are shown) - for the scene row and its type rows
+struct SceneAmounts
+{
+    objects: usize,
+    cameras: usize,
+    lights: usize,
+    materials: usize,
+}
+
+impl SceneAmounts
+{
+    fn new(scene: &Scene, show_internal: bool) -> Self
+    {
+        let mut cameras = scene.cameras.len();
+        let mut lights = scene.lights.get_ref().len();
+        let mut materials = scene.materials.len();
+
+        if !show_internal
+        {
+            cameras = scene.cameras.iter().filter(|cam| !cam.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+            lights = scene.lights.get_ref().iter().filter(|light| !light.borrow().get_ref().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+            materials = scene.materials.iter().filter(|(_, material)| !material.read().unwrap().get_base().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+        }
+
+        Self { objects: scene.get_node_amount_recursive(show_internal), cameras, lights, materials }
+    }
+
+    fn total(&self) -> usize
+    {
+        self.objects + self.cameras + self.lights + self.materials
+    }
+}
+
+// the same for the resources row
+struct ResourceAmounts
+{
+    textures: usize,
+    mesh_resources: usize,
+    sound_sources: usize,
+}
+
+impl ResourceAmounts
+{
+    fn new(state: &State, show_internal: bool) -> Self
+    {
+        let resources = &state.resources;
+        let mut textures = resources.textures.len();
+        let mut mesh_resources = resources.mesh_resources.len();
+        let mut sound_sources = resources.sound_sources.len();
+
+        if !show_internal
+        {
+            textures = resources.textures.iter().filter(|(_, texture)| !texture.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+            mesh_resources = resources.mesh_resources.iter().filter(|(_, mesh_resource)| !mesh_resource.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+            sound_sources = resources.sound_sources.iter().filter(|(_, sound_source)| !sound_source.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+        }
+
+        Self { textures, mesh_resources, sound_sources }
+    }
+
+    fn total(&self) -> usize
+    {
+        self.textures + self.mesh_resources + self.sound_sources
+    }
+}
+
+fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, amounts: &SceneAmounts, ui: &mut Ui)
 {
     let scene_id = scene.id;
-
-    let show_internal = editor_state.show_internal_entries;
 
     // objects
     {
@@ -1259,7 +1329,9 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Object { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("◼ Objects ({})", scene.get_node_amount_recursive(show_internal))).color(Color32::LIGHT_GREEN).strong()).on_hover_text("there are maybe some internal objects hidden");
+                let toggle = ui.toggle_value(&mut selection, RichText::new("◼ Objects").color(Color32::LIGHT_GREEN).strong());
+                paint_hierarchy_count(ui, toggle.rect, amounts.objects);
+                let toggle = toggle.on_hover_text("there are maybe some internal objects hidden");
 
                 // *** drop onto root: make nodes top-level (no parent) ***
                 let drop_resp = ui.interact(toggle.rect, egui::Id::unique(("objects_root_drop", scene_id)), egui::Sense::hover());
@@ -1331,14 +1403,9 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut cameras_amount = scene.cameras.len();
-                if !show_internal
-                {
-                    cameras_amount = scene.cameras.iter().filter(|cam| !cam.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
-                }
-
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Camera { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("📷 Cameras ({})", cameras_amount)).color(Color32::LIGHT_RED).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new("📷 Cameras").color(Color32::LIGHT_RED).strong());
+                paint_hierarchy_count(ui, toggle.rect, amounts.cameras);
 
                 if toggle.clicked()
                 {
@@ -1378,14 +1445,9 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut lights_amount = scene.lights.get_ref().len();
-                if !show_internal
-                {
-                    lights_amount = scene.lights.get_ref().iter().filter(|light| !light.borrow().get_ref().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
-                }
-
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Light { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("💡 Lights ({})", lights_amount)).color(Color32::YELLOW).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new("💡 Lights").color(Color32::YELLOW).strong());
+                paint_hierarchy_count(ui, toggle.rect, amounts.lights);
 
                 if toggle.clicked()
                 {
@@ -1425,14 +1487,9 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut materials_amount = scene.materials.len();
-                if !show_internal
-                {
-                    materials_amount = scene.materials.iter().filter(|(_, material)| !material.read().unwrap().get_base().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
-                }
-
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Material { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🎨 Materials ({})", materials_amount)).color(Color32::GOLD).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new("🎨 Materials").color(Color32::GOLD).strong());
+                paint_hierarchy_count(ui, toggle.rect, amounts.materials);
 
                 if toggle.clicked()
                 {
@@ -1465,12 +1522,10 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
     }
 }
 
-fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, ui: &mut Ui)
+fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, amounts: &ResourceAmounts, ui: &mut Ui)
 {
     let mipmapping = state.rendering.create_mipmaps;
     let max_tex_res = state.max_texture_resolution();
-
-    let show_internal = editor_state.show_internal_entries;
 
     // textures
     {
@@ -1480,14 +1535,9 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut textures_amount = state.resources.textures.len();
-                if !show_internal
-                {
-                    textures_amount = state.resources.textures.iter().filter(|(_, texture)| !texture.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
-                }
-
                 let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Texture { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🖼 Textures ({})", textures_amount)).color(Color32::LIGHT_BLUE).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new("🖼 Textures").color(Color32::LIGHT_BLUE).strong());
+                paint_hierarchy_count(ui, toggle.rect, amounts.textures);
 
                 if toggle.clicked()
                 {
@@ -1530,14 +1580,10 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut mesh_resources_amount = state.resources.mesh_resources.len();
-                if !show_internal
-                {
-                    mesh_resources_amount = state.resources.mesh_resources.iter().filter(|(_, mesh_resource)| !mesh_resource.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
-                }
-
                 let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::MeshResource { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new(format!("🔷 Mesh Resources ({})", mesh_resources_amount)).color(Color32::LIGHT_YELLOW).strong()).clicked()
+                let toggle = ui.toggle_value(&mut selection, RichText::new("🔷 Mesh Resources").color(Color32::LIGHT_YELLOW).strong());
+                paint_hierarchy_count(ui, toggle.rect, amounts.mesh_resources);
+                if toggle.clicked()
                 {
                     if selection
                     {
@@ -1565,14 +1611,9 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut sound_sources_amount = state.resources.sound_sources.len();
-                if !show_internal
-                {
-                    sound_sources_amount = state.resources.sound_sources.iter().filter(|(_, sound_source)| !sound_source.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
-                }
-
                 let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::SoundSource { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sound Sources ({})", sound_sources_amount)).color(Color32::LIGHT_GRAY).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new("🔊 Sound Sources").color(Color32::LIGHT_GRAY).strong());
+                paint_hierarchy_count(ui, toggle.rect, amounts.sound_sources);
 
                 toggle.context_menu(|ui|
                 {

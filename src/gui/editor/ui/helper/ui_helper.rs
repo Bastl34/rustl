@@ -127,6 +127,20 @@ pub fn fit_hierarchy_heading(ui: &egui::Ui, prefix: &str, name: &str, suffix: &s
     format!("{}{}...{}", prefix, truncated, suffix)
 }
 
+// the space the element count needs at the right end of a hierarchy row
+pub fn hierarchy_count_width(ui: &egui::Ui, count: usize) -> f32
+{
+    let font_id = egui::TextStyle::Button.resolve(ui.style());
+    ui.painter().layout_no_wrap(count.to_string(), font_id, Color32::WHITE).size().x + HIERARCHY_BUTTON_GAP * 2.0
+}
+
+// the element count right aligned in the row rect
+pub fn paint_hierarchy_count(ui: &egui::Ui, rect: egui::Rect, count: usize)
+{
+    let font_id = egui::TextStyle::Button.resolve(ui.style());
+    ui.painter().text(egui::pos2(rect.right() - HIERARCHY_BUTTON_GAP, rect.center().y), egui::Align2::RIGHT_CENTER, count.to_string(), font_id, ui.visuals().weak_text_color());
+}
+
 pub fn hierarchy_row_spacer(ui: &mut egui::Ui, reserved_right: f32)
 {
     let space = ui.available_width() - reserved_right;

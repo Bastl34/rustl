@@ -12,7 +12,7 @@ use crate::state::state::State;
 
 use super::super::editor_state::{BottomPanel, EditorState};
 use super::code_editor::open_inline_editor;
-use super::helper::ui_helper::{HIERARCHY_BUTTON_SIZE, fit_hierarchy_heading, hierarchy_button_reserve};
+use super::helper::ui_helper::{HIERARCHY_BUTTON_SIZE, fit_hierarchy_heading, hierarchy_button_reserve, hierarchy_count_width};
 
 const COLOR_CODE_OK: Color32 = Color32::from_rgb(110, 195, 120);
 const COLOR_CODE_ERROR: Color32 = Color32::from_rgb(235, 100, 100);
@@ -138,7 +138,8 @@ pub fn create_code_hierarchy(editor_state: &mut EditorState, ui: &mut Ui)
     {
         ui.horizontal(|ui|
         {
-            let reserved_right = hierarchy_button_reserve(STATUS_SLOTS);
+            let files = code.files.len();
+            let reserved_right = hierarchy_button_reserve(1) + hierarchy_count_width(ui, files);
             let heading = fit_hierarchy_heading(ui, "💻 ", &format!("Code ({})", code.crate_name), "", reserved_right);
 
             let mut selection = editor_state.bottom == BottomPanel::Console && editor_state.log_source == Some(LogSource::Code) && selected.is_none();
@@ -167,8 +168,10 @@ pub fn create_code_hierarchy(editor_state: &mut EditorState, ui: &mut Ui)
                     CodeStatus::Building => { ui.add_sized(HIERARCHY_BUTTON_SIZE, egui::Spinner::new().size(12.0)).on_hover_text("compiling"); },
                     CodeStatus::Ready => status_slot(ui, Some(("✔", COLOR_CODE_OK, "compiled".to_string()))),
                     CodeStatus::Failed => status_slot(ui, Some(("❌", COLOR_CODE_ERROR, "does not compile - click for the logs".to_string()))),
-                    CodeStatus::NoCode => {},
+                    CodeStatus::NoCode => status_slot(ui, None),
                 }
+
+                ui.label(RichText::new(files.to_string()).color(ui.visuals().weak_text_color())).on_hover_text(format!("{} files", files));
             });
         });
     }).body(|ui|
