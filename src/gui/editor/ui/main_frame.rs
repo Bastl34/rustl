@@ -1090,7 +1090,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         let scene_id = scene.id;
         let id = format!("scene_{}", scene_id);
         let ui_id = ui.make_persistent_id(id.clone());
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, true).show_header(ui, |ui|
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, scene.active).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
@@ -1207,7 +1207,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     let exec_queue = state.main_thread_execution_queue.clone();
 
     let ui_id = ui.make_persistent_id("resources");
-    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, true).show_header(ui, |ui|
+    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
     {
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
         {

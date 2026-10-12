@@ -134,7 +134,7 @@ pub fn create_code_hierarchy(editor_state: &mut EditorState, ui: &mut Ui)
     let building = code.is_building();
 
     let ui_id = ui.make_persistent_id("project_code_hierarchy");
-    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, true).show_header(ui, |ui|
+    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
     {
         ui.horizontal(|ui|
         {
