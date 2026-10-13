@@ -58,7 +58,7 @@ pub struct MainInterface
     project_app_started: bool,
 
     // an app drew its ui into the main window this frame (play mode / exports)
-    game_ui: bool,
+    app_ui: bool,
 
     gilrs: Option<Gilrs>,
 
@@ -143,7 +143,7 @@ impl MainInterface
 
             project_app: None,
             project_app_started: false,
-            game_ui: false,
+            app_ui: false,
 
             gilrs,
 
@@ -714,7 +714,7 @@ impl MainInterface
                 {
                     let now = Instant::now();
 
-                    if self.editor_visible() || self.game_ui
+                    if self.editor_visible() || self.app_ui
                     {
                         self.context.egui.render(&mut self.context.wgpu, &view, &mut egui_encoder);
 
@@ -738,14 +738,14 @@ impl MainInterface
 
         // ******************** screenshot ********************
         {
-            let state = &mut *(self.context.state.borrow_mut());
+            let save_screenshot = self.context.state.borrow().debug.save_screenshot;
 
-            if state.debug.save_screenshot
+            if save_screenshot
             {
                 //let target_size: Option<(u32, u32)> = Some((256, 256));
                 let target_size: Option<(u32, u32)> = None;
 
-                let original_size = (state.width, state.height);
+                let original_size = { let state = self.context.state.borrow(); (state.width, state.height) };
                 let render_size = target_size.unwrap_or(original_size);
 
                 // resize all scenes (depth buffer, cameras, hzb) to the given resolution
@@ -777,12 +777,14 @@ impl MainInterface
                 // switch to the custom render resolution
                 if target_size.is_some()
                 {
-                    resize_scenes(&mut self.context.wgpu, state, render_size.0, render_size.1);
+                    resize_scenes(&mut self.context.wgpu, &mut self.context.state.borrow_mut(), render_size.0, render_size.1);
                 }
 
                 let (buffer_dimensions, output_buffer, texture, view, msaa_view) = self.context.wgpu.start_offscreen_render(target_size);
                 let mut encoder = self.context.wgpu.create_command_encoder();
                 {
+                    let state = &mut *(self.context.state.borrow_mut());
+
                     for scene in &mut state.scenes
                     {
                         if !scene.visible || !scene.active
@@ -826,10 +828,34 @@ impl MainInterface
                         }
                     }
                 }
+
+                // app ui
+                if self.app_ui
+                {
+                    if target_size.is_some()
+                    {
+                        let prev_egui_size = self.context.egui.screen_descriptor.size_in_pixels;
+                        self.context.egui.screen_descriptor.size_in_pixels = [render_size.0, render_size.1];
+
+                        let gui_output = self.build_app_ui(render_size);
+                        self.context.egui.set_output(gui_output, &self.context.window);
+                        self.context.egui.render(&mut self.context.wgpu, &view, &mut encoder);
+
+                        self.context.egui.screen_descriptor.size_in_pixels = prev_egui_size;
+                    }
+                    // window size: repaint the egui output of this frame as it is
+                    else if self.context.egui.output.is_some()
+                    {
+                        self.context.egui.render(&mut self.context.wgpu, &view, &mut encoder);
+                    }
+                }
+
                 let img_data = self.context.wgpu.end_offscreen_render(buffer_dimensions, output_buffer, texture, encoder);
 
                 img_data.save("data/screenshot.png").unwrap();
                 img_data.save("data/screenshot.webp").unwrap();
+
+                let state = &mut *(self.context.state.borrow_mut());
 
                 // restore the original (window) resolution
                 if target_size.is_some()
@@ -972,10 +998,10 @@ impl MainInterface
     {
         let now = Instant::now();
         let editor_visible = self.editor_visible();
-        self.game_ui = !editor_visible && (self.app.is_some() || self.project_app.is_some());
+        self.app_ui = !editor_visible && (self.app.is_some() || self.project_app.is_some());
 
         #[cfg(not(feature = "editor"))]
-        if !self.game_ui
+        if !self.app_ui
         {
             return;
         }
@@ -990,7 +1016,7 @@ impl MainInterface
             raw_input.focused = true;
         }
 
-        let game_ui = self.game_ui;
+        let app_ui = self.app_ui;
         #[cfg_attr(not(feature = "editor"), allow(unused_mut))]
         let mut editor_ui_time = 0.0;
         let mut app_ui_time = 0.0;
@@ -1005,7 +1031,7 @@ impl MainInterface
                 editor_ui_time += now.elapsed().as_micros() as f32 / 1000.0;
             }
 
-            if game_ui
+            if app_ui
             {
                 let now = Instant::now();
                 if let Some(app) = &mut self.app { app.ui(&mut self.context, ui); }
@@ -1023,13 +1049,36 @@ impl MainInterface
             editor_ui_time += now.elapsed().as_micros() as f32 / 1000.0;
         }
 
-        self.context.egui.ui_state.handle_platform_output(&window, output.platform_output.clone());
+        // a hidden game mouse stays hidden - egui-winit shows the cursor again whenever it applies its cursor icon
+        let mut platform_output = output.platform_output.clone();
+        if !*self.context.state.borrow().io.input_manager.mouse.visible.get_ref()
+        {
+            platform_output.cursor_icon = egui::CursorIcon::None;
+        }
+        self.context.egui.ui_state.handle_platform_output(&window, platform_output);
         self.context.egui.set_output(output, &window);
 
         let stats = &mut self.context.state.borrow_mut().stats;
         stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         stats.editor_ui_time = editor_ui_time;
         stats.app_ui_time = app_ui_time;
+    }
+
+    // ui of the apps laid out at a custom size (off-screen render like screenshots)
+    fn build_app_ui(&mut self, render_size: (u32, u32)) -> egui::FullOutput
+    {
+        let window = self.context.window.clone();
+        let mut raw_input = self.context.egui.take_input(&window);
+
+        let pixels_per_point = self.context.egui.screen_descriptor.pixels_per_point;
+        raw_input.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(render_size.0 as f32 / pixels_per_point, render_size.1 as f32 / pixels_per_point)));
+
+        let ctx = self.context.egui.ctx.clone();
+        ctx.run_ui(raw_input, |ui|
+        {
+            if let Some(app) = &mut self.app { app.ui(&mut self.context, ui); }
+            if let Some(app) = &mut self.project_app { app.ui(&mut self.context, ui); }
+        })
     }
 
     fn update_project_app(&mut self)
@@ -1148,12 +1197,12 @@ impl MainInterface
         }
 
         // the ui of the game gets every event, it takes only those over its widgets (or for a focused text field)
-        let game_ui = self.game_ui;
+        let app_ui = self.app_ui;
 
         #[cfg(feature = "editor")]
         let egui_consumed = if let Some(editor_gui) = &mut self.editor_gui
         {
-            if editor_gui.editor_state.visible || game_ui
+            if editor_gui.editor_state.visible || app_ui
             {
                 self.context.egui.on_event(event, self.context.window.clone())
             }
@@ -1170,11 +1219,11 @@ impl MainInterface
         }
         else
         {
-            game_ui && self.context.egui.on_event(event, self.context.window.clone())
+            app_ui && self.context.egui.on_event(event, self.context.window.clone())
         };
 
         #[cfg(not(feature = "editor"))]
-        let egui_consumed = game_ui && self.context.egui.on_event(event, self.context.window.clone());
+        let egui_consumed = app_ui && self.context.egui.on_event(event, self.context.window.clone());
 
 
         // Always forward mouse button releases to the input manager, even if egui consumed the event.

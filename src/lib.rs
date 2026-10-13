@@ -283,6 +283,7 @@ pub mod helper
 pub mod resources
 {
     pub mod resources;
+    pub mod save_data;
 }
 
 #[cfg(target_arch="wasm32")]

@@ -112,6 +112,7 @@ web-sys = { version = "0.3.106", features = [
     "Location",
     "XmlHttpRequest",
     "XmlHttpRequestResponseType",
+    "Storage",
     "console",
 ]}
 wasm_thread = { version = "0.3.3", features = ["es_modules"]}

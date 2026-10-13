@@ -3,13 +3,17 @@ use std::sync::{Arc, RwLock, Mutex};
 use nalgebra::Point3;
 use rodio::{MixerDeviceSink, DeviceSinkBuilder, mixer::Mixer};
 
-use crate::{console_error, helper::change_tracker::ChangeTracker};
+use crate::{console_error, helper::change_tracker::ChangeTracker, state::scene::components::sound::SoundCategory};
 
 pub type AudioDeviceItem = Arc<RwLock<Box<AudioDevice>>>;
 
 pub struct AudioDeviceData
 {
+    // master volume, every sound
     pub volume: f32,
+    // on top of the master volume, by the category of the sound
+    pub effects_volume: f32,
+    pub music_volume: f32,
 
     // left and right ear of every active camera (split screen) - a spatial sound is heard by the nearest pair
     pub listeners: Vec<(Point3<f32>, Point3<f32>)>,
@@ -17,6 +21,16 @@ pub struct AudioDeviceData
 
 impl AudioDeviceData
 {
+    // master volume times the volume of the category
+    pub fn category_volume(&self, category: SoundCategory) -> f32
+    {
+        self.volume * match category
+        {
+            SoundCategory::Effects => self.effects_volume,
+            SoundCategory::Music => self.music_volume,
+        }
+    }
+
     pub fn nearest_listener(&self, position: &Point3<f32>) -> Option<(Point3<f32>, Point3<f32>)>
     {
         self.listeners.iter().copied().min_by(|(a_left, a_right), (b_left, b_right)|
@@ -70,6 +84,8 @@ impl Default for AudioDevice
         let data = ChangeTracker::new(AudioDeviceData
         {
             volume: 1.0,
+            effects_volume: 1.0,
+            music_volume: 1.0,
             listeners: vec![(Point3::<f32>::new(-1.0, 0.0, 0.0), Point3::<f32>::new(1.0, 0.0, 0.0))],
         });
 

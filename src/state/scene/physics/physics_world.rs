@@ -783,6 +783,9 @@ pub struct PhysicsWorld
     // trailer couplings by the trailer's node id - the tow vehicle's controller sets them up
     hitches: HashMap<u32, HitchEntry>,
 
+    // moving surfaces (conveyors, escalators) by node id, m/s in world space - the wheels grip relative to them
+    surface_velocities: HashMap<u32, Vector3<f32>>,
+
     // started, touching and stopped contacts of the last frame, see contact_events
     contacts: ContactTracker,
 }
@@ -842,6 +845,7 @@ impl PhysicsWorld
             characters: HashMap::new(),
             vehicles: HashMap::new(),
             hitches: HashMap::new(),
+            surface_velocities: HashMap::new(),
             contacts: ContactTracker::default(),
         }
     }
@@ -3655,9 +3659,54 @@ impl PhysicsWorld
                 filter.predicate = Some(&not_partner);
             }
 
+            // on a moving surface the tires work against it: the update sees the velocity relative to the surface
+            let surface = Self::wheel_surface_velocity(vehicle, &self.colliders, &self.surface_velocities);
+            if let Some(body) = self.bodies.get_mut(vehicle.body).filter(|_| surface != Vector::ZERO)
+            {
+                body.set_linvel(body.linvel() - surface, true);
+            }
+
             let queries = self.broad_phase_bvh.as_query_pipeline_mut(&self.dispatcher, &mut self.bodies, &mut self.colliders, filter);
 
             vehicle.controller.update_vehicle(dt, queries);
+
+            if let Some(body) = self.bodies.get_mut(vehicle.body).filter(|_| surface != Vector::ZERO)
+            {
+                body.set_linvel(body.linvel() + surface, true);
+            }
+        }
+    }
+
+    // the share of the moving surfaces under the wheels (last step's contacts), along each contact plane
+    fn wheel_surface_velocity(vehicle: &VehicleEntry, colliders: &ColliderSet, surfaces: &HashMap<u32, Vector3<f32>>) -> Vector
+    {
+        let wheels = vehicle.controller.wheels();
+        if surfaces.is_empty() || wheels.is_empty() { return Vector::ZERO; }
+
+        let mut sum = Vector::ZERO;
+        for wheel in wheels
+        {
+            let info = wheel.raycast_info();
+            if !info.is_in_contact { continue; }
+
+            let Some(node_id) = info.ground_object.and_then(|handle| colliders.get(handle)).map(|collider| collider.user_data as u32) else { continue; };
+            let Some(velocity) = surfaces.get(&node_id) else { continue; };
+
+            let velocity = Vector::new(velocity.x, velocity.y, velocity.z);
+            let normal = info.contact_normal_ws.normalize_or(Vector::Y);
+            sum += velocity - normal * velocity.dot(normal);
+        }
+
+        sum / wheels.len() as f32
+    }
+
+    // A moving surface for the vehicle wheels (conveyor, escalator), m/s in world space - None removes it. Survives a rebuild.
+    pub fn set_surface_velocity(&mut self, node_id: u32, velocity: Option<Vector3<f32>>)
+    {
+        match velocity
+        {
+            Some(velocity) => { self.surface_velocities.insert(node_id, velocity); },
+            None => { self.surface_velocities.remove(&node_id); },
         }
     }
 

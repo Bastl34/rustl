@@ -379,6 +379,8 @@ pub struct VehicleSuspensionSettings
     pub relaxation: f32, // damping while extending
     pub max_force_factor: f32, // times the chassis weight, per wheel
     pub keep_ride_height: bool, // mount the springs so the loaded vehicle sits where it was modelled
+    #[serde(default)]
+    pub ray_headroom: f32, // m the wheel rays start above the spring mount - they still find the ground when a hard landing sank the body into it
 }
 
 impl Default for VehicleSuspensionSettings
@@ -393,7 +395,8 @@ impl Default for VehicleSuspensionSettings
             compression: 2.2,
             relaxation: 3.2,
             max_force_factor: 3.0,
-            keep_ride_height: true
+            keep_ride_height: true,
+            ray_headroom: 0.0,
         }
     }
 }
@@ -1067,6 +1070,10 @@ pub struct VehicleController
     // Some: drives instead of the input bindings (set by code every frame or once, None gives the control back)
     #[serde(skip, default)]
     pub input_override: Option<VehicleDriveInput>,
+
+    // Some((steer, weight)): steering from code mixed into the driver's (assists like keeping on the road) - weight 0..1, the rest stays with the driver
+    #[serde(skip, default)]
+    pub steer_assist: Option<(f32, f32)>,
 }
 
 fn default_base() -> SceneControllerBase
@@ -1154,6 +1161,7 @@ impl VehicleController
 
             telemetry: VehicleTelemetry::default(),
             input_override: None,
+            steer_assist: None,
         };
 
         controller.apply_preset();
@@ -1869,6 +1877,7 @@ impl VehicleController
 
         self.suspension.rest_length *= factor;
         self.suspension.travel *= factor;
+        self.suspension.ray_headroom *= factor;
         self.suspension.stiffness /= factor;
 
         // the spring frequency goes with 1 / sqrt(factor), the damping follows so the damping ratio stays
@@ -2188,10 +2197,10 @@ impl VehicleController
 
         let wheels: Vec<VehicleWheelDesc> = self.wheels.iter().map(|wheel| VehicleWheelDesc
         {
-            connection: wheel.center + frame.up * (self.suspension.rest_length - self.sag),
+            connection: wheel.center + frame.up * (self.suspension.rest_length - self.sag + self.suspension.ray_headroom),
             direction: -frame.up,
             axle: frame.right(),
-            rest_length: self.suspension.rest_length,
+            rest_length: self.suspension.rest_length + self.suspension.ray_headroom,
             radius: wheel.radius,
             tuning,
         }).collect();
@@ -2383,7 +2392,7 @@ impl VehicleController
     }
 
     // Each wheel at the given chassis pose. The ray ran at the pose before the last step, so its hit is taken as a ground plane under the shown pose.
-    fn wheel_visuals(physics: &PhysicsWorld, node_id: u32, chassis_world: &Matrix4<f32>) -> Vec<WheelVisual>
+    fn wheel_visuals(physics: &PhysicsWorld, node_id: u32, chassis_world: &Matrix4<f32>, headroom: f32) -> Vec<WheelVisual>
     {
         let Some((vehicle, _)) = physics.vehicle(node_id) else { return vec![]; };
 
@@ -2413,7 +2422,8 @@ impl VehicleController
                 ground = Some((hard_point + direction * (suspension_length + wheel.radius), normal));
             }
 
-            WheelVisual { contact: info.is_in_contact, suspension_length, spin: wheel.rotation, steering: wheel.steering, ground }
+            // the spring length without the ray headroom
+            WheelVisual { contact: info.is_in_contact, suspension_length: suspension_length - headroom, spin: wheel.rotation, steering: wheel.steering, ground }
         }).collect()
     }
 
@@ -2999,6 +3009,10 @@ impl SceneController for VehicleController
             input.handbrake = drive.handbrake;
             input.recover = drive.recover;
         }
+        if let Some((steer, weight)) = self.steer_assist.filter(|_| !self.vehicle_type.is_trailer())
+        {
+            input.steer += (steer.clamp(-1.0, 1.0) - input.steer) * weight.clamp(0.0, 1.0);
+        }
 
         let Some(state) = self.drive(&mut scene.physics, node_id, &frame, &input, dt) else { return false; };
         self.pending = Some(PendingFrame { input, state });
@@ -3018,7 +3032,7 @@ impl SceneController for VehicleController
 
         let chassis_world = Self::chassis_matrix(&node.read().unwrap().get_full_transform());
         let rotation = extract_rotation_quat_from_transform(&chassis_world);
-        let wheel_visuals = Self::wheel_visuals(&scene.physics, node_id, &chassis_world);
+        let wheel_visuals = Self::wheel_visuals(&scene.physics, node_id, &chassis_world, self.suspension.ray_headroom);
 
         let DriveState { speed, lateral_left, steer_angle, brake, wheelspin, lean, lean_target: _, mut telemetry_wheels } = state;
 
@@ -3845,6 +3859,7 @@ impl VehicleController
             slider(ui, "Relaxation Damping", "raise this if the vehicle keeps bouncing", &mut self.suspension.relaxation, 0.0..=20.0, 2);
             slider(ui, "Max Force", "times the vehicle weight, per wheel", &mut self.suspension.max_force_factor, 0.5..=10.0, 1);
             dirty |= ui.checkbox(&mut self.suspension.keep_ride_height, "Keep Ride Height").on_hover_text("mounts the springs so the loaded vehicle stands exactly as modelled").changed();
+            dirty |= slider(ui, "Ray Headroom", "the wheel rays start this far above the spring mount, m - after a hard landing that sank the body into the ground the wheels still find it and push the vehicle out", &mut self.suspension.ray_headroom, 0.0..=1.0, 3);
         });
 
         // ********** tires **********
@@ -6262,7 +6277,7 @@ mod tests
                     let wheels: Vec<String> = vehicle.controller.wheels().iter().zip(controller.wheels.iter()).map(|(wheel, w)|
                     {
                         let info = wheel.raycast_info();
-                        let compression = if info.is_in_contact { controller.suspension.rest_length - controller.sag - info.suspension_length } else { -controller.sag };
+                        let compression = if info.is_in_contact { controller.suspension.rest_length + controller.suspension.ray_headroom - controller.sag - info.suspension_length } else { -controller.sag };
                         format!("{}{}:{:+.2}", w.node_name.replace("Wheel ", "").replace("left", "L").replace("right", "R").replace("inner", "i").replace(' ', ""), if info.is_in_contact { "" } else { "(AIR)" }, compression)
                     }).collect();
                     println!("  {:<16} {:>7.0} kg y {:+.3} (start {:+.3}) pitch {:+.1} | sag {:.3} | {}", controller.node_name, controller.chassis.mass, t.y, start.y, pitch, controller.sag, wheels.join(" "));

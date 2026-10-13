@@ -17,6 +17,10 @@ const ANGLE_OFFSET: f32 = 0.01;
 const DEFAULT_AUTO_ROTATE_TIMEOUT: u64 = 2000;
 const DEFAULT_ZOOM_SPEED: f32 = 0.05;
 const LATERAL_OFFSET_FADE_RADIUS: f32 = 2.0;
+// the smoothed pivot trails below its target at most this far - fast up a ramp it went under the ground, and the collision ray with it
+const MAX_LAG_BELOW: f32 = 0.2;
+// a grazing hit: the offset is kept away from the surface, not along the ray - this is the flattest angle counted (sine)
+const MIN_HIT_ANGLE_SIN: f32 = 0.15;
 const DEFAULT_MOUSE_SENSITIVITY: Vector2::<f32> = Vector2::<f32>::new(0.0015, 0.0015);
 const DEFAULT_MOUSE_WHEEL_SENSITIVITY: f32 = 0.2;
 
@@ -277,6 +281,8 @@ impl TargetRotationController
             interpolate(smoothed.z, target_pos.z, horizontal)
         );
 
+        pivot.y = pivot.y.max(target_pos.y - MAX_LAG_BELOW);
+
         let trailing = (pivot - target_pos).norm() > 0.0005;
         if !trailing
         {
@@ -428,8 +434,9 @@ impl CameraController for TargetRotationController
             })));
 
             // only what lies between the target and the wanted camera position is in the way
-            let obstacle = pick_res.map(|pick_res| pick_res.time_of_impact).filter(|distance| *distance < wanted);
-            let allowed = obstacle.map_or(wanted, |distance| (distance - self.collision_check_offset).max(self.collision_check_offset));
+            // the offset counts away from the surface - along a grazing ray it is longer, or the near plane dips under the ground
+            let obstacle = pick_res.map(|pick_res| (pick_res.time_of_impact, pick_res.normal.map_or(1.0, |normal| normal.normalize().dot(&dir).abs()))).filter(|(distance, _)| *distance < wanted);
+            let allowed = obstacle.map_or(wanted, |(distance, facing)| (distance - self.collision_check_offset / facing.max(MIN_HIT_ANGLE_SIN)).max(self.collision_check_offset));
 
             if obstacle.is_some() && self.last_radius.is_none()
             {

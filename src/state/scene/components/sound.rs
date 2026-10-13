@@ -14,6 +14,15 @@ use crate::state::scene::exporter::serialization_helper;
 
 use super::component::{Component, ComponentBase, ComponentItem};
 
+// which volume of the audio device a sound follows besides the master volume - games set them from their options
+#[derive(PartialEq, Copy, Clone, Debug, Default, Serialize, Deserialize)]
+pub enum SoundCategory
+{
+    #[default]
+    Effects,
+    Music,
+}
+
 #[derive(PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum SoundType
 {
@@ -32,7 +41,10 @@ pub struct SoundData
 
     pub spatial_distance_scale: f32,
 
-    pub delete_after_playback: bool
+    pub delete_after_playback: bool,
+
+    #[serde(default)]
+    pub category: SoundCategory,
 }
 #[derive(Serialize, Deserialize)]
 pub struct Sound
@@ -86,6 +98,7 @@ impl Sound
                 spatial_distance_scale: 1.0,
 
                 delete_after_playback: false,
+                category: SoundCategory::Effects,
             }),
 
             audio_device: None,
@@ -121,7 +134,8 @@ impl Sound
 
                 spatial_distance_scale: 1.0,
 
-                delete_after_playback: false
+                delete_after_playback: false,
+                category: SoundCategory::Effects,
             }),
 
             audio_device: None,
@@ -413,7 +427,7 @@ impl Sound
             return;
         }
 
-        let volume = audio_device.data.get_ref().volume * data.volume * self.runtime_gain;
+        let volume = audio_device.data.get_ref().category_volume(data.category) * data.volume * self.runtime_gain;
         let speed = data.speed * self.runtime_pitch;
 
         // default player
@@ -637,6 +651,7 @@ impl Component for Sound
         let mut sound_type;
         let mut spatial_distance_scale;
         let mut delete_after_playback;
+        let mut category;
 
         {
             let data = self.data.get_ref();
@@ -647,6 +662,7 @@ impl Component for Sound
             sound_type = data.sound_type;
             spatial_distance_scale = data.spatial_distance_scale;
             delete_after_playback = data.delete_after_playback;
+            category = data.category;
         }
 
         changed = ui.checkbox(&mut looped, "Loop").changed() || changed;
@@ -663,6 +679,13 @@ impl Component for Sound
         });
 
         changed = ui.checkbox(&mut delete_after_playback, "Delete after playback").changed() || changed;
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Category:");
+            changed = ui.radio_value(&mut category, SoundCategory::Effects, "Effects").changed() || changed;
+            changed = ui.radio_value(&mut category, SoundCategory::Music, "Music").changed() || changed;
+        });
 
         ui.horizontal(|ui|
         {
@@ -690,6 +713,7 @@ impl Component for Sound
             data.sound_type = sound_type;
             data.spatial_distance_scale = spatial_distance_scale;
             data.delete_after_playback = delete_after_playback;
+            data.category = category;
 
             if major_change
             {
