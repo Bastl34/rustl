@@ -1,101 +1,190 @@
+#![allow(dead_code)]
+
 use std::sync::{Arc, RwLock};
 
-use nalgebra::{Matrix3, Matrix4, Vector3};
+use nalgebra::{Matrix4, Vector3, Vector4};
+use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, input::input_manager::InputManager, helper::change_tracker::ChangeTracker};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, observable::Observable, option_or_id::OptionOrId}, state::{scene::components::component::{find_and_add_new_components, remove_components_by_type}, state::{InputOutput, RunMode}}};
 
-use super::{node::{NodeItem, Node, InstanceItemArc}, components::{transformation::{Transformation}, alpha::Alpha, component::{ComponentItem, find_component, Component, find_components, remove_component_by_type, remove_component_by_id, find_component_by_id}}};
+use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
+
+use crate::state::scene::exporter::serialization_helper;
 
 pub type InstanceItem = Box<Instance>;
-
 
 pub struct ComputedInstanceData
 {
     pub world_matrix: Matrix4::<f32>,
     pub alpha: f32,
+    pub locked: bool,
 }
 
+impl Default for ComputedInstanceData
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            world_matrix: Matrix4::<f32>::identity(),
+            alpha: 1.0,
+            locked: false,
+        }
+    }
+}
+
+
+#[derive(Serialize, Deserialize)]
 pub struct InstanceData
 {
+    #[serde(skip, default)]
     pub computed: ComputedInstanceData,
 
     pub visible: bool,
     pub highlight: bool,
     pub collision: bool,
+    pub locked: bool,
+    pub color: Vector4::<f32>
 }
 
-
+#[derive(Serialize, Deserialize)]
 pub struct Instance
 {
-    pub id: u64,
+    pub id: u32,
+    pub uuid: String,
+    pub is_default: bool,
+
     pub name: String,
     pub pickable: bool,
 
-    pub node: NodeItem,
+    #[serde(serialize_with = "serialization_helper::serialize_node", deserialize_with = "serialization_helper::deserialize_node")]
+    pub node: OptionOrId<NodeItem>,
+
+    #[serde(serialize_with = "serialization_helper::serialize_component_vec", deserialize_with = "serialization_helper::deserialize_component_vec")]
     pub components: Vec<ComponentItem>,
 
     force_update: bool,
 
-    data: ChangeTracker<InstanceData>
+    data: ChangeTracker<InstanceData>,
+
+    #[serde(skip, default)]
+    pub on_before_update: Observable<Instance>,
+
+    #[serde(skip, default)]
+    pub on_after_update: Observable<Instance>,
+
+    #[serde(skip, default)]
+    pub on_before_render: Observable<Instance>,
+
+    #[serde(skip, default)]
+    pub on_after_render: Observable<Instance>,
 }
 
 impl Instance
 {
-    pub fn new(id: u64, name: String, node: NodeItem) -> Instance
+    pub fn new(name: String, node: NodeItem) -> Instance
     {
         let instance = Instance
         {
-            id: id,
-            name: name,
+            id: id_manager::get_next_instance_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
+            is_default: false,
+
+            name,
             pickable: true,
 
-            node: node,
+            node: OptionOrId::Some(node),
             components: vec![],
 
             force_update: true, // force update on creation
 
             data: ChangeTracker::new(InstanceData
             {
-                computed: ComputedInstanceData
-                {
-                    world_matrix: Matrix4::<f32>::identity(),
-                    alpha: 1.0,
-                },
+                computed: ComputedInstanceData::default(),
 
                 visible: true,
                 highlight: false,
-                collision: true
-            })
+                collision: true,
+                locked: false,
+                color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
+            }),
+
+            on_before_update: Observable::new(),
+            on_after_update: Observable::new(),
+            on_before_render: Observable::new(),
+            on_after_render: Observable::new(),
         };
 
         instance
     }
 
-    pub fn new_with_transform(id: u64, name: String, node: NodeItem, transform: Transformation) -> Instance
+    pub fn default() -> Instance
     {
-        let mut instance = Instance
+        let instance = Instance
         {
-            id: id,
-            name: name,
+            id: id_manager::get_next_instance_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
+            is_default: false,
+
+            name: "default".to_string(),
             pickable: true,
 
-            node: node,
+            node: OptionOrId::None,
             components: vec![],
 
             force_update: true, // force update on creation
 
             data: ChangeTracker::new(InstanceData
             {
-                computed: ComputedInstanceData
-                {
-                    world_matrix: Matrix4::<f32>::identity(),
-                    alpha: 1.0,
-                },
+                computed: ComputedInstanceData::default(),
 
                 visible: true,
                 highlight: false,
-                collision: true
-            })
+                collision: true,
+                locked: false,
+                color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
+            }),
+
+            on_before_update: Observable::new(),
+            on_after_update: Observable::new(),
+            on_before_render: Observable::new(),
+            on_after_render: Observable::new(),
+        };
+
+        instance
+    }
+
+    pub fn new_with_transform(name: String, node: NodeItem, transform: Transformation) -> Instance
+    {
+        let mut instance = Instance
+        {
+            id: id_manager::get_next_instance_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
+            is_default: false,
+
+            name,
+            pickable: true,
+
+            node: OptionOrId::Some(node),
+            components: vec![],
+
+            force_update: true, // force update on creation
+
+            data: ChangeTracker::new(InstanceData
+            {
+                computed: ComputedInstanceData::default(),
+
+                visible: true,
+                highlight: false,
+                collision: true,
+                locked: false,
+                color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
+            }),
+
+            on_before_update: Observable::new(),
+            on_after_update: Observable::new(),
+            on_before_render: Observable::new(),
+            on_after_render: Observable::new(),
         };
 
         instance.add_component(Arc::new(RwLock::new(Box::new(transform))));
@@ -123,6 +212,11 @@ impl Instance
         self.force_update = true;
     }
 
+    pub fn needs_force_update(&self) -> bool
+    {
+        self.force_update
+    }
+
     pub fn add_component(&mut self, component: ComponentItem)
     {
         self.components.push(component);
@@ -133,7 +227,7 @@ impl Instance
         find_component::<T>(&self.components)
     }
 
-    pub fn find_component_by_id(&self, id: u64) -> Option<ComponentItem>
+    pub fn find_component_by_id(&self, id: u32) -> Option<ComponentItem>
     {
         find_component_by_id(&self.components, id)
     }
@@ -151,7 +245,15 @@ impl Instance
         }
     }
 
-    pub fn remove_component_by_id(&mut self, id: u64)
+    pub fn remove_components_by_type<T>(&mut self) where T: 'static
+    {
+        if remove_components_by_type::<T>(&mut self.components)
+        {
+            self.force_update = true;
+        }
+    }
+
+    pub fn remove_component_by_id(&mut self, id: u32)
     {
         if remove_component_by_id(&mut self.components, id)
         {
@@ -159,8 +261,46 @@ impl Instance
         }
     }
 
-    pub fn update(instance: &InstanceItemArc, input_manager: &mut InputManager, frame_scale: f32) -> bool
+    pub fn remove_components_by_ids(&mut self, ids: &Vec<u32>)
     {
+        if remove_components_by_ids(&mut self.components, &ids)
+        {
+            self.force_update = true;
+        }
+    }
+
+    pub fn move_component_up(&mut self, component: ComponentItem)
+    {
+        let index = self.components.iter().position(|c| Arc::ptr_eq(c, &component));
+
+        if let Some(index) = index
+        {
+            if index > 0
+            {
+                self.components.swap(index, index - 1);
+                self.force_update = true;
+            }
+        }
+    }
+
+    pub fn move_component_down(&mut self, component: ComponentItem)
+    {
+        let index = self.components.iter().position(|c| Arc::ptr_eq(c, &component));
+
+        if let Some(index) = index
+        {
+            if index < self.components.len() - 1
+            {
+                self.components.swap(index, index + 1);
+                self.force_update = true;
+            }
+        }
+    }
+
+    pub fn update(instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> bool
+    {
+        crate::notify_observable_arc!(instance, on_before_update);
+
         let node;
         {
             let instance = instance.read().unwrap();
@@ -168,36 +308,79 @@ impl Instance
         }
 
         // ***** copy all components *****
-        let all_components;
+        let mut all_components;
         {
             let instance = instance.read().unwrap();
             all_components = instance.components.clone();
         }
 
-        for (component_id, component) in all_components.clone().iter_mut().enumerate()
+        let mut delete_components = vec![];
+
+        let all_components_len = all_components.len();
+        for component_id in 0..all_components_len
         {
+            let component = all_components[component_id].clone();
+
+            if component.read().unwrap().get_base().delete_later_request
             {
-                if !component.read().unwrap().is_enabled()
+                delete_components.push(component.read().unwrap().id());
+            }
+
+            {
+                let component_read = component.read().unwrap();
+
+                if !component_read.is_enabled() || !component_read.runs_in_mode(run_mode)
                 {
                     continue;
                 }
             }
 
             // remove the component itself  for the component update
+            // otherwise this can cause read/write issues (its opened as write and it maybe is requested as read in a loop)
             {
                 let mut instance = instance.write().unwrap();
-                instance.components = all_components.clone();
-                instance.components.remove(component_id);
+                instance.components.clear();
+                instance.components.extend(all_components[..component_id].iter().cloned());
+                instance.components.extend(all_components[component_id + 1..].iter().cloned());
             }
 
-            let mut component_write = component.write().unwrap();
-            component_write.update_instance(node.clone(), instance, input_manager, frame_scale);
+            {
+                let mut component_write = component.write().unwrap();
+                component_write.update_instance(node.as_ref().cloned(), instance, io, time, frame_scale, frame);
+            }
+
+            // after each update, check if new components were added during the update --> add
+            // only check if the component count changed (optimization: skip expensive scan when nothing was added)
+            {
+                let new_instance_components =
+                {
+                    let instance_read = instance.read().unwrap();
+                    if instance_read.components.len() > all_components_len - 1
+                    {
+                        Some(instance_read.components.clone())
+                    }
+                    else
+                    {
+                        None
+                    }
+                };
+                if let Some(maybe_new_components) = new_instance_components
+                {
+                    find_and_add_new_components(&mut all_components, &maybe_new_components);
+                }
+            }
         }
 
         // ***** reassign components *****
         {
             let mut instance = instance.write().unwrap();
             instance.components = all_components;
+        }
+
+        // ***** delete components *****
+        {
+            let mut instance = instance.write().unwrap();
+            instance.remove_components_by_ids(&delete_components);
         }
 
         // ***** update computed data *****
@@ -213,10 +396,12 @@ impl Instance
 
             let world_matrix = instance.calculate_transform();
             let alpha = instance.calculate_alpha();
+            let locked = instance.accumulate_locked();
 
             let data = instance.get_data_mut().get_mut();
             data.computed.world_matrix = world_matrix;
             data.computed.alpha = alpha;
+            data.computed.locked = locked;
         }
 
         {
@@ -224,11 +409,15 @@ impl Instance
             instance.force_update = false;
         }
 
+        crate::notify_observable_arc!(instance, on_after_update);
+
         has_changed_data
     }
 
     pub fn find_changed_data(&self) -> bool
     {
+        let mut changed = false;
+
         // ********** check self **********
         // transformation check
         let trans_component = self.find_component::<Transformation>();
@@ -237,24 +426,35 @@ impl Instance
             component_downcast_mut!(trans_component, Transformation);
             if trans_component.get_data_mut().consume_change()
             {
-                return true;
+                changed = true;
             }
         }
 
         // alpha check
-        let alpha_component = self.find_component::<Alpha>();
-        if let Some(alpha_component) = alpha_component
+        let alpha_components = self.find_components::<Alpha>();
+        for alpha_component in alpha_components
         {
             component_downcast_mut!(alpha_component, Alpha);
 
             if alpha_component.get_data_mut().consume_change()
             {
-                return true;
+                changed = true;
             }
         }
 
+        // locked check
+        if self.accumulate_locked() != self.get_data().computed.locked
+        {
+            changed = true;
+        }
+
         // ********** check node and parents **********
-        Instance::find_changed_parent_data(self.node.clone())
+        if let Some (node) = self.node.as_ref()
+        {
+            changed = Instance::find_changed_parent_data(node.clone()) || changed;
+        }
+
+        changed
     }
 
     pub fn find_changed_parent_data(node: Arc<RwLock<Box<Node>>>) -> bool
@@ -272,9 +472,20 @@ impl Instance
             }
         }
 
+        // check joints
+        let joint_component = node_read.find_component::<Joint>();
+        if let Some(joint_component) = joint_component
+        {
+            component_downcast!(joint_component, Joint);
+            if joint_component.get_data_tracker().changed()
+            {
+                return true;
+            }
+        }
+
         // check alpha
-        let alpha_component = node_read.find_component::<Alpha>();
-        if let Some(alpha_component) = alpha_component
+        let alpha_components = node_read.find_components::<Alpha>();
+        for alpha_component in alpha_components
         {
             component_downcast!(alpha_component, Alpha);
 
@@ -284,7 +495,7 @@ impl Instance
             }
         }
 
-        if let Some(parent) = &node_read.parent
+        if let Some(parent) = node_read.parent.as_ref()
         {
             return Instance::find_changed_parent_data(parent.clone());
         }
@@ -296,8 +507,27 @@ impl Instance
     {
         let node_trans;
         {
-            let node = self.node.read().unwrap();
-            node_trans = node.get_full_transform();
+            if let Some(node) = self.node.as_ref()
+            {
+                let node = node.read().unwrap();
+
+                // skinning already placed the vertices via the joint matrices - inheriting the joints again would apply them twice
+                // "Only the joint transforms are applied to the skinned mesh; the transform of the skinned mesh node MUST be ignored."
+                // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#skins
+                if node.skin.len() > 0
+                {
+                    node_trans = node.get_full_transform_without_joints();
+                }
+                else
+                {
+                    // this is for objects with no skinning, like a gun -> they should inherit the full transform of the node, including the joints
+                    node_trans = node.get_full_transform();
+                }
+            }
+            else
+            {
+                node_trans = Matrix4::identity();
+            }
         }
         let transform_component = self.find_component::<Transformation>();
 
@@ -322,37 +552,114 @@ impl Instance
         }
     }
 
+    pub fn calculate_inverse_transform(&self) -> Matrix4<f32>
+    {
+        let full_transform = self.calculate_transform();
+
+        full_transform.try_inverse().unwrap()
+    }
+
+    pub fn transform_global_to_local(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans = self.calculate_inverse_transform();
+
+        trans * vec
+    }
+
+    pub fn transform_local_to_global(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans = self.calculate_transform();
+
+        trans * vec
+    }
+
+    pub fn transform_from_instance_to_local(&self, vec: &Vector4<f32>, instance: Arc<RwLock<Box<Instance>>>) -> Vector4<f32>
+    {
+        let instance = instance.read().unwrap();
+        let global_vec = instance.transform_local_to_global(vec);
+
+        self.transform_global_to_local(&global_vec)
+    }
+
     pub fn calculate_alpha(&self) -> f32
     {
-        let node_alpha = Node::get_full_alpha(self.node.clone());
+        let instance_color_alpha = self.get_data().color.w;
 
-        let alpha_component = self.find_component::<Alpha>();
+        let mut node_alpha = 1.0;
+        if let Some(node) = self.node.as_ref()
+        {
+            node_alpha = Node::get_full_alpha(node.clone());
+        }
 
-        if let Some(alpha_component) = alpha_component
+        let alpha_components = self.find_components::<Alpha>();
+
+        if alpha_components.len() == 0
+        {
+            return node_alpha * instance_color_alpha;
+        }
+
+        let mut alpha = 1.0;
+        let mut inheritance = true;
+        for alpha_component in alpha_components
         {
             component_downcast!(alpha_component, Alpha);
 
-            if alpha_component.has_alpha_inheritance()
-            {
-                alpha_component.get_alpha() * node_alpha
-            }
-            else
-            {
-                alpha_component.get_alpha()
-            }
+            inheritance = alpha_component.has_alpha_inheritance();
+            alpha *= alpha_component.get_alpha();
+        }
+
+        if inheritance
+        {
+            alpha * node_alpha * instance_color_alpha
         }
         else
         {
-            node_alpha
+            alpha * instance_color_alpha
         }
     }
 
-    pub fn get_transform(&self) -> Matrix4::<f32>
+    pub fn accumulate_locked(&self) -> bool
+    {
+        if self.get_data().locked
+        {
+            return true;
+        }
+
+        if let Some(node) = self.node.as_ref()
+        {
+            let node = node.read().unwrap();
+            return node.is_locked();
+        }
+
+        false
+    }
+
+    pub fn accumulate_visible(&self) -> bool
+    {
+        if !self.get_data().visible
+        {
+            return false;
+        }
+
+        if let Some(node) = self.node.as_ref()
+        {
+            let node = node.read().unwrap();
+
+            if !node.is_visible()
+            {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    pub fn get_cached_world_transform(&self) -> Matrix4::<f32>
     {
         self.get_data().computed.world_matrix
     }
 
-    pub fn get_alpha(&self) -> f32
+    pub fn get_cached_alpha(&self) -> f32
     {
         if self.get_data().visible == false
         {
@@ -360,6 +667,16 @@ impl Instance
         }
 
         self.get_data().computed.alpha
+    }
+
+    pub fn get_cached_is_locked(&self) -> bool
+    {
+        if self.get_data().locked
+        {
+            return true;
+        }
+
+        self.get_data().computed.locked
     }
 
     pub fn apply_transform(&mut self, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>)
@@ -419,6 +736,68 @@ impl Instance
         else
         {
             panic!("trnasform component not found");
+        }
+    }
+
+    pub fn ui(&mut self, ui: &mut egui::Ui)
+    {
+        let mut changed = false;
+
+        let mut visible;
+        let mut locked;
+        let mut collision;
+        let mut highlight;
+        let mut name;
+        let mut pickable;
+        let mut color;
+        {
+            let instance_data = self.get_data();
+            visible = instance_data.visible;
+            locked = instance_data.locked;
+            collision = instance_data.collision;
+            highlight = instance_data.highlight;
+            name = self.name.clone();
+            pickable = self.pickable;
+
+            let r = (instance_data.color.x * 255.0) as u8;
+            let g = (instance_data.color.y * 255.0) as u8;
+            let b = (instance_data.color.z * 255.0) as u8;
+            let a = (instance_data.color.w * 255.0) as u8;
+            color = egui::Color32::from_rgba_premultiplied(r, g, b, a);
+        }
+
+        ui.horizontal(|ui|
+        {
+            ui.label("name: ");
+            changed = ui.text_edit_singleline(&mut name).changed() || changed;
+        });
+        changed = ui.checkbox(&mut visible, "visible").changed() || changed;
+        changed = ui.checkbox(&mut locked, "locked").changed() || changed;
+        changed = ui.checkbox(&mut collision, "collision").changed() || changed;
+        changed = ui.checkbox(&mut highlight, "highlight").changed() || changed;
+        changed = ui.checkbox(&mut pickable, "pickable").changed() || changed;
+
+        ui.horizontal(|ui|
+        {
+            ui.label("color:");
+            changed = ui.color_edit_button_srgba(&mut color).changed() || changed;
+        });
+
+        if changed
+        {
+            self.name = name;
+            self.pickable = pickable;
+
+            let instance_data = self.get_data_mut().get_mut();
+            instance_data.visible = visible;
+            instance_data.collision = collision;
+            instance_data.highlight = highlight;
+
+            let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
+            let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
+            let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
+            let a = ((color.a() as f32) / 255.0).clamp(0.0, 1.0);
+            instance_data.color = Vector4::<f32>::new(r, g, b, a);
         }
     }
 }

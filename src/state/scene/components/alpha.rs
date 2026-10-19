@@ -1,9 +1,12 @@
-use std::any::Any;
+use std::sync::{Arc, RwLock};
 
-use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state::scene::node::{NodeItem, InstanceItemArc}, component_impl_no_update};
+use serde::{Deserialize, Serialize};
+
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem};
 
 use super::component::{ComponentBase, Component};
 
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct AlphaData
 {
     pub alpha_inheritance: bool,
@@ -11,6 +14,7 @@ pub struct AlphaData
     pub alpha: f32,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Alpha
 {
     base: ComponentBase,
@@ -19,7 +23,7 @@ pub struct Alpha
 
 impl Alpha
 {
-    pub fn new(id: u64, name: &str, alpha: f32) -> Alpha
+    pub fn new(name: &str, alpha: f32) -> Alpha
     {
         let data = AlphaData
         {
@@ -27,9 +31,9 @@ impl Alpha
             alpha
         };
 
-        let mut alpha = Alpha
+        let alpha = Alpha
         {
-            base: ComponentBase::new(id, name.to_string(), "Alpha".to_string(), "🌖".to_string()),
+            base: ComponentBase::new(name.to_string(), "Alpha".to_string(), "🌖".to_string()),
             data: ChangeTracker::new(data)
         };
 
@@ -62,12 +66,20 @@ impl Alpha
     }
 }
 
+#[typetag::serde]
 impl Component for Alpha
 {
     component_impl_default!();
     component_impl_no_update!();
+    component_impl_no_cleanup_node!();
+    component_impl_no_post_deserialization!();
 
-    fn instantiable(&self) -> bool
+    fn instantiable() -> bool
+    {
+        true
+    }
+
+    fn duplicatable(&self) -> bool
     {
         true
     }
@@ -83,7 +95,30 @@ impl Component for Alpha
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui)
+    fn duplicate(&self) -> Option<crate::state::scene::components::component::ComponentItem>
+    {
+        let source = self.as_any().downcast_ref::<Alpha>();
+
+        if source.is_none()
+        {
+            return None;
+        }
+
+        let source = source.unwrap();
+
+        let mut alpha = Alpha
+        {
+            base: ComponentBase::duplicate(source.get_base()),
+
+            data: ChangeTracker::new(source.get_data().clone()),
+        };
+
+        alpha.data.force_change();
+
+        Some(Arc::new(RwLock::new(Box::new(alpha))))
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         let mut changed = false;
 

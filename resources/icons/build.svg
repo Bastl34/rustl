@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 24 24" version="1.1" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;">
+    <!-- hammer: compiles the code of the project - head top right, handle to the bottom left -->
+    <g transform="translate(-0.5 0.5) rotate(45 12 12)">
+        <!-- head: flat striking face on the right, the back narrows -->
+        <path d="M4,4L6,2.5L18.3,2.5Q19.5,2.5 19.5,3.7L19.5,8.3Q19.5,9.5 18.3,9.5L6,9.5L4,8Z" style="fill:white;"/>
+        <!-- handle -->
+        <path d="M10.2,9.5L13.8,9.5L13.8,21Q13.8,22.5 12,22.5Q10.2,22.5 10.2,21Z" style="fill:white;"/>
+    </g>
+</svg>

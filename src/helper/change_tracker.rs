@@ -1,9 +1,23 @@
 #![allow(dead_code)]
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct ChangeTracker<T>
 {
+    #[serde(skip, default)]
     changed: bool,
+
     data: T
+}
+
+impl<T: Default> Default for ChangeTracker<T>
+{
+    fn default() -> Self
+    {
+        ChangeTracker::new(T::default())
+    }
 }
 
 impl<T> ChangeTracker<T>

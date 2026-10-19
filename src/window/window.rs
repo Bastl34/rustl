@@ -1,109 +1,263 @@
-//use egui_winit::winit;
-use winit::event::{Event, WindowEvent};
-use winit::event_loop::{ControlFlow};
+use std::sync::Arc;
 
-#[cfg(target_arch="wasm32")]
-use wasm_bindgen::prelude::*;
+use winit::application::ApplicationHandler;
+#[cfg(not(target_arch = "wasm32"))]
+use winit::dpi::LogicalSize;
+use winit::event_loop::EventLoopProxy;
+use winit::window::Window;
 
 use crate::interface::main_interface::MainInterface;
 
-fn setup_window() -> (winit::event_loop::EventLoop<()>, winit::window::Window)
+struct WindowApp
 {
-    /*
-    simple_logger::SimpleLogger::new()
-        .with_level(log::LevelFilter::Info)
-        .with_module_level("wgpu_core", log::LevelFilter::Warn)
-        .with_module_level("wgpu_hal", log::LevelFilter::Warn)
-        .init()
-        .unwrap();
+    interface: MainInterface,
+}
 
-    */
+impl WindowApp
+{
+    async fn new(window: Arc<Window>,) -> Self
+    {
+        let interface = MainInterface::new(window).await;
+        Self
+        {
+            interface,
+        }
+    }
+}
 
-    let width = 1600;
-    let height = 900;
+// TODO: optimize this like https://github.com/rust-windowing/winit/releases/tag/v0.30.0
+// inspired by: https://github.com/Dunrar/WebGpuTuts/tree/main
 
-    let event_loop = winit::event_loop::EventLoop::new();
-    let window = winit::window::WindowBuilder::new()
-        .with_title("Rustl")
-        //.with_inner_size(winit::dpi::PhysicalSize::new(width, height))
-        .with_inner_size(winit::dpi::LogicalSize::new(width, height))
-        .with_resizable(true)
-        .build(&event_loop)
-        .unwrap();
+enum CustomEvent
+{
+    Initialized(WindowApp),
+}
+
+enum AppState
+{
+    // TODO: EventLoopProxy will no longer be required here once https://github.com/rust-windowing/winit/issues/3741 lands
+    Uninitialized(EventLoopProxy<CustomEvent>),
+    Initialized(WindowApp),
+}
+
+fn get_icon() -> Option<winit::window::Icon>
+{
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use std::{fs::File, io::BufReader};
+        use image::GenericImageView;
+        use winit::window::Icon;
+
+        // builds without the editor: icon.png next to the started .project (scripts/build.mjs takes it for the exe too), else the rustl logo
+        let icon_path = crate::resources::resources::get_path("designs/logo/logo.png");
+        #[cfg(not(feature = "editor"))]
+        let icon_path = MainInterface::startup_project()
+            .and_then(|project| std::path::Path::new(&project).parent().map(|dir| dir.join("icon.png").to_string_lossy().replace('\\', "/")))
+            .filter(|path| crate::resources::resources::exists(path))
+            .map_or(icon_path, |path| crate::resources::resources::get_path(&path));
+
+        let icon = match File::open(icon_path)
+        {
+            Ok(file) =>
+            {
+                let reader = BufReader::new(file);
+                match image::load(reader, image::ImageFormat::Png)
+                {
+                    Ok(img) =>
+                    {
+                        // a window icon needs no more than 256 px
+                        let img = if img.width() > 256 { img.resize(256, 256, image::imageops::FilterType::Triangle) } else { img };
+                        let rgba = img.to_rgba8();
+                        let (width, height) = img.dimensions();
+                        match Icon::from_rgba(rgba.into_raw(), width, height)
+                        {
+                            Ok(icon) => Some(icon),
+                            Err(_) => None,
+                        }
+                    }
+                    Err(_) => None,
+                }
+            }
+            Err(_) => None,
+        };
+
+        return icon;
+    }
 
     #[cfg(target_arch = "wasm32")]
     {
-        // Winit prevents sizing with CSS, so we have to set
-        // the size manually when on web.
-        use winit::dpi::PhysicalSize;
-        window.set_inner_size(PhysicalSize::new(width, height));
-
-        use winit::platform::web::WindowExtWebSys;
-        web_sys::window()
-            .and_then(|win| win.document())
-            .and_then(|doc| {
-                let dst = doc.get_element_by_id("container")?;
-                let canvas = web_sys::Element::from(window.canvas());
-                dst.append_child(&canvas).ok()?;
-                Some(())
-            })
-            .expect("Couldn't append canvas to document body.");
+        None
     }
-
-    log::info!("winit window initialized");
-
-    (event_loop, window)
 }
 
-fn run(event_loop: winit::event_loop::EventLoop<()>, mut interface: MainInterface)
+impl ApplicationHandler<CustomEvent> for AppState
 {
-    event_loop.run(move |event, _, control_flow| match event
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop)
     {
-        Event::WindowEvent { ref event, .. } =>
+        match self
         {
-            match event
+            AppState::Uninitialized(event_loop_proxy) =>
             {
-                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                WindowEvent::Resized(resize) => interface.resize(resize.clone(), None),
-                WindowEvent::ScaleFactorChanged { new_inner_size, scale_factor } => interface.resize(**new_inner_size, Some(scale_factor.clone())),
-                _ => interface.input(event),
-            }
-        },
-        Event::RedrawRequested(_) =>
-        {
-            interface.update();
+                let mut window_attrs = Window::default_attributes();
+                window_attrs.title = "Rustl".to_string();
+                window_attrs.resizable = true;
+                window_attrs.window_icon = get_icon();
 
-            if interface.check_exit()
-            {
-                *control_flow = ControlFlow::Exit
-            }
-        },
-        Event::MainEventsCleared =>
-        {
-            interface.window().request_redraw();
-            interface.update_done();
-        },
-        _ => (),
-    });
-}
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    window_attrs.inner_size = Some(winit::dpi::Size::Logical(LogicalSize::new(1920.0, 1080.0)));
+                    let window = Arc::new(event_loop.create_window(window_attrs).unwrap());
+                    let app = pollster::block_on(WindowApp::new(window));
 
-pub async fn start()
-{
-    cfg_if::cfg_if!
-    {
-        if #[cfg(target_arch = "wasm32")]
-        {
-            std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-            console_log::init_with_level(log::Level::Debug).expect("Couldn't initialize logger");
-        }
-        else
-        {
-           //env_logger::init();
+                    //let proxy = event_loop_proxy.clone();
+
+                    assert!(event_loop_proxy.send_event(CustomEvent::Initialized(app)).is_ok());
+                }
+
+                #[cfg(target_arch = "wasm32")]
+                {
+                    use winit::platform::web::WindowAttributesExtWebSys;
+
+                    // no inner_size: winit would pin it as inline style, the css in index.html sizes the canvas
+                    let window_attrs = window_attrs.with_append(true);
+                    let window = Arc::new(event_loop.create_window(window_attrs).unwrap());
+
+                    let event_loop_proxy = event_loop_proxy.clone();
+                    wasm_bindgen_futures::spawn_local(async move
+                    {
+                        let app = WindowApp::new(window).await;
+                        assert!(event_loop_proxy.send_event(CustomEvent::Initialized(app)).is_ok());
+                    });
+                }
+            }
+            AppState::Initialized(_) => {}
         }
     }
 
-    let (event_loop, window) = setup_window();
-    let interface = MainInterface::new(window, &event_loop).await;
+    fn window_event(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, window_id: winit::window::WindowId, event: winit::event::WindowEvent, )
+    {
+        let app = match self
+        {
+            AppState::Initialized(app) => app,
+            AppState::Uninitialized(_) => return,
+        };
 
-    run(event_loop, interface);
+        // other egui windows (e.g. the assets window) - they are rendered with the main window
+        if window_id != app.interface.window().id()
+        {
+            app.interface.viewport_window_input(window_id, &event);
+            return;
+        }
+
+        match event
+        {
+            winit::event::WindowEvent::Resized(size) => app.interface.resize(Some(size.clone()), None),
+            winit::event::WindowEvent::ScaleFactorChanged { scale_factor, .. } => app.interface.resize(None, Some(scale_factor.clone())),
+            winit::event::WindowEvent::RedrawRequested =>
+            {
+                app.interface.update();
+
+                if app.interface.check_exit()
+                {
+                    event_loop.exit();
+                    app.interface.exit();
+                }
+                else
+                {
+                    // TODO: check vsync (check web)
+                    // https://github.com/rust-windowing/winit/issues/2900
+                    // https://github.com/sotrh/learn-wgpu/pull/560/files
+                    //
+
+                    app.interface.window().request_redraw();
+                    app.interface.update_done();
+
+                    // windows for new egui viewports (winit needs the active event loop)
+                    if app.interface.has_pending_viewport_windows()
+                    {
+                        app.interface.create_pending_viewport_windows(event_loop, get_icon());
+                    }
+                }
+            },
+            winit::event::WindowEvent::CloseRequested =>
+            {
+                if app.interface.request_exit()
+                {
+                    event_loop.exit();
+                    app.interface.exit();
+                }
+            },
+            _ => app.interface.window_input(&event)
+        }
+    }
+
+    fn device_event(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop, _device_id: winit::event::DeviceId, event: winit::event::DeviceEvent)
+    {
+        let app = match self
+        {
+            AppState::Initialized(app) => app,
+            AppState::Uninitialized(_) => return,
+        };
+
+        app.interface.device_input(&event)
+    }
+
+    /*
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop)
+    {
+        self.window.request_redraw();
+        //self.counter += 1;
+    }
+    */
+
+    fn user_event(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop, user_event: CustomEvent,)
+    {
+        match user_event
+        {
+            CustomEvent::Initialized(app) =>
+            {
+                take_mut::take(self, |state| match state
+                {
+                    AppState::Uninitialized(_) =>
+                    {
+                        app.interface.window().request_redraw();
+                        AppState::Initialized(app)
+                    },
+                    AppState::Initialized(_) => state,
+                });
+
+                // the web canvas gets its size asynchronously - resize events before this point were dropped
+                #[cfg(target_arch = "wasm32")]
+                if let AppState::Initialized(app) = self
+                {
+                    app.interface.resize(None, None);
+                }
+            }
+        }
+    }
+}
+
+
+pub fn run()
+{
+    #[cfg(target_arch = "wasm32")]
+    {
+        console_error_panic_hook::set_once();
+        crate::resources::resources::resources_url();
+    }
+
+    let event_loop = winit::event_loop::EventLoop::with_user_event().build().unwrap();
+    let mut app_state = AppState::Uninitialized(event_loop.create_proxy());
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        event_loop.run_app(&mut app_state).unwrap();
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use winit::platform::web::EventLoopExtWebSys;
+
+        event_loop.spawn_app(app_state);
+    }
 }

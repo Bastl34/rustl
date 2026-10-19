@@ -1,7 +1,7 @@
 use nalgebra::{Vector2, Point2, distance};
 use strum_macros::EnumIter;
 
-#[derive(EnumIter, Debug, PartialEq)]
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy)]
 pub enum PointState
 {
     Down,
@@ -10,6 +10,7 @@ pub enum PointState
     Stationary
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct InputPoint
 {
     pub id: u64,
@@ -20,6 +21,8 @@ pub struct InputPoint
     pub velocity: Vector2::<f32>,
 
     pub state: PointState,
+
+    pub force: Option<f32>,
 
     pub first_action: u64,
     pub last_action: u64,
@@ -42,6 +45,8 @@ impl InputPoint
             velocity: Vector2::<f32>::zeros(),
 
             state: PointState::Stationary,
+
+            force: None,
 
             first_action: 0,
             last_action: 0,

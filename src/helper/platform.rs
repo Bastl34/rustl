@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::env;
 
 pub fn is_windows() -> bool

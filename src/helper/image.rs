@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+
+
 use image::{DynamicImage, ImageBuffer, RgbaImage, GenericImageView, Rgba, GrayImage, Luma};
 
 pub fn brga_to_rgba(img: DynamicImage) -> DynamicImage

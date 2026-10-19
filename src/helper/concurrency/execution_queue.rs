@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{sync::{Arc, RwLock}, collections::VecDeque};
 
 use crate::state::state::State;
@@ -89,7 +91,7 @@ impl ExecutionQueue
 
     pub fn run_first(queue: Arc<RwLock<ExecutionQueue>>, state: &mut State)
     {
-        let mut front = None;
+        let front ;
         {
             front = queue.write().unwrap().queue.pop_front();
         }

@@ -1,16 +1,19 @@
+#![allow(dead_code)]
+
 use std::cell::RefCell;
 use std::mem;
 use std::sync::{Arc, RwLock};
 
-use colored::Colorize;
-use nalgebra::Matrix4;
+use nalgebra::{Matrix4, Point3};
 use wgpu::util::DeviceExt;
 
-use crate::render_item_impl_default;
+use crate::{console_warning, render_item_impl_default};
 use crate::state::helper::render_item::RenderItem;
 use crate::state::scene::instance::InstanceItem;
+use crate::state::scene::node::{LocalBounds, Node};
 
 use super::helper::buffer::create_empty_buffer;
+use super::vertex_buffer::VERTEX_ATTRIBUTES_AMOUNT;
 use super::wgpu::WGpu;
 
 #[repr(C)]
@@ -18,13 +21,14 @@ use super::wgpu::WGpu;
 pub struct Instance
 {
     pub transform: [[f32; 4]; 4],
-    pub alpha: f32,
+    pub color: [f32; 4],
     pub highlight: f32,
+    pub locked: f32,
 }
 
 impl Instance
 {
-    const SHADER_LOCATION_START: u32 = 5; // based on vertex input
+    const SHADER_LOCATION_START: u32 = VERTEX_ATTRIBUTES_AMOUNT as u32; // based on vertex input
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static>
     {
@@ -61,19 +65,27 @@ impl Instance
                     format: wgpu::VertexFormat::Float32x4,
                 },
 
-                // ***** alpha *****
+                // ***** color *****
                 wgpu::VertexAttribute
                 {
                     offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
                     shader_location: Self::SHADER_LOCATION_START + 4,
-                    format: wgpu::VertexFormat::Float32,
+                    format: wgpu::VertexFormat::Float32x4,
                 },
 
                 // ***** highlight *****
                 wgpu::VertexAttribute
                 {
-                    offset: mem::size_of::<[f32; 17]>() as wgpu::BufferAddress,
+                    offset: mem::size_of::<[f32; 20]>() as wgpu::BufferAddress,
                     shader_location: Self::SHADER_LOCATION_START + 5,
+                    format: wgpu::VertexFormat::Float32,
+                },
+
+                // ***** locked *****
+                wgpu::VertexAttribute
+                {
+                    offset: mem::size_of::<[f32; 21]>() as wgpu::BufferAddress,
+                    shader_location: Self::SHADER_LOCATION_START + 6,
                     format: wgpu::VertexFormat::Float32,
                 },
             ],
@@ -84,15 +96,28 @@ impl Instance
 pub struct InstanceBuffer
 {
     pub name: String,
-    count: u32,
+    pub count: u32,
     buffer: wgpu::Buffer,
 
-    pub transformations: Vec::<Matrix4::<f32>>
+    pub transformations: Vec::<Matrix4::<f32>>,
+
+    pub bounding_sphere: Option<(Point3::<f32>, f32)>, // all instances - frustum culling and depth sorting
+    pub bounding_box: Option<(Point3<f32>, Point3<f32>)>, // all instances - occlusion culling
+    pub bounding_box_dirty: bool, // instances or meshes changed since the box was built
+    sphere_bounds: Option<LocalBounds>, // what the sphere was built from
+    sphere_merges: usize, // single instances grown in since the last full build
 }
+
+crate::render_item_send_sync!(InstanceBuffer);
 
 impl RenderItem for InstanceBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+    }
 }
 
 impl InstanceBuffer
@@ -104,7 +129,13 @@ impl InstanceBuffer
             name: name.to_string(),
             count: instances.len() as u32,
             buffer: create_empty_buffer(wgpu),
-            transformations: Vec::with_capacity(instances.len())
+            transformations: Vec::with_capacity(instances.len()),
+
+            bounding_sphere: None,
+            bounding_box: None,
+            bounding_box_dirty: true,
+            sphere_bounds: None,
+            sphere_merges: 0,
         };
 
         instance_buffer.to_buffer(wgpu, instances);
@@ -114,7 +145,7 @@ impl InstanceBuffer
 
     pub fn to_buffer(&mut self, wgpu: &mut WGpu, instances: &Vec<Arc<RwLock<InstanceItem>>>)
     {
-        dbg!("update all instances");
+        //console_log!("update all instances");
 
         self.transformations = Vec::with_capacity(instances.len());
 
@@ -122,17 +153,22 @@ impl InstanceBuffer
         {
             let instance = instance.read().unwrap();
             //let instance = instance.read().unwrap();
-            let transform = instance.get_transform();
-            let alpha = instance.get_alpha();
+            let transform = instance.get_cached_world_transform();
+            let alpha = instance.get_cached_alpha();
+            let locked = instance.get_cached_is_locked();
             let instance_data = instance.get_data();
+
+            let mut color = instance_data.color.clone();
+            color.w = alpha;
 
             self.transformations.push(transform);
 
             Instance
             {
                 transform: transform.into(),
-                alpha: alpha,
-                highlight: f32::from(instance_data.highlight)
+                color: color.into(),
+                highlight: f32::from(instance_data.highlight),
+                locked: f32::from(locked),
             }
         }).collect::<Vec<_>>();
 
@@ -149,26 +185,67 @@ impl InstanceBuffer
         self.count = instances.len() as u32;
     }
 
+    // Update all instance data in-place via queue.write_buffer (no GPU buffer reallocation).
+    // Only call when instance count has NOT changed.
+    pub fn write_all_to_buffer(&mut self, wgpu: &mut WGpu, instances: &Vec<Arc<RwLock<InstanceItem>>>)
+    {
+        self.transformations.clear();
+        self.transformations.reserve(instances.len());
+
+        let buffer_data = instances.iter().map(|instance|
+        {
+            let instance = instance.read().unwrap();
+            let transform = instance.get_cached_world_transform();
+            let alpha = instance.get_cached_alpha();
+            let locked = instance.get_cached_is_locked();
+            let instance_data = instance.get_data();
+
+            let mut color = instance_data.color.clone();
+            color.w = alpha;
+
+            self.transformations.push(transform);
+
+            Instance
+            {
+                transform: transform.into(),
+                color: color.into(),
+                highlight: f32::from(instance_data.highlight),
+                locked: f32::from(locked),
+            }
+        }).collect::<Vec<_>>();
+
+        wgpu.queue_mut().write_buffer
+        (
+            &self.buffer,
+            0,
+            bytemuck::cast_slice(&buffer_data),
+        );
+    }
+
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, instance: &InstanceItem, index: usize)
     {
-        dbg!("update instance");
+        //console_log!("update instance");
 
         if index + 1 > self.count as usize
         {
-            let warning = format!("index {} out of range {} lights are supported", index, self.count);
-            println!("{}", warning.bright_yellow());
+            console_warning!("index {} out of range {} lights are supported", index, self.count);
             return;
         }
 
-        let transform = instance.get_transform();
-        let alpha = instance.get_alpha();
+        let transform = instance.get_cached_world_transform();
+        let alpha = instance.get_cached_alpha();
+        let locked = instance.get_cached_is_locked();
         let instance_data = instance.get_data();
+
+        let mut color = instance_data.color.clone();
+        color.w = alpha;
 
         let data = Instance
         {
             transform: transform.into(),
-            alpha: alpha,
-            highlight: f32::from(instance_data.highlight)
+            color: color.into(),
+            highlight: f32::from(instance_data.highlight),
+            locked: f32::from(locked),
         };
 
         self.transformations[index] = transform;
@@ -185,8 +262,7 @@ impl InstanceBuffer
     {
         if range.start + 1 > self.count as usize
         {
-            let warning = format!("index {} out of range {} lights are supported", range.start, self.count);
-            println!("{}", warning.bright_yellow());
+            console_warning!("index {} out of range {} lights are supported", range.start, self.count);
             return;
         }
 
@@ -196,9 +272,13 @@ impl InstanceBuffer
         let buffer_data = slice.iter().map(|instance|
         {
             let instance = instance.borrow();
-            let transform = instance.get_transform();
-            let alpha = instance.get_alpha();
+            let transform = instance.get_cached_world_transform();
+            let alpha = instance.get_cached_alpha();
+            let locked = instance.get_cached_is_locked();
             let instance_data = instance.get_data();
+
+            let mut color = instance_data.color.clone();
+            color.w = alpha;
 
             self.transformations[i] = transform;
 
@@ -207,8 +287,9 @@ impl InstanceBuffer
             Instance
             {
                 transform: transform.into(),
-                alpha: alpha,
-                highlight: f32::from(instance_data.highlight)
+                color: color.into(),
+                highlight: f32::from(instance_data.highlight),
+                locked: f32::from(locked),
             }
         }).collect::<Vec<_>>();
 
@@ -218,6 +299,30 @@ impl InstanceBuffer
             (range.start * mem::size_of::<Instance>()) as wgpu::BufferAddress,
             bytemuck::cast_slice(&buffer_data),
         );
+    }
+
+    // Built in full when all instances or the meshes changed, single changes only grow it - until they add up to the instance count.
+    pub fn update_bounding_sphere(&mut self, bounds: LocalBounds, all_changed: bool, changed: &[usize])
+    {
+        // the skin sphere moves with the animation, without any instance change
+        let rebuild = all_changed
+            || bounds.skin_sphere.is_some()
+            || self.sphere_bounds != Some(bounds)
+            || self.sphere_merges + changed.len() >= self.transformations.len();
+
+        if rebuild
+        {
+            self.bounding_sphere = Node::grow_instance_bounding_sphere(&bounds, None, self.transformations.iter());
+            self.sphere_bounds = Some(bounds);
+            self.sphere_merges = 0;
+            self.bounding_box_dirty = true;
+        }
+        else if !changed.is_empty()
+        {
+            self.bounding_sphere = Node::grow_instance_bounding_sphere(&bounds, self.bounding_sphere, changed.iter().filter_map(|&index| self.transformations.get(index)));
+            self.sphere_merges += changed.len();
+            self.bounding_box_dirty = true;
+        }
     }
 
     pub fn get_buffer(&self) -> &wgpu::Buffer

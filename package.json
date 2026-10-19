@@ -1,0 +1,11 @@
+{
+  "name": "rustl-web",
+  "private": true,
+  "scripts": {
+    "build-web": "node scripts/build.mjs --platform=web",
+    "dev-web": "node scripts/build.mjs --platform=web --dev --watch",
+    "build-windows": "node scripts/build.mjs --platform=windows",
+    "build-linux": "node scripts/build.mjs --platform=linux",
+    "build-mac": "node scripts/build.mjs --platform=mac"
+  }
+}

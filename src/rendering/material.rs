@@ -1,38 +1,80 @@
 use std::{mem::swap, collections::HashMap};
 
-use wgpu::{util::DeviceExt, BindGroupLayout, BindGroup};
+use wgpu::{BindGroup, BindGroupLayout, Sampler, util::DeviceExt};
 
-use crate::{state::{helper::render_item::{RenderItem, get_render_item, RenderItemType}, scene::{components::{material::{Material, TextureType, ALL_TEXTURE_TYPES, TextureState}, component::Component}, texture::TextureItem}}, render_item_impl_default};
+use crate::{render_item_impl_default, rendering::bind_groups::uniform, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, resources::texture::TextureItem, scene::components::{component::Component, material::{Material, TextureMappingMode, TextureState, TextureType, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}}};
 
-use super::{wgpu::WGpu, uniform, texture::{Texture, TextureFormat}};
+use super::{texture::{Texture, TextureFormat}, wgpu::WGpu};
 
 //TODO: future: compile shaders for each texture combination to prevent branching/if statements
 
 /*
     textures:
 
-    0: reserved (to match bind group id)
+    0: reserved (material buffer)
+    1: reserved (texture transform array)
 
-    1: ambient
-    2: base (albedo)
-    3: specular
-    4: normal
-    5: alpha
-    6: roughness
-    7: ambient occlusion
-    8: reflectivity
-    9: shininess
-    10: environment
+    2: ambient
+    3: base (albedo)
+    4: specular
+    5: normal
+    6: alpha
+    7: roughness
+    8: ambient occlusion
+    9: reflectivity
+    10: shininess
+    11: environment
 
-    11: custom 0
-    12: custom 1
-    13: custom 2
-    14: custom 3
+    12: custom 0
+    13: custom 1
+    14: custom 2
+    15: custom 3
 
-    15: depth
+    // additional textures
+    16: depth
 */
 
 //pub const ADDITIONAL_START_INDEX: u32 = 20;
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct TextureTransform
+{
+    pub offset: [f32; 2],
+    pub scale: [f32; 2],
+    pub rotation: f32,
+
+    pub uv_index: u32,
+
+    pub _padding: [f32; 2]
+}
+
+impl TextureTransform
+{
+    pub fn new(texture_state: &TextureState) -> Self
+    {
+        Self
+        {
+            offset: [texture_state.transform.offset.x, texture_state.transform.offset.y],
+            scale: [texture_state.transform.scale.x, texture_state.transform.scale.y],
+            rotation: texture_state.transform.rotation,
+            uv_index: texture_state.transform.uv_index,
+            _padding: [0.0, 0.0],
+        }
+    }
+
+    pub fn default() -> Self
+    {
+        Self
+        {
+            offset: [0.0, 0.0],
+            scale: [1.0, 1.0],
+            rotation: 0.0,
+            uv_index: 0,
+            _padding: [0.0, 0.0],
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -43,8 +85,13 @@ pub struct MaterialUniform
     pub specular_color: [f32; 4],
 
     pub highlight_color: [f32; 4],
+    pub locked_color: [f32; 4],
+
+    pub blend_mode: u32,
 
     pub alpha: f32,
+    pub alpha_cutoff: f32,
+
     pub shininess: f32,
     pub reflectivity: f32,
     pub refraction_index: f32,
@@ -55,9 +102,26 @@ pub struct MaterialUniform
 
     pub unlit: u32,
 
+    pub ibl_diffuse_intensity: f32,
+
+    pub allow_xray: u32,
+
+    pub texture_transforms: [TextureTransform; TEXTURE_AMOUNT],
     pub textures_used: u32,
 
-    pub __padding: [u32; 3]
+    pub mapping_mode: u32,
+    pub mapping_space: u32,
+    pub mapping_axis: u32,
+    pub mapping_scale: f32,
+    pub mapping_sharpness: f32,
+
+    pub shadow_softness: f32,
+
+    pub no_fog: u32,
+
+    pub vertex_colors: u32,
+
+    pub _padding: [u32; 3], // uniform struct size has to be a multiple of 16
 }
 
 impl MaterialUniform
@@ -82,6 +146,18 @@ impl MaterialUniform
         if material.is_texture_enabled(TextureType::Custom1)                            { textures_used |= 1 << 12; }
         if material.is_texture_enabled(TextureType::Custom2)                            { textures_used |= 1 << 13; }
         if material.is_texture_enabled(TextureType::Custom3)                            { textures_used |= 1 << 14; }
+
+        let mut texture_transforms = [TextureTransform::default(); TEXTURE_AMOUNT];
+
+        for (i, texture_type) in ALL_TEXTURE_TYPES.iter().enumerate()
+        {
+            let texture_state = material.get_texture_by_type(*texture_type);
+
+            if let Some(texture_state) = texture_state.as_ref()
+            {
+                texture_transforms[i] = TextureTransform::new(texture_state);
+            }
+        }
 
         MaterialUniform
         {
@@ -113,7 +189,18 @@ impl MaterialUniform
                 material_data.highlight_color.z,
                 1.0,
             ],
+            locked_color:
+            [
+                material_data.locked_color.x,
+                material_data.locked_color.y,
+                material_data.locked_color.z,
+                1.0,
+            ],
+
+            blend_mode: material_data.blend_mode as u32,
             alpha: material_data.alpha,
+            alpha_cutoff: material_data.alpha_cutoff.unwrap_or(0.0),
+
             shininess: material_data.shininess,
             reflectivity: material_data.reflectivity,
             refraction_index: material_data.refraction_index,
@@ -121,9 +208,26 @@ impl MaterialUniform
             roughness: material_data.roughness,
             receive_shadow: material_data.receive_shadow as u32,
             unlit: material_data.unlit_shading as u32,
+            ibl_diffuse_intensity: material_data.ibl_diffuse_intensity,
+
+            allow_xray: material_data.allow_xray as u32,
+
+            texture_transforms,
             textures_used: textures_used,
 
-            __padding: [0, 0, 0]
+            mapping_mode: material_data.mapping_mode as u32,
+            mapping_space: material_data.mapping_space as u32,
+            mapping_axis: material_data.mapping_axis as u32,
+            mapping_scale: material_data.mapping_scale,
+            mapping_sharpness: material_data.mapping_sharpness,
+
+            shadow_softness: material_data.shadow_softness,
+
+            no_fog: material_data.no_fog as u32,
+
+            vertex_colors: material_data.vertex_colors as u32,
+
+            _padding: [0, 0, 0],
         }
     }
 }
@@ -136,13 +240,22 @@ pub struct MaterialBuffer
 
     empty_texture: Texture,
 
+    default_texture_sampler: wgpu::Sampler,
+
     pub bind_group_layout: Option<BindGroupLayout>,
-    pub bind_group: Option<BindGroup>
+    pub bind_group: Option<BindGroup>,
 }
+
+crate::render_item_send_sync!(MaterialBuffer);
 
 impl RenderItem for MaterialBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+    }
 }
 
 impl MaterialBuffer
@@ -158,23 +271,25 @@ impl MaterialBuffer
         });
 
         let empty_texture = Texture::new_empty_texture(wgpu, format!("empty material {} texture", material.get_base().name).as_str(), TextureFormat::Srgba);
+        let default_texture_sampler = Self::create_default_sampler(wgpu);
 
         let mut buffer = MaterialBuffer
         {
             name: material.get_base().name.clone(),
             buffer: empty_buffer,
             empty_texture,
+            default_texture_sampler,
             bind_group_layout: None,
             bind_group: None
         };
 
-        buffer.to_buffer(wgpu, material, default_env_map.clone(), additional_textures);
+        buffer.to_buffers(wgpu, material, default_env_map.clone(), additional_textures);
         buffer.create_binding_groups(wgpu, material, default_env_map, additional_textures);
 
         buffer
     }
 
-    pub fn to_buffer(&mut self, wgpu: &mut WGpu, material: &Material, default_env_map: Option<TextureState>, additional_textures: Option<&Vec<(&Texture, u32)>>)
+    pub fn to_buffers(&mut self, wgpu: &mut WGpu, material: &Material, default_env_map: Option<TextureState>, additional_textures: Option<&Vec<(&Texture, u32)>>)
     {
         let mut material_uniform = MaterialUniform::new(material, default_env_map.is_some());
 
@@ -207,28 +322,26 @@ impl MaterialBuffer
     }
     */
 
-    pub fn get_buffer(&self) -> &wgpu::Buffer
-    {
-        &self.buffer
-    }
-
     pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, material: &Material, default_env_map: Option<TextureState>, additional_textures: Option<&Vec<(&Texture, u32)>>)
     {
-        let device = wgpu.device();
-
         let mut layout_group_vec: Vec<wgpu::BindGroupLayoutEntry> = vec![];
         let mut group_vec: Vec<wgpu::BindGroupEntry<'_>> = vec![];
 
         let mut bind_id = 0;
 
         // ********* material buffer *********
+        // vertex stage needs it as well (vertex colors)
         layout_group_vec.push(uniform::uniform_bind_group_layout_entry(bind_id, true, true));
-        group_vec.push(uniform::uniform_bind_group(bind_id, &self.get_buffer()));
+        group_vec.push(wgpu::BindGroupEntry { binding: bind_id, resource: self.buffer.as_entire_binding() });
+
         bind_id += 1;
 
         // ********* textures *********
-        let mut texture_render_items: HashMap<u64, (RenderItemType, TextureItem)> = HashMap::new();
+        let mut texture_render_items: HashMap<u32, (RenderItemType, TextureItem, wgpu::Sampler)> = HashMap::new();
         let mut texture_render_items_dir = vec![];
+
+        // projected mapping modes sample outside the [0,1] uv range -> force a tiling (repeat) address mode when active
+        let force_repeat = material.get_data().mapping_mode != TextureMappingMode::Uv;
 
         for texture_type in ALL_TEXTURE_TYPES
         {
@@ -243,24 +356,32 @@ impl MaterialBuffer
                 texture = material.get_texture_by_type(texture_type).clone();
             }
 
-            if let Some(texture) = texture
+            if let Some(texture_state) = texture
             {
-                let enabled = texture.enabled;
+                let enabled = texture_state.enabled;
 
-                if enabled
+                if let Some(texture_arc) = texture_state.get()
                 {
-                    let texture_arc = texture.get();
-                    let mut texture = texture_arc.write().unwrap();
-
-                    if !texture_render_items.contains_key(&texture.id) && texture.render_item.is_some()
+                    if enabled
                     {
-                        let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
-                        swap(&mut texture.render_item, &mut render_item);
+                        let mut texture = texture_arc.write().unwrap();
 
-                        texture_render_items.insert(texture.id, (render_item.unwrap(), texture_arc.clone()));
+                        if !texture_render_items.contains_key(&texture.id) && texture.render_item.is_some()
+                        {
+                            let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
+                            swap(&mut texture.render_item, &mut render_item);
+
+                            let sampler = Self::create_sampler(wgpu, &texture_state, force_repeat);
+
+                            texture_render_items.insert(texture.id, (render_item.unwrap(), texture_arc.clone(), sampler));
+                        }
+
+                        texture_render_items_dir.push((Some(texture.id), bind_id));
                     }
-
-                    texture_render_items_dir.push((Some(texture.id), bind_id));
+                    else
+                    {
+                        texture_render_items_dir.push((None, bind_id));
+                    }
                 }
                 else
                 {
@@ -279,11 +400,11 @@ impl MaterialBuffer
         {
             if let Some(texture_id) = texture_id
             {
-                let render_item = texture_render_items.get(texture_id).unwrap();
-                let render_item = get_render_item::<Texture>(&render_item.0);
+                let render_item_obj = texture_render_items.get(texture_id).unwrap();
+                let render_item = get_render_item::<Texture>(&render_item_obj.0);
 
                 let textures_layout_group = render_item.get_bind_group_layout_entries(*bind_id);
-                let textures_group = render_item.get_bind_group_entries(*bind_id);
+                let textures_group = Texture::get_bind_group_entries(*bind_id, render_item.get_view(), &render_item_obj.2);
 
                 layout_group_vec.append(&mut textures_layout_group.to_vec());
                 group_vec.append(&mut textures_group.to_vec());
@@ -291,7 +412,7 @@ impl MaterialBuffer
             else
             {
                 let textures_layout_group = self.empty_texture.get_bind_group_layout_entries(*bind_id);
-                let textures_group = self.empty_texture.get_bind_group_entries(*bind_id);
+                let textures_group = Texture::get_bind_group_entries(*bind_id, self.empty_texture.get_view(), &self.default_texture_sampler);
 
                 layout_group_vec.append(&mut textures_layout_group.to_vec());
                 group_vec.append(&mut textures_group.to_vec());
@@ -304,7 +425,9 @@ impl MaterialBuffer
             for (texture, id) in additional_textures
             {
                 let textures_layout_group = texture.get_bind_group_layout_entries(*id);
-                let textures_group = texture.get_bind_group_entries(*id);
+
+                // TODO: additional textures texture state????
+                let textures_group = Texture::get_bind_group_entries(*id, texture.get_view(), &self.default_texture_sampler);
 
                 layout_group_vec.append(&mut textures_layout_group.to_vec());
                 group_vec.append(&mut textures_group.to_vec());
@@ -313,14 +436,14 @@ impl MaterialBuffer
 
         // ********* bind group *********
         let bind_group_layout_name = format!("{} material_bind_group_layout", self.name);
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        let bind_group_layout = wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             entries: &layout_group_vec.as_slice(),
             label: Some(bind_group_layout_name.as_str()),
         });
 
         let bind_group_name = format!("{} material_bind_group", self.name);
-        let bind_group = device.create_bind_group
+        let bind_group = wgpu.device().create_bind_group
         (
             &wgpu::BindGroupDescriptor
             {
@@ -331,12 +454,101 @@ impl MaterialBuffer
         );
 
         // ********* swap back *********
-        for (_tex_id, (render_item, texture)) in texture_render_items
+        for (_tex_id, (render_item, texture, _)) in texture_render_items
         {
             texture.write().unwrap().render_item = Some(render_item);
         }
 
         self.bind_group_layout = Some(bind_group_layout);
         self.bind_group = Some(bind_group);
+    }
+
+    pub fn create_default_sampler(wgpu: &mut WGpu) -> Sampler
+    {
+        wgpu.device().create_sampler(&wgpu::SamplerDescriptor
+        {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        })
+    }
+
+    pub fn create_sampler(wgpu: &mut WGpu, texture_state: &TextureState, force_repeat: bool) -> Sampler
+    {
+        let address_mode_u;
+        match texture_state.sampler.address_mode_u
+        {
+            crate::state::scene::components::material::TextureAddressMode::ClampToEdge => address_mode_u = wgpu::AddressMode::ClampToEdge,
+            crate::state::scene::components::material::TextureAddressMode::Repeat => address_mode_u = wgpu::AddressMode::Repeat,
+            crate::state::scene::components::material::TextureAddressMode::MirrorRepeat => address_mode_u = wgpu::AddressMode::MirrorRepeat,
+            crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_u = wgpu::AddressMode::ClampToBorder,
+        }
+
+        let address_mode_v;
+        match texture_state.sampler.address_mode_v
+        {
+            crate::state::scene::components::material::TextureAddressMode::ClampToEdge => address_mode_v = wgpu::AddressMode::ClampToEdge,
+            crate::state::scene::components::material::TextureAddressMode::Repeat => address_mode_v = wgpu::AddressMode::Repeat,
+            crate::state::scene::components::material::TextureAddressMode::MirrorRepeat => address_mode_v = wgpu::AddressMode::MirrorRepeat,
+            crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_v = wgpu::AddressMode::ClampToBorder,
+        }
+
+        let address_mode_w;
+        match texture_state.sampler.address_mode_w
+        {
+            crate::state::scene::components::material::TextureAddressMode::ClampToEdge => address_mode_w = wgpu::AddressMode::ClampToEdge,
+            crate::state::scene::components::material::TextureAddressMode::Repeat => address_mode_w = wgpu::AddressMode::Repeat,
+            crate::state::scene::components::material::TextureAddressMode::MirrorRepeat => address_mode_w = wgpu::AddressMode::MirrorRepeat,
+            crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_w = wgpu::AddressMode::ClampToBorder,
+        }
+
+        // projected mapping modes read outside the [0,1] uv range -> override with a tiling address mode
+        let (address_mode_u, address_mode_v, address_mode_w) = if force_repeat
+        {
+            (wgpu::AddressMode::Repeat, wgpu::AddressMode::Repeat, wgpu::AddressMode::Repeat)
+        }
+        else
+        {
+            (address_mode_u, address_mode_v, address_mode_w)
+        };
+
+        let mag_filter;
+        match texture_state.sampler.mag_filter
+        {
+            crate::state::scene::components::material::TextureFilterMode::Nearest => mag_filter = wgpu::FilterMode::Nearest,
+            crate::state::scene::components::material::TextureFilterMode::Linear => mag_filter = wgpu::FilterMode::Linear,
+        }
+
+        let min_filter;
+        match texture_state.sampler.min_filter
+        {
+            crate::state::scene::components::material::TextureFilterMode::Nearest => min_filter = wgpu::FilterMode::Nearest,
+            crate::state::scene::components::material::TextureFilterMode::Linear => min_filter = wgpu::FilterMode::Linear,
+        }
+
+        let mipmap_filter;
+        match texture_state.sampler.mipmap_filter
+        {
+            crate::state::scene::components::material::TextureFilterMode::Nearest => mipmap_filter = wgpu::MipmapFilterMode::Nearest,
+            crate::state::scene::components::material::TextureFilterMode::Linear => mipmap_filter = wgpu::MipmapFilterMode::Linear,
+        }
+
+        let sampler = wgpu.device().create_sampler(&wgpu::SamplerDescriptor
+        {
+            address_mode_u: address_mode_u,
+            address_mode_v: address_mode_v,
+            address_mode_w: address_mode_w,
+            mag_filter: mag_filter,
+            min_filter: min_filter,
+            mipmap_filter: mipmap_filter,
+            lod_max_clamp: if texture_state.sampler.no_mipmaps { 0.0 } else { 32.0 },
+            ..Default::default()
+        });
+
+        sampler
     }
 }

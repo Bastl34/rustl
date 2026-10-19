@@ -1,517 +1,501 @@
+#![allow(dead_code)]
+
 use std::cell::RefCell;
+use std::env;
 use std::mem::swap;
 use std::rc::Rc;
-use std::time::Instant;
-use std::{vec, cmp};
+use std::sync::{Arc, RwLock};
+use web_time::{Instant, SystemTime, UNIX_EPOCH};
+use std::{cmp, vec};
 
-use nalgebra::{Point3, Vector3, Vector2, Point2};
+use gilrs::Gilrs;
+use nalgebra::{Vector2, Point2};
 use winit::dpi::PhysicalPosition;
 use winit::event::ElementState;
-use winit::window::{Window, Fullscreen, CursorGrabMode};
+use winit::keyboard::ModifiersKeyState;
+use winit::event_loop::ActiveEventLoop;
+use winit::window::{Window, Fullscreen, CursorGrabMode, Icon, WindowId};
 
-use crate::component_downcast_mut;
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
-use crate::helper::concurrency::thread::spawn_thread;
-use crate::helper::platform;
-use crate::input::keyboard::{Modifier, Key};
+use crate::helper::platform::is_mac;
+use crate::input::input_point::PointState;
+use crate::input::keyboard::{Key, Modifier};
+#[cfg(not(feature = "editor"))]
+use crate::state::state::MouseCapture;
 use crate::interface::winit::winit_map_mouse_button;
+use crate::output::audio_device::AudioDevice;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::state::resources::utilities::resource_utils::play_and_forget_sound;
+use crate::state::scene::utilities::scene_utils::highlight_and_unhighlight_scene_meshes;
+use crate::{console_debug, console_error, console_log, rendering};
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
-use crate::state::gui::editor::editor::Editor;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
-use crate::state::scene::camera::Camera;
-use crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController;
-use crate::state::scene::utilities::scene_utils::{self, load_object, execute_on_scene_mut_and_wait};
-use crate::state::state::{State, StateItem, FPS_CHART_VALUES};
+use crate::state::project::loader::load_and_apply_project;
+use crate::state::scene::scene::SceneLoadState;
+use crate::state::state::{State, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
-use super::winit::winit_map_key;
+use super::app::{App, project_app_factory};
+use super::context::Context;
+use super::gilrs::{gilrs_event, gilrs_initialize};
+use super::winit::{winit_map_key, winit_map_physical_key};
 
-const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
+#[cfg(feature = "editor")]
+use crate::gui::editor::editor::Editor;
+
+// the project of a build, packed by scripts/build.mjs
+const APP_PROJECT: &str = "project/app.project";
 
 pub struct MainInterface
 {
-    pub state: StateItem,
-    start_time: Instant,
+    pub context: Context,
 
-    window_title: String,
+    // the engine test app (app_dummy) - not in builds with project code
+    app: Option<Box<dyn App>>,
 
-    editor_gui: Editor,
+    // the code of the project - created when Play starts, dropped when it ends
+    project_app: Option<Box<dyn App>>,
+    project_app_started: bool,
 
-    wgpu: WGpu,
-    window: Window,
-    egui: EGui,
+    // an app drew its ui into the main window this frame (play mode / exports)
+    app_ui: bool,
+
+    gilrs: Option<Gilrs>,
+
+    // the game releases the mouse on Esc or focus loss, a click captures it again
+    #[cfg(not(feature = "editor"))]
+    mouse_released: bool,
+
+    // the browser releases the pointer lock on Esc itself
+    #[cfg(all(not(feature = "editor"), target_arch = "wasm32"))]
+    pointer_lock_seen: bool,
+
+    // browsers only allow fullscreen after a user gesture - retried once on the first click/key/touch
+    #[cfg(target_arch = "wasm32")]
+    fullscreen_needs_gesture: bool,
+
+    #[cfg(feature = "editor")]
+    editor_gui: Option<Editor>,
 }
 
 impl MainInterface
 {
-    pub async fn new(window: Window, event_loop: &winit::event_loop::EventLoop<()>) -> Self
+    //pub async fn new(window: Arc<Window>, event_loop: &winit::event_loop::EventLoop<()>) -> Self
+    pub async fn new(window: Arc<Window>) -> Self
     {
-        let state = Rc::new(RefCell::new(State::new()));
+        let audio_device = AudioDevice::default();
+        let state = State::new(Arc::new(RwLock::new(Box::new(audio_device))));
+        let state = Rc::new(RefCell::new(state));
 
         let samlpes;
         let mut wgpu: WGpu;
         {
             let state = &mut *(state.borrow_mut());
-            state.width = window.inner_size().width;
-            state.height = window.inner_size().height;
-            wgpu = WGpu::new(&window, state).await;
+            state.width = window.inner_size().width.max(1);
+            state.height = window.inner_size().height.max(1);
+            state.scale_factor = window.scale_factor() as f32;
 
-            dbg!(state.adapter.max_msaa_samples);
-            state.rendering.msaa.set(cmp::min(state.rendering.msaa.get_ref().clone(), state.adapter.max_msaa_samples));
+            wgpu = WGpu::new(window.clone(), state).await;
+
+            state.rendering.msaa.set(cmp::min(state.rendering.msaa.get_ref().clone(), state.rendering_adapter.max_msaa_samples));
             samlpes = *(state.rendering.msaa.get_ref());
+            console_log!("msaa: {}x (adapter max {}x)", samlpes, state.rendering_adapter.max_msaa_samples);
 
             wgpu.create_msaa_texture(samlpes);
         }
 
-        let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
+        let egui = EGui::new(&wgpu, window.clone());
 
-        let mut editor_gui = Editor::new();
+        #[cfg(feature = "editor")]
+        let editor_gui =
         {
-            let state = & *(state.borrow());
-            editor_gui.init(state, &egui);
+            let use_editor = !env::args().any(|a| a == "--no-editor");
+            if use_editor { Some(Editor::new()) } else { None }
+        };
+
+        let gilrs_res = Gilrs::new();
+        let mut gilrs = None;
+        if let Ok(gilrs_res) = gilrs_res
+        {
+            gilrs = Some(gilrs_res);
         }
 
         let mut interface = Self
         {
-            state,
-            start_time: Instant::now(),
+            context: Context
+            {
+                state,
 
-            window_title: window.title().clone(),
+                window_title: format!("Rustl v{}", env!("CARGO_PKG_VERSION")),
+                window_minimized: false,
 
+                wgpu,
+                window,
+                egui,
+
+                on_before_render: crate::helper::observable::Observable::new(),
+                on_after_render: crate::helper::observable::Observable::new(),
+                on_resize: crate::helper::observable::Observable::new(),
+                on_exit: crate::helper::observable::Observable::new(),
+            },
+
+            app: None,
+
+            project_app: None,
+            project_app_started: false,
+            app_ui: false,
+
+            gilrs,
+
+            // the browser only grants the pointer lock on a click
+            #[cfg(not(feature = "editor"))]
+            mouse_released: cfg!(target_arch = "wasm32"),
+
+            #[cfg(all(not(feature = "editor"), target_arch = "wasm32"))]
+            pointer_lock_seen: false,
+
+            #[cfg(target_arch = "wasm32")]
+            fullscreen_needs_gesture: false,
+
+            #[cfg(feature = "editor")]
             editor_gui,
-
-            wgpu,
-            window,
-            egui,
         };
 
-        interface.app_init();
-        interface.init();
+        let main_scene_id = interface.scene_init();
+        interface.init(main_scene_id);
 
         interface
     }
 
-    pub fn init(&mut self)
+    pub fn init(&mut self, scene_id: u32)
     {
-        let state = &mut *(self.state.borrow_mut());
-        let samlpes = *(state.rendering.msaa.get_ref());
-
-        // move out scenes from state to prevent using multiple mut borrows
-        let mut scenes = vec![];
-        swap(&mut state.scenes, &mut scenes);
-
-        for scene in &mut scenes
         {
-            let render_item = Scene::new(&mut self.wgpu, state, scene, samlpes);
-            scene.render_item = Some(Box::new(render_item));
+            let state = &mut *(self.context.state.borrow_mut());
+
+            // gamepad init
+            if let Some(gilrs) = &mut self.gilrs
+            {
+                gilrs_initialize(state, gilrs);
+            }
+
+            // init editor
+            #[cfg(feature = "editor")]
+            if let Some(editor_gui) = &mut self.editor_gui
+            {
+                editor_gui.init(state, &self.context.egui, scene_id);
+            }
         }
 
-        swap(&mut scenes, &mut state.scenes);
+        {
+            let state = &mut *(self.context.state.borrow_mut());
+            Self::load_startup_project(state);
+        }
+
+        // the test app of the engine - builds with project code only run that
+        if project_app_factory().is_none()
+        {
+            self.app = Some(Box::new(super::app_dummy::AppDummy::new()));
+        }
+
+        // init app
+        if let Some(app) = &mut self.app
+        {
+            app.init(&mut self.context);
+        }
+    }
+
+    // native: the .project command line arg, else the project packed by scripts/build.mjs
+    pub fn startup_project() -> Option<String>
+    {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(project) = env::args().find(|a| a.ends_with(".project"))
+        {
+            return Some(project);
+        }
+
+        crate::resources::resources::exists(APP_PROJECT).then(|| APP_PROJECT.to_string())
+    }
+
+    fn load_startup_project(state: &mut State)
+    {
+        let Some(project) = Self::startup_project() else { return; };
+
+        load_and_apply_project(state, project.as_str(), Some(Box::new(|state|
+        {
+            let scene_id = state.get_active_scene_id();
+            if let Some(scene_id) = scene_id
+            {
+                state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
+            }
+
+            // projects saved with cameras and lights bring their own - the not loaded ones get theirs when they are loaded
+            for scene in &mut state.scenes
+            {
+                if scene.load_state != SceneLoadState::Unloaded && scene.cameras.is_empty()
+                {
+                    scene.add_default_lights_and_cam();
+                }
+            }
+        })));
     }
 
     pub fn window(&self) -> &Window
     {
-        &self.window
+        &self.context.window
     }
 
-    pub fn resize(&mut self, dimensions: winit::dpi::PhysicalSize<u32>, scale_factor: Option<f64>)
+    pub fn resize(&mut self, dimensions: Option<winit::dpi::PhysicalSize<u32>>, scale_factor: Option<f64>)
     {
-        let mut width = dimensions.width;
-        let mut height = dimensions.height;
+        let mut width;
+        let mut height;
+
+        if let Some(dimensions) = dimensions
+        {
+            width = dimensions.width;
+            height = dimensions.height;
+        }
+        else
+        {
+            let size = self.context.window.inner_size();
+            width = size.width;
+            height = size.height;
+        }
+
+        self.context.window_minimized = width == 0 && height == 0;
+
+        console_log!("resize {}x{} (minimized: {})", width, height, self.context.window_minimized);
 
         if width == 0 { width = 1; }
         if height == 0 { height = 1; }
 
-        self.wgpu.resize(width, height);
-        self.egui.resize(width, height, scale_factor);
+        self.context.wgpu.resize(width, height);
+        self.context.egui.resize(width, height, scale_factor);
+
+        crate::notify_observable!(&mut self.context, on_resize);
 
         {
-            let state = &mut *(self.state.borrow_mut());
+            let state = &mut *(self.context.state.borrow_mut());
 
             state.width = width;
             state.height = height;
-            state.scale_factor = self.window.scale_factor() as f32;
+            state.scale_factor = self.context.window.scale_factor() as f32;
 
             for scene in &mut state.scenes
             {
+                scene.update_resolution(width, height);
+
                 let mut render_item = scene.render_item.take();
 
-                let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                render_scene.resize(&mut self.wgpu, scene);
+                // not rendered yet (resize before the first frame) - it gets created with the current size
+                if let Some(render_item) = render_item.as_mut()
+                {
+                    let render_scene = get_render_item_mut::<Scene>(render_item);
+                    render_scene.resize(&mut self.context.wgpu, scene, width, height);
+                }
 
                 scene.render_item = render_item;
             }
 
             // reset input states
-            state.input_manager.reset();
+            state.io.input_manager.reset();
+        }
+
+        if let Some(app) = &mut self.app
+        {
+            app.resize(&mut self.context);
+        }
+
+        if let Some(app) = &mut self.project_app
+        {
+            app.resize(&mut self.context);
         }
     }
 
-    pub fn app_init(&mut self)
+    pub fn scene_init(&mut self) -> u32
     {
         //init scene
-        {
-            let state = &mut *(self.state.borrow_mut());
+        let state = &mut *(self.context.state.borrow_mut());
 
-            let mut scene = crate::state::scene::scene::Scene::new(0, "main scene");
-            scene.add_default_material();
+        let scene_id = state.add_scene("main scene").id;
+        state.set_active_scene(scene_id);
 
-            // ********** cam **********
-            /*
-            for i in 0..4
-            {
-                let cam_id = scene.id_manager.get_next_camera_id();
-                let mut cam = Camera::new(cam_id, format!("cam {}", i).to_string());
-                let cam_data = cam.get_data_mut().get_mut();
-                cam_data.fovy = 45.0f32.to_radians();
-                cam_data.eye_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
-                cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y + 5.0, -cam_data.eye_pos.z);
-                cam_data.clipping_near = 0.1;
-                cam_data.clipping_far = 1000.0;
-
-                scene.cameras.push(Box::new(cam));
-            }
-
-            scene.cameras[0].init(0.0, 0.0, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
-            scene.cameras[1].init(0.5, 0.0, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
-            scene.cameras[2].init(0.0, 0.5, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
-            scene.cameras[3].init(0.5, 0.5, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
-             */
-
-            // ********** light **********
-            /*
-            {
-                let light_id = scene.id_manager.get_next_light_id();
-                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-            }
-            {
-                let light_id = scene.id_manager.get_next_light_id();
-                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(-2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-            }
-            */
-
-
-            // helmet
-            /*
-            {
-                let light_id = scene.id_manager.get_next_light_id();
-                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 100.0);
-                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-            }
-
-            {
-                let cam_id = scene.id_manager.get_next_camera_id();
-                let mut cam = Camera::new(cam_id, "cam".to_string());
-                cam.fovy = 23.0f32.to_radians();
-                cam.eye_pos = Point3::<f32>::new(4.2011, 2.7027438, 3.71161);
-                cam.dir = Vector3::<f32>::new(-0.6515582, -0.4452714, -0.61417043);
-                cam.clipping_near = 0.1;
-                cam.clipping_far = 1000.0;
-
-                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
-            }
-            */
-
-
-
-            // lantern
-
-            /*
-            {
-                let light_id = scene.id_manager.get_next_light_id();
-                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 100.0);
-                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-            }
-
-            {
-                let cam_id = scene.id_manager.get_next_camera_id();
-                let mut cam = Camera::new(cam_id, "cam".to_string());
-                cam.fovy = 23.0f32.to_radians();
-                cam.eye_pos = Point3::<f32>::new(4.2011, 2.7027438, 3.71161);
-                cam.dir = Vector3::<f32>::new(-0.6515582, -0.4452714, -0.61417043);
-                cam.up = Vector3::<f32>::new(-0.32401347, 0.8953957, -0.30542085);
-                cam.clipping_near = 0.1;
-                cam.clipping_far = 1000.0;
-
-                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
-            }
-             */
-
-            // corset
-            /*
-            {
-                let light_id = scene.id_manager.get_next_light_id();
-                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 200.0);
-                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-            }
-
-            {
-                let cam_id = scene.id_manager.get_next_camera_id();
-                let mut cam = Camera::new(cam_id, "cam".to_string());
-                cam.fovy = 23.0f32.to_radians();
-                cam.eye_pos = Point3::<f32>::new(4.2011, 2.7027438, 3.71161);
-                cam.up = Vector3::<f32>::new(-0.32401347, 0.8953957, -0.30542085);
-                cam.dir = Vector3::<f32>::new(-0.6515582, -0.4452714, -0.61417043);
-                cam.clipping_near = 0.1;
-                cam.clipping_far = 1000.0;
-
-                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
-            }
-             */
-
-            // ********** models **********
-            /*
-            scene.load("objects/bastl/bastl.obj").unwrap();
-            let n0 = scene.nodes.get(0).unwrap().clone();
-            let n1 = scene.nodes.get_mut(1).unwrap().clone();
-            n1.write().unwrap().merge_mesh(&n0);
-
-            scene.nodes.remove(0);
-
-            scene.load("objects/cube/cube.obj").unwrap();
-            scene.load("objects/plane/plane.obj").unwrap();
-
-            {
-                let node_id = 0;
-                let node = scene.nodes.get_mut(node_id).unwrap();
-
-                let mut node = node.write().unwrap();
-                node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
-                node.find_component_mut::<Transformation>().unwrap().apply_translation(Vector3::<f32>::new(0.0, 0.0, -15.0));
-
-                //node.remove_component_by_type::<Transformation>();
-            }
-
-            {
-                let node_id = 1;
-                let node = scene.nodes.get_mut(node_id).unwrap();
-
-                let mut node = node.write().unwrap();
-                node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
-                node.find_component_mut::<Transformation>().unwrap().apply_scale(Vector3::<f32>::new(4.0, 4.0, 4.0));
-                node.find_component_mut::<Transformation>().unwrap().apply_translation(Vector3::<f32>::new(0.0, 15.0, -30.0));
-
-                //node.remove_component_by_type::<Transformation>();
-            }
-
-            let node1 = Node::new(scene.id_manager.get_next_node_id(), "test1");
-            let node2 = Node::new(scene.id_manager.get_next_node_id(), "test2");
-
-            scene.add_node(node1.clone());
-            Node::add_node(node1, node2);
-            */
-
-            /*
-            scene.clear_empty_nodes();
-
-            let root_node = Node::new(scene.id_manager.get_next_node_id(), "root node");
-            {
-                let mut root_node = root_node.write().unwrap();
-                root_node.add_component(Arc::new(RwLock::new(Box::new(Alpha::new(scene.id_manager.get_next_component_id(), "Alpha Test", 1.0)))));
-            }
-
-            for node in &scene.nodes
-            {
-                Node::add_node(root_node.clone(), node.clone());
-            }
-
-            scene.clear_nodes();
-            scene.add_node(root_node.clone());
-            */
-
-            /*
-            if let Some(suzanne) = scene.find_node_by_name("Suzanne")
-            {
-                let mut node = suzanne.write().unwrap();
-                {
-                    let instances = node.instances.get_mut();
-                    let instance = instances.get_mut(0).unwrap();
-
-                    let mut instance = instance.borrow_mut();
-                    let instance = instance.get_mut();
-                    instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id(), "Transform")))));
-
-                    instance.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Transform Animation", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
-                }
-                //node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
-            }
-             */
-
-            /*
-            if let Some(train) = scene.find_node_by_name("Train")
-            {
-                let mut node = train.write().unwrap();
-                node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Left", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
-                node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Right", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
-
-                let components_len = node.components.len();
-                {
-                    let component = node.components.get_mut(components_len - 2).unwrap();
-                    component_downcast_mut!(component, TransformationAnimation);
-                    component.keyboard_key = Some(Key::Left as usize);
-                }
-
-                {
-                    let component = node.components.get_mut(components_len - 1).unwrap();
-                    component_downcast_mut!(component, TransformationAnimation);
-                    component.keyboard_key = Some(Key::Right as usize);
-                }
-            }
-            */
-
-            /*
-            // add light
-            //if scene.lights.get_ref().len() == 0
-            {
-                let light_id = scene.id_manager.get_next_light_id();
-                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-            }
-             */
-
-            /*
-            // add camera
-            if scene.cameras.len() == 0
-            {
-                let mut cam = Camera::new(scene.id_manager.get_next_camera_id(), "Cam".to_string());
-                cam.update_resolution(state.width, state.height);
-                let cam_data = cam.get_data_mut().get_mut();
-                cam_data.fovy = 45.0f32.to_radians();
-                cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
-                cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
-                cam_data.clipping_near = 0.001;
-                cam_data.clipping_far = 1000.0;
-                scene.cameras.push(Box::new(cam));
-            }
-             */
-
-             /*
-            // camera movement controller
-            if scene.cameras.len() > 0
-            {
-                let cam = scene.cameras.get_mut(0).unwrap();
-                //cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
-
-                let mouse_sensivity = if platform::is_mac() { 0.1 } else { 0.01 };
-                cam.add_controller_target_rotation(3.0, Vector2::<f32>::new(0.0015, 0.0015), mouse_sensivity);
-
-                cam.controller.as_mut().unwrap().as_any_mut().downcast_mut::<TargetRotationController>().unwrap().auto_rotate = Some(0.005);
-            }
-
-            */
-
-
-            // lantern
-            /*
-            {
-                let node_id = 0;
-                let node = scene.nodes.get_mut(node_id).unwrap();
-
-                let mut node = node.write().unwrap();
-                //node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
-                node.find_component_mut::<Transformation>().unwrap().apply_translation(Vector3::<f32>::new(0.0, -1.25, 0.0));
-                node.find_component_mut::<Transformation>().unwrap().apply_scale(Vector3::<f32>::new(0.08, 0.08, 0.08));
-
-                //node.remove_component_by_type::<Transformation>();
-            }
-            */
-
-
-            /*
-            // corset
-            {
-                let node_id = 0;
-                let node = scene.nodes.get_mut(node_id).unwrap();
-
-                let mut node = node.write().unwrap();
-                //node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
-                node.find_component_mut::<Transformation>().unwrap().apply_translation(Vector3::<f32>::new(0.15, -0.7, -0.2));
-                node.find_component_mut::<Transformation>().unwrap().apply_scale(Vector3::<f32>::new(25.0, 25.0, 25.0));
-
-                //node.remove_component_by_type::<Transformation>();
-            }
-            */
-
-            // ********** scene add **********
-            let scene_id = scene.id.clone();
-            let main_queue = state.main_thread_execution_queue.clone();
-
-            //scene.update(&mut state.input_manager, state.frame_scale);
-            state.scenes.push(Box::new(scene));
-
-            let main_queue_clone = main_queue.clone();
-            spawn_thread(move ||
-            {
-                scene_utils::create_grid(scene_id, main_queue_clone.clone(), 500, 1.0);
-            });
-            //scene_utils::create_grid(&mut scene, 1, 1.0);
-
-            //load default env texture
-            state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
-
-            let editor_state = self.editor_gui.editor_state.loading.clone();
-            spawn_thread(move ||
-            {
-                *editor_state.write().unwrap() = true;
-
-                execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
-                {
-                    scene.clear_empty_nodes();
-
-                    // add camera
-                    if scene.cameras.len() == 0
-                    {
-                        let mut cam = Camera::new(scene.id_manager.get_next_camera_id(), "Cam".to_string());
-
-                        cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
-
-                        let cam_data = cam.get_data_mut().get_mut();
-                        cam_data.fovy = 45.0f32.to_radians();
-                        cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
-                        cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
-                        cam_data.clipping_near = 0.1;
-                        cam_data.clipping_far = 1000.0;
-                        scene.cameras.push(Box::new(cam));
-                    }
-                }));
-
-                *editor_state.write().unwrap() = false;
-            });
-        }
+        scene_id
     }
 
     pub fn app_update(&mut self)
     {
-        let scene_id = 0;
-        let node_id = 0;
-
-        let state = &mut *(self.state.borrow_mut());
-
-        // get scene
-        let scene = state.scenes.get_mut(scene_id.clone());
-
-        if scene.is_none()
+        if let Some(app) = &mut self.app
         {
-            return;
+            // update app
+            app.update(&mut self.context);
+        }
+
+        if let Some(app) = &mut self.project_app
+        {
+            app.update(&mut self.context);
         }
     }
 
     pub fn update(&mut self)
     {
+        if self.context.window_minimized && !self.app.as_ref().map_or(false, |a| a.allow_window_minimized_updates())
+        {
+            return;
+        }
+
         let frame_time = Instant::now();
 
-        // update states
+        // ******************** key bindings ********************
         {
-            let state = &mut *(self.state.borrow_mut());
-
-            // vsync
-            let (v_sync, vsync_changed) = state.rendering.v_sync.consume_clone();
-            if vsync_changed
+            // screenshot - not on the web: the gpu readback is async there and there is no file system to save it to
+            #[cfg(not(target_arch = "wasm32"))]
+            let state = &mut *(self.context.state.borrow_mut());
+            #[cfg(not(target_arch = "wasm32"))]
+            if state.io.input_manager.keyboard.is_pressed_no_wait(Key::F12)
             {
-                self.wgpu.set_vsync(v_sync);
+                play_and_forget_sound("sounds/screenshot.ogg", 1.0, state.main_thread_execution_queue.clone());
+                state.debug.save_screenshot = true;
+            }
+        }
+
+        // ******************** update game controller ********************
+        {
+            let state = &mut *(self.context.state.borrow_mut());
+            if let Some(gilrs) = &mut self.gilrs
+            {
+                gilrs_event(state, gilrs, state.stats.frame);
+            }
+        }
+
+
+        // ******************** update stats ********************
+        {
+            let state = &mut *(self.context.state.borrow_mut());
+
+            // builds without the editor: the title is the project and its version ("Rustl-Volt v0.1.0") as soon as it is loaded
+            #[cfg(not(feature = "editor"))]
+            {
+                let name = state.project.name.trim();
+                let game_title = match state.project.version.trim() { "" => name.to_string(), version => format!("{name} v{version}") };
+                if !name.is_empty() && self.context.window.title() != game_title { self.context.window.set_title(&game_title); }
+            }
+
+            // fps
+            let current_time = state.stats.fps_timer.elapsed().as_millis();
+            state.stats.fps += 1;
+
+            if current_time / 1000 > state.stats.last_time / 1000 && state.stats.frame_times.len() > 0
+            {
+                state.stats.last_time = state.stats.fps_timer.elapsed().as_millis();
+
+                // average fps
+                state.stats.last_fps = state.stats.fps;
+                state.stats.fps_average_chart.push_back(state.stats.last_fps);
+
+                // 1% low fps
+                let mut sorted_times: Vec<f32> = state.stats.frame_times.iter().map(|x| *x).collect();
+                sorted_times.sort_by(|a, b| b.partial_cmp(a).unwrap());
+
+                let one_percent_index = (sorted_times.len() as f32 * 0.01).ceil() as usize;
+                let one_percent_slowest_time = sorted_times.get(one_percent_index.saturating_sub(1)).copied().unwrap_or(*sorted_times.last().unwrap());
+
+                state.stats.last_fps_1_percent_low = (1_000_000.0 / one_percent_slowest_time) as u32;
+                state.stats.fps_1_percent_low_chart.push_back(state.stats.last_fps_1_percent_low);
+
+                if state.stats.fps_average_chart.len() > FPS_CHART_VALUES
+                {
+                    state.stats.fps_average_chart.pop_front();
+                    state.stats.fps_1_percent_low_chart.pop_front();
+                }
+
+                #[cfg(any(feature = "editor", target_arch = "wasm32"))]
+                let title = if state.project.name.trim().is_empty()
+                {
+                    self.context.window_title.clone()
+                }
+                else if state.project.version.trim().is_empty()
+                {
+                    format!("{} | {}", &self.context.window_title, state.project.name.trim())
+                }
+                else
+                {
+                    format!("{} | {} v{}", &self.context.window_title, state.project.name.trim(), state.project.version.trim())
+                };
+
+                // builds without the editor set only the project and its version (top of the stats, every frame)
+                #[cfg(feature = "editor")]
+                self.context.window.set_title(format!("{} | FPS: {} (1%L: {})", title, state.stats.last_fps, state.stats.last_fps_1_percent_low).as_str());
+
+                // winit only sets the canvas alt text on web - the tab title gets the project without fps
+                #[cfg(target_arch = "wasm32")]
+                if let Some(document) = web_sys::window().and_then(|window| window.document())
+                {
+                    document.set_title(&title);
+                }
+
+                state.stats.fps = 0;
+                state.stats.frame_times.clear();
+            }
+
+            // frame scale
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();
+
+            if state.stats.frame_update_time > 0 && now > state.stats.frame_update_time
+            {
+                state.stats.frame_scale = REFERENCE_UPDATE_FRAMES / (1000000.0 / (now - state.stats.frame_update_time) as f32);
+            }
+
+            state.stats.frame_update_time = now;
+        }
+
+
+        // ******************** editor/ui update ********************
+        #[cfg(feature = "editor")]
+        if let Some(editor_gui) = &mut self.editor_gui
+        {
+            let now = Instant::now();
+            let state = &mut *(self.context.state.borrow_mut());
+            editor_gui.update(state, &mut self.context.wgpu, &self.context.egui.ctx);
+
+            state.stats.editor_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+        }
+
+
+        // ******************** create render items if needed ********************
+        {
+            let state = &mut *(self.context.state.borrow_mut());
+            let samlpes = *(state.rendering.msaa.get_ref());
+
+            // move out scenes from state to prevent using multiple mut borrows
+            let mut scenes = vec![];
+            swap(&mut state.scenes, &mut scenes);
+
+            for scene in &mut scenes
+            {
+                // a scene without its content gets no gpu resources
+                if scene.render_item.is_some() || scene.load_state == SceneLoadState::Unloaded
+                {
+                    continue;
+                }
+
+                let render_item = Scene::new(&mut self.context.wgpu, state, scene, samlpes);
+                scene.render_item = Some(Box::new(render_item));
+            }
+
+            swap(&mut scenes, &mut state.scenes);
+        }
+
+
+        // ******************** update rendering states ********************
+        {
+            let state = &mut *(self.context.state.borrow_mut());
+
+            // present mode
+            let (present_mode, present_mode_changed) = state.rendering.present_mode.consume_clone();
+            if present_mode_changed
+            {
+                self.context.wgpu.set_present_mode(present_mode);
             }
 
             // full screen
@@ -520,96 +504,72 @@ impl MainInterface
             {
                 let mut fullscreen_mode = None;
                 if fullscreen { fullscreen_mode = Some(Fullscreen::Borderless(None)); }
-                self.window.set_fullscreen(fullscreen_mode);
+                self.context.window.set_fullscreen(fullscreen_mode);
+
+                #[cfg(target_arch = "wasm32")]
+                { self.fullscreen_needs_gesture = fullscreen && self.context.window.fullscreen().is_none(); }
             }
 
-            // fps
-            let current_time = state.fps_timer.elapsed().as_millis();
-
-            if current_time / 1000 > state.last_time / 1000
+            #[cfg(target_arch = "wasm32")]
+            if self.fullscreen_needs_gesture
             {
-                state.last_time = state.fps_timer.elapsed().as_millis();
-
-                state.last_fps = state.fps;
-                state.fps_chart.push(state.last_fps);
-                if state.fps_chart.len() > FPS_CHART_VALUES
+                let input = &state.io.input_manager;
+                if input.mouse.is_any_button_holding() || input.keyboard.is_any_key_holding() || input.touch.has_touches()
                 {
-                    state.fps_chart.remove(0);
+                    self.fullscreen_needs_gesture = false;
+                    if *state.rendering.fullscreen.get_ref()
+                    {
+                        self.context.window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+                    }
                 }
-
-                self.window.set_title(format!("{} | FPS: {}", &self.window_title, state.last_fps).as_str());
-                state.fps = 0;
             }
-            else
-            {
-                state.fps += 1;
-            }
-
-            // frame scale
-            let elapsed = self.start_time.elapsed();
-            let now = elapsed.as_micros();
-
-            if state.frame_update_time > 0 && now - state.frame_update_time > 0
-            {
-                state.frame_scale = REFERENCE_UPDATE_FRAMES / (1000000.0 / (now - state.frame_update_time) as f32);
-            }
-
-            state.frame_update_time = now;
         }
 
-        // editor/ui update
-        {
-            let now = Instant::now();
-            let state = &mut *(self.state.borrow_mut());
-            self.editor_gui.update(state);
+        // ******************** build ui ********************
+        self.build_ui();
 
-            state.editor_update_time = now.elapsed().as_micros() as f32 / 1000.0;
-        }
 
-        // build ui
-        if self.editor_gui.editor_state.visible
-        {
-            let now = Instant::now();
-            let state = &mut *(self.state.borrow_mut());
+        // ******************** app update ********************
+        self.notify_scenes_loaded();
+        self.update_project_app();
 
-            let gui_output = self.editor_gui.build_gui(state, &self.window, &mut self.egui);
-            self.egui.output = Some(gui_output);
-
-            //self.gui.request_repaint();
-            state.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
-        }
-
-        // app update
+        if self.context.state.borrow().run_mode.updates_engine()
         {
             let now = Instant::now();
             self.app_update();
 
-            let state = &mut *(self.state.borrow_mut());
-            state.app_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+            let state = &mut *(self.context.state.borrow_mut());
+            state.stats.app_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
-        // update main thread queue
+
+        // ******************** update main thread queue ********************
         {
-            let state = &mut *(self.state.borrow_mut());
+            let state = &mut *(self.context.state.borrow_mut());
             let main_queue = state.main_thread_execution_queue.clone();
             ExecutionQueue::run_all(main_queue, state);
         }
 
-        // update scene
+
+        // ******************** update scene and rendering items ********************
+        if self.context.state.borrow().run_mode.updates_engine()
         {
             let engine_update_time = Instant::now();
 
-            let state = &mut *(self.state.borrow_mut());
+            let state = &mut *(self.context.state.borrow_mut());
 
             // msaa
             let (msaa_samples, msaa_changed) = state.rendering.msaa.consume_clone();
 
             if msaa_changed
             {
-                self.wgpu.create_msaa_texture(msaa_samples);
+                self.context.wgpu.create_msaa_texture(msaa_samples);
             }
 
-            state.update(state.frame_scale);
+            let physics_update_time = state.update(state.stats.frame_update_time, state.stats.frame_scale, state.stats.frame);
+            state.stats.physics_update_time = physics_update_time / 1000.0; // physic times are based on micros
+
+            rendering::state::update(&mut self.context.wgpu, state);
 
             // move out scenes from state to prevent using multiple mut borrows
             let mut scenes = vec![];
@@ -617,158 +577,783 @@ impl MainInterface
 
             for scene in &mut scenes
             {
+                if !scene.active
+                {
+                    continue;
+                }
+
+                if scene.render_item.is_none()
+                {
+                    continue;
+                }
+
                 let mut render_item = scene.render_item.take();
 
                 let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
 
                 if msaa_changed
                 {
-                    render_scene.msaa_sample_size_update(&mut self.wgpu, scene, msaa_samples);
+                    render_scene.msaa_sample_size_update(&mut self.context.wgpu, scene, msaa_samples);
                 }
-                render_scene.update(&mut self.wgpu, state, scene);
+
+                if state.rendering.debug.wireframe_mode != render_scene.wireframe_mode
+                {
+                    render_scene.wireframe_mode_update(&mut self.context.wgpu, scene, state.rendering.debug.wireframe_mode);
+                }
+
+                if state.rendering.reverse_z != render_scene.reverse_z
+                {
+                    render_scene.reverse_z_update(&mut self.context.wgpu, scene, state.rendering.reverse_z);
+                }
+
+                if state.rendering.debug.xray_mode != render_scene.xray_mode || (state.rendering.debug.xray_mode && state.rendering.debug.xray_alpha != render_scene.xray_alpha)
+                {
+                    render_scene.xray_mode_update(&mut self.context.wgpu, scene, state.rendering.debug.xray_mode, state.rendering.debug.xray_alpha);
+                }
+
+                render_scene.update(&mut self.context.wgpu, state, scene);
 
                 scene.render_item = render_item;
             }
 
             swap(&mut scenes, &mut state.scenes);
 
-            state.engine_update_time = engine_update_time.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.engine_update_time = engine_update_time.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.engine_update_time -= state.stats.physics_update_time; // get raw update time without physics
         }
 
-        // render
-        let (output, view, msaa_view, mut encoder) = self.wgpu.start_render();
+
+        // ******************** render ********************
+        crate::notify_observable!(&mut self.context, on_before_render);
+
+        if let Some((output, view, msaa_view)) = self.context.wgpu.start_render()
         {
-            let state = &mut *(self.state.borrow_mut());
-
-            // render scenes
+            let mut engine_encoder = self.context.wgpu.create_command_encoder();
+            let mut egui_encoder = self.context.wgpu.create_command_encoder();
             {
-                let engine_render_time = Instant::now();
+                let state = &mut *(self.context.state.borrow_mut());
 
-                state.draw_calls = 0;
-
-                for scene in &mut state.scenes
+                // render scenes
                 {
-                    if !scene.visible
-                    {
-                        continue;
-                    }
+                    let engine_render_time = Instant::now();
 
-                    let mut render_item = scene.render_item.take();
+                    state.stats.draw_calls = 0;
+                    state.stats.occlusion_culled_objects = 0;
+                    state.stats.frustum_culled_objects = 0;
+                    state.stats.shadow_views = 0;
+                    state.stats.shadow_draw_calls = 0;
 
-                    let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                    render_scene.distance_sorting = state.rendering.distance_sorting;
-                    state.draw_calls += render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
+                    state.stats.gpu_shadow_time = None;
+                    state.stats.gpu_depth_time = None;
+                    state.stats.gpu_ssao_time = None;
+                    state.stats.gpu_color_time = None;
+                    state.stats.gpu_hzb_time = None;
+                    state.stats.gpu_egui_time = None;
 
-                    scene.render_item = render_item;
-                }
-
-                state.engine_render_time = engine_render_time.elapsed().as_micros() as f32 / 1000.0;
-            }
-
-            // render egui
-            if self.editor_gui.editor_state.visible
-            {
-                let now = Instant::now();
-                self.egui.render(&mut self.wgpu, &view, &mut encoder);
-
-                state.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
-            }
-        }
-        self.wgpu.end_render(output, encoder);
-
-        // screenshot
-        {
-            let state = &mut *(self.state.borrow_mut());
-
-            if state.save_screenshot
-            {
-                let (buffer_dimensions, output_buffer, texture, view, msaa_view, mut encoder) = self.wgpu.start_screenshot_render();
-                {
+                    let effective_run_mode = state.view_run_mode();
                     for scene in &mut state.scenes
                     {
+                        if !scene.visible || !scene.active
+                        {
+                            continue;
+                        }
+
+                        if scene.render_item.is_none()
+                        {
+                            continue;
+                        }
+
                         let mut render_item = scene.render_item.take();
 
                         let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
                         render_scene.distance_sorting = state.rendering.distance_sorting;
-                        render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
+                        render_scene.frustum_culling = state.rendering.frustum_culling;
+                        render_scene.occlusion_culling = state.rendering.occlusion_culling;
+                        render_scene.run_mode = effective_run_mode;
+
+                        scene.notify_before_render_all();
+
+                        // render scene
+                        let render_results =  render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
+
+                        scene.notify_after_render_all();
+
+                        // update visibility info for cameras
+                        for render_result in &render_results
+                        {
+                            if let Some(cam) = scene.get_camera_by_id_mut(render_result.camera_id)
+                            {
+                                cam.visible_nodes_last_frame = render_result.objects_visible.clone();
+                            }
+                        }
+
+                        // all draw calls (camera passes + shadow passes)
+                        state.stats.draw_calls += render_results.iter().map(|r| r.draw_calls).sum::<u32>() + render_scene.shadow_draw_calls;
+
+                        // objects culled by the gpu occlusion check (async readback - a few frames behind)
+                        state.stats.occlusion_culled_objects += render_results.iter().map(|r| r.objects_invisible.len() as u32).sum::<u32>();
+
+                        // objects dropped by the cpu frustum culling
+                        state.stats.frustum_culled_objects += render_results.iter().map(|r| r.objects_frustum_culled).sum::<u32>();
+
+                        // shadow stats
+                        state.stats.shadow_views += render_scene.shadow_views;
+                        state.stats.shadow_draw_calls += render_scene.shadow_draw_calls;
+
+                        // gpu pass timings (read back from the previous frame)
+                        if let Some(gpu_times) = render_scene.gpu_pass_times()
+                        {
+                            if let Some(time) = gpu_times.shadow { state.stats.gpu_shadow_time = Some(state.stats.gpu_shadow_time.unwrap_or(0.0) + time); }
+                            if let Some(time) = gpu_times.depth { state.stats.gpu_depth_time = Some(state.stats.gpu_depth_time.unwrap_or(0.0) + time); }
+                            if let Some(time) = gpu_times.ssao { state.stats.gpu_ssao_time = Some(state.stats.gpu_ssao_time.unwrap_or(0.0) + time); }
+                            if let Some(time) = gpu_times.color { state.stats.gpu_color_time = Some(state.stats.gpu_color_time.unwrap_or(0.0) + time); }
+                            if let Some(time) = gpu_times.hzb { state.stats.gpu_hzb_time = Some(state.stats.gpu_hzb_time.unwrap_or(0.0) + time); }
+                        }
+
+                        // debug highlight visible occlusions
+                        if state.debug.highlight_visible_occlusions
+                        {
+                            let all_highlighted = render_results.iter().flat_map(|r| r.objects_visible.iter()).cloned().collect();
+                            highlight_and_unhighlight_scene_meshes(scene, &all_highlighted);
+                            console_debug!("Highlighted {} visible occluded objects", all_highlighted.len());
+                        }
 
                         scene.render_item = render_item;
                     }
 
-                    self.egui.render(&mut self.wgpu, &view, &mut encoder);
+                    state.stats.engine_render_time = engine_render_time.elapsed().as_micros() as f32 / 1000.0;
                 }
-                let img_data = self.wgpu.end_screenshot_render(buffer_dimensions, output_buffer, texture, encoder);
 
-                img_data.save("data/screenshot.png").unwrap();
-                state.save_screenshot = false;
+                // render egui - the editor ui or the ui of the game
+                {
+                    let now = Instant::now();
+
+                    if self.editor_visible() || self.app_ui
+                    {
+                        self.context.egui.render(&mut self.context.wgpu, &view, &mut egui_encoder);
+
+                        // gpu time of the egui pass (read back from the previous frame)
+                        state.stats.gpu_egui_time = self.context.egui.gpu_render_time();
+                    }
+                    else
+                    {
+                        // the main window paints no ui - only the own windows of the editor
+                        self.context.egui.flush_textures();
+                    }
+                    state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
+                }
+            }
+            self.context.wgpu.submit_commands(vec![engine_encoder, egui_encoder]);
+            self.context.wgpu.end_render(output);
+
+            crate::notify_observable!(&mut self.context, on_after_render);
+        }
+
+
+        // ******************** screenshot ********************
+        {
+            let save_screenshot = self.context.state.borrow().debug.save_screenshot;
+
+            if save_screenshot
+            {
+                //let target_size: Option<(u32, u32)> = Some((256, 256));
+                let target_size: Option<(u32, u32)> = None;
+
+                let original_size = { let state = self.context.state.borrow(); (state.width, state.height) };
+                let render_size = target_size.unwrap_or(original_size);
+
+                // resize all scenes (depth buffer, cameras, hzb) to the given resolution
+                let resize_scenes = |wgpu: &mut WGpu, state: &mut State, width: u32, height: u32|
+                {
+                    // move scenes out of state to avoid multiple mut borrows during update
+                    let mut scenes = vec![];
+                    swap(&mut state.scenes, &mut scenes);
+
+                    for scene in &mut scenes
+                    {
+                        if scene.render_item.is_none()
+                        {
+                            continue;
+                        }
+
+                        scene.update_resolution(width, height);
+
+                        let mut render_item = scene.render_item.take();
+                        let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                        render_scene.resize(wgpu, scene, width, height);
+                        render_scene.update(wgpu, state, scene);
+                        scene.render_item = render_item;
+                    }
+
+                    swap(&mut scenes, &mut state.scenes);
+                };
+
+                // switch to the custom render resolution
+                if target_size.is_some()
+                {
+                    resize_scenes(&mut self.context.wgpu, &mut self.context.state.borrow_mut(), render_size.0, render_size.1);
+                }
+
+                let (buffer_dimensions, output_buffer, texture, view, msaa_view) = self.context.wgpu.start_offscreen_render(target_size);
+                let mut encoder = self.context.wgpu.create_command_encoder();
+                {
+                    let state = &mut *(self.context.state.borrow_mut());
+
+                    let effective_run_mode = state.view_run_mode();
+                    for scene in &mut state.scenes
+                    {
+                        if !scene.visible || !scene.active
+                        {
+                            continue;
+                        }
+
+                        let mut render_item = scene.render_item.take();
+
+                        let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                        render_scene.distance_sorting = state.rendering.distance_sorting;
+                        render_scene.frustum_culling = state.rendering.frustum_culling;
+                        render_scene.occlusion_culling = state.rendering.occlusion_culling;
+                        render_scene.run_mode = effective_run_mode;
+                        render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut encoder, scene);
+
+                        scene.render_item = render_item;
+                    }
+
+                    // egui overlay
+                    #[cfg(feature = "editor")]
+                    if let Some(editor_gui) = &mut self.editor_gui
+                    {
+                        if editor_gui.editor_state.visible
+                        {
+                            // when rendering off-screen at a custom size, the egui layout and its scissor rects
+                            // must match the render target, so temporarily switch the screen descriptor size.
+                            let prev_egui_size = self.context.egui.screen_descriptor.size_in_pixels;
+                            if target_size.is_some()
+                            {
+                                self.context.egui.screen_descriptor.size_in_pixels = [render_size.0, render_size.1];
+                            }
+
+                            // re-create the GUI output for the new render target size and render
+                            let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui, target_size);
+                            self.context.egui.set_output(gui_output, &self.context.window);
+                            self.context.egui.render(&mut self.context.wgpu, &view, &mut encoder);
+
+                            // restore the window size for the normal frames
+                            self.context.egui.screen_descriptor.size_in_pixels = prev_egui_size;
+                        }
+                    }
+                }
+
+                // app ui
+                if self.app_ui
+                {
+                    if target_size.is_some()
+                    {
+                        let prev_egui_size = self.context.egui.screen_descriptor.size_in_pixels;
+                        self.context.egui.screen_descriptor.size_in_pixels = [render_size.0, render_size.1];
+
+                        let gui_output = self.build_app_ui(render_size);
+                        self.context.egui.set_output(gui_output, &self.context.window);
+                        self.context.egui.render(&mut self.context.wgpu, &view, &mut encoder);
+
+                        self.context.egui.screen_descriptor.size_in_pixels = prev_egui_size;
+                    }
+                    // window size: repaint the egui output of this frame as it is
+                    else if self.context.egui.output.is_some()
+                    {
+                        self.context.egui.render(&mut self.context.wgpu, &view, &mut encoder);
+                    }
+                }
+
+                let img_data = self.context.wgpu.end_offscreen_render(buffer_dimensions, output_buffer, texture, encoder);
+
+                // exports have no data folder - it is made here, a failed save (read only folder) is only logged
+                if let Err(error) = std::fs::create_dir_all("data")
+                {
+                    console_error!("screenshot: can not create the data folder: {}", error);
+                }
+                for path in ["data/screenshot.png", "data/screenshot.webp"]
+                {
+                    match img_data.save(path)
+                    {
+                        Ok(()) => { console_log!("screenshot: {}", path); },
+                        Err(error) => { console_error!("screenshot: can not save {}: {}", path, error); },
+                    }
+                }
+
+                let state = &mut *(self.context.state.borrow_mut());
+
+                // restore the original (window) resolution
+                if target_size.is_some()
+                {
+                    resize_scenes(&mut self.context.wgpu, state, original_size.0, original_size.1);
+                }
+
+                state.debug.save_screenshot = false;
             }
         }
 
-        // update inputs
+
+        // ******************** update inputs ********************
         {
-            let state = &mut *(self.state.borrow_mut());
-            state.input_manager.update();
+            let state = &mut *(self.context.state.borrow_mut());
+            state.io.input_manager.update();
         }
 
+
+        // ******************** game mouse capture ********************
+        #[cfg(not(feature = "editor"))]
+        self.update_game_mouse_capture();
+
+
+        // ******************** mouse visibility ********************
         {
-            let state = &mut *(self.state.borrow_mut());
-            let (visible, changed) = state.input_manager.mouse.visible.consume_borrow();
+            let state = &mut *(self.context.state.borrow_mut());
+            let (visible, changed) = state.io.input_manager.mouse.visible.consume_borrow();
             if changed
             {
-                self.window.set_cursor_visible(*visible);
+                self.context.window.set_cursor_visible(*visible);
+
+                if *visible
+                {
+                    _ = self.context.window.set_cursor_grab(CursorGrabMode::None);
+                }
+                else
+                {
+                    self.context.window.set_cursor_grab(CursorGrabMode::Confined)
+                    .or_else(|_e| self.context.window.set_cursor_grab(CursorGrabMode::Locked))
+                    .unwrap_or_else(|e|
+                    {
+                        console_error!("Failed to grab position: {:?}", e);
+                    });
+                }
             }
         }
 
-        // frame time
-        {
-            let state = &mut *(self.state.borrow_mut());
-            state.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
 
-            state.fps_absolute = (1000.0 / (state.engine_render_time + state.engine_update_time)) as u32;
+        // ******************** reset global change tracker ********************
+        {
+            let state = &mut *(self.context.state.borrow_mut());
+            state.io.audio_device.write().unwrap().data.consume_change();
+        }
+
+
+        // ******************** frame time ********************
+        {
+            let state = &mut *(self.context.state.borrow_mut());
+            state.stats.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.frame_times.push_back(frame_time.elapsed().as_micros() as f32);
+
+            // cpu-only fps estimate without the editor overhead (the editor is not part of a game build)
+            state.stats.fps_cpu_absolute = (1000.0 / (state.stats.engine_update_time + state.stats.engine_render_time + state.stats.app_update_time)) as u32;
+
+            // gpu-only fps estimate without the editor overhead (egui pass excluded)
+            // based on the summed pass times of the last read back frame
+            let gpu_total = state.stats.gpu_shadow_time.unwrap_or(0.0) + state.stats.gpu_depth_time.unwrap_or(0.0) + state.stats.gpu_color_time.unwrap_or(0.0) + state.stats.gpu_hzb_time.unwrap_or(0.0);
+            state.stats.fps_gpu_absolute = if gpu_total > 0.0 { Some((1000.0 / gpu_total) as u32) } else { None };
 
             // frame update
-            state.frame += 1;
+            state.stats.frame += 1;
         }
+    }
+
+    pub fn exit(&mut self)
+    {
+        if let Some(mut app) = self.project_app.take()
+        {
+            app.exit(&mut self.context);
+        }
+
+        if let Some(app) = &mut self.app
+        {
+            app.exit(&mut self.context);
+        }
+
+        crate::notify_observable!(&mut self.context, on_exit);
     }
 
     pub fn check_exit(&mut self) -> bool
     {
-        self.state.borrow().exit
+        let state = self.context.state.borrow();
+        state.exit || (state.stop_request && !self.has_editor())
     }
 
-    pub fn input(&mut self, event: &winit::event::WindowEvent)
+    fn has_editor(&self) -> bool
     {
-        if self.editor_gui.editor_state.visible && self.egui.on_event(event)
+        #[cfg(feature = "editor")]
+        if self.editor_gui.is_some()
         {
+            return true;
+        }
+
+        false
+    }
+
+    pub fn request_exit(&mut self) -> bool
+    {
+        if let Some(app) = &mut self.project_app
+        {
+            if !app.request_exit(&mut self.context)
+            {
+                return false;
+            }
+        }
+
+        if let Some(app) = &mut self.app
+        {
+            return app.request_exit(&mut self.context);
+        }
+
+        true
+    }
+
+    // the project app runs while playing - created on the switch to Play, ended on the switch back
+    fn editor_visible(&self) -> bool
+    {
+        #[cfg(feature = "editor")]
+        if let Some(editor_gui) = &self.editor_gui
+        {
+            return editor_gui.editor_state.visible;
+        }
+
+        false
+    }
+
+    // one egui pass per frame: the editor ui (or only its own windows in play mode) and the ui of the apps while the editor ui is hidden
+    fn build_ui(&mut self)
+    {
+        let now = Instant::now();
+        let editor_visible = self.editor_visible();
+        self.app_ui = !editor_visible && (self.app.is_some() || self.project_app.is_some());
+
+        #[cfg(not(feature = "editor"))]
+        if !self.app_ui
+        {
+            return;
+        }
+
+        let ctx = self.context.egui.ctx.clone();
+        let window = self.context.window.clone();
+        let mut raw_input = self.context.egui.take_input(&window);
+
+        // ensure egui always knows the window has focus so text cursor blinks correctly
+        if editor_visible
+        {
+            raw_input.focused = true;
+        }
+
+        let app_ui = self.app_ui;
+        #[cfg_attr(not(feature = "editor"), allow(unused_mut))]
+        let mut editor_ui_time = 0.0;
+        let mut app_ui_time = 0.0;
+        let output = ctx.run_ui(raw_input, |ui|
+        {
+            #[cfg(feature = "editor")]
+            if let Some(editor_gui) = &mut self.editor_gui
+            {
+                let now = Instant::now();
+                let state = &mut *self.context.state.borrow_mut();
+                editor_gui.ui(ui, state);
+                editor_ui_time += now.elapsed().as_micros() as f32 / 1000.0;
+            }
+
+            if app_ui
+            {
+                let now = Instant::now();
+                if let Some(app) = &mut self.app { app.ui(&mut self.context, ui); }
+                if let Some(app) = &mut self.project_app { app.ui(&mut self.context, ui); }
+                app_ui_time = now.elapsed().as_micros() as f32 / 1000.0;
+            }
+        });
+
+        #[cfg(feature = "editor")]
+        if let Some(editor_gui) = &mut self.editor_gui
+        {
+            let now = Instant::now();
+            let state = &mut *self.context.state.borrow_mut();
+            editor_gui.after_ui(state, &ctx);
+            editor_ui_time += now.elapsed().as_micros() as f32 / 1000.0;
+        }
+
+        // a hidden game mouse stays hidden - egui-winit shows the cursor again whenever it applies its cursor icon
+        let mut platform_output = output.platform_output.clone();
+        if !*self.context.state.borrow().io.input_manager.mouse.visible.get_ref()
+        {
+            platform_output.cursor_icon = egui::CursorIcon::None;
+        }
+        self.context.egui.ui_state.handle_platform_output(&window, platform_output);
+        self.context.egui.set_output(output, &window);
+
+        let stats = &mut self.context.state.borrow_mut().stats;
+        stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+        stats.editor_ui_time = editor_ui_time;
+        stats.app_ui_time = app_ui_time;
+    }
+
+    // ui of the apps laid out at a custom size (off-screen render like screenshots)
+    fn build_app_ui(&mut self, render_size: (u32, u32)) -> egui::FullOutput
+    {
+        let window = self.context.window.clone();
+        let mut raw_input = self.context.egui.take_input(&window);
+
+        let pixels_per_point = self.context.egui.screen_descriptor.pixels_per_point;
+        raw_input.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(render_size.0 as f32 / pixels_per_point, render_size.1 as f32 / pixels_per_point)));
+
+        let ctx = self.context.egui.ctx.clone();
+        ctx.run_ui(raw_input, |ui|
+        {
+            if let Some(app) = &mut self.app { app.ui(&mut self.context, ui); }
+            if let Some(app) = &mut self.project_app { app.ui(&mut self.context, ui); }
+        })
+    }
+
+    fn update_project_app(&mut self)
+    {
+        let playing = self.context.state.borrow().run_mode.runs_game_logic();
+
+        if playing && !self.project_app_started
+        {
+            self.project_app_started = true;
+
+            if let Some(mut app) = self.create_project_app()
+            {
+                app.init(&mut self.context);
+
+                let ready: Vec<u32> =
+                {
+                    let state = self.context.state.borrow();
+                    state.scenes.iter().filter(|scene| !scene.is_engine_internal() && scene.is_loaded()).map(|scene| scene.id).collect()
+                };
+
+                for scene_id in ready
+                {
+                    app.scene_loaded(&mut self.context, scene_id);
+                }
+
+                self.project_app = Some(app);
+            }
+        }
+        else if !playing && self.project_app_started
+        {
+            self.project_app_started = false;
+
+            if let Some(mut app) = self.project_app.take()
+            {
+                app.exit(&mut self.context);
+            }
+        }
+    }
+
+    // before update_project_app: a project app created this frame gets the ready scenes from its init
+    fn notify_scenes_loaded(&mut self)
+    {
+        let unloaded = std::mem::take(&mut self.context.state.borrow_mut().unloaded_scenes);
+
+        for scene_id in unloaded
+        {
+            if let Some(app) = &mut self.app
+            {
+                app.scene_unloaded(&mut self.context, scene_id);
+            }
+
+            if let Some(app) = &mut self.project_app
+            {
+                app.scene_unloaded(&mut self.context, scene_id);
+            }
+        }
+
+        let loaded = std::mem::take(&mut self.context.state.borrow_mut().loaded_scenes);
+
+        for scene_id in loaded
+        {
+            // without the editor nobody else gives a scene without cameras one (the project load does it for its scenes)
+            #[cfg(not(feature = "editor"))]
+            if let Some(scene) = self.context.state.borrow_mut().find_scene_by_id_mut(scene_id).filter(|scene| scene.cameras.is_empty())
+            {
+                scene.add_default_lights_and_cam();
+            }
+
+            if let Some(app) = &mut self.app
+            {
+                app.scene_loaded(&mut self.context, scene_id);
+            }
+
+            if let Some(app) = &mut self.project_app
+            {
+                app.scene_loaded(&mut self.context, scene_id);
+            }
+        }
+    }
+
+    fn create_project_app(&mut self) -> Option<Box<dyn App>>
+    {
+        if let Some(factory) = project_app_factory()
+        {
+            return Some(factory());
+        }
+
+        // the editor loads the code of the project as shared library
+        #[cfg(feature = "editor")]
+        if let Some(editor_gui) = &mut self.editor_gui
+        {
+            return editor_gui.editor_state.project_code.create_app();
+        }
+
+        None
+    }
+
+    // the editor captures the mouse in play mode - without it the game does it, per InputSettings
+    #[cfg(not(feature = "editor"))]
+    fn update_game_mouse_capture(&mut self)
+    {
+        let state = &mut *(self.context.state.borrow_mut());
+
+        let wanted = match state.input.mouse_capture
+        {
+            MouseCapture::Always => true,
+            MouseCapture::Fullscreen => self.context.window.fullscreen().is_some(),
+            MouseCapture::Never => false,
+        };
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            let locked = web_sys::window().and_then(|w| w.document()).and_then(|d| d.pointer_lock_element()).is_some();
+            if self.pointer_lock_seen && !locked
+            {
+                self.mouse_released = true;
+            }
+            self.pointer_lock_seen = locked && !self.mouse_released;
+        }
+
+        let visible = !state.hide_cursor && (!wanted || self.mouse_released);
+        if *state.io.input_manager.mouse.visible.get_ref() != visible
+        {
+            state.io.input_manager.mouse.visible.set(visible);
+        }
+    }
+
+    pub fn window_input(&mut self, event: &winit::event::WindowEvent)
+    {
+        #[cfg(not(feature = "editor"))]
+        match event
+        {
+            winit::event::WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed && event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape) => self.mouse_released = true,
+            winit::event::WindowEvent::Focused(false) => self.mouse_released = true,
+            winit::event::WindowEvent::MouseInput { state: ElementState::Pressed, .. } => self.mouse_released = false,
+            winit::event::WindowEvent::Touch(touch) if touch.phase == winit::event::TouchPhase::Started => self.mouse_released = false,
+            _ => {}
+        }
+
+        // the ui of the game gets every event, it takes only those over its widgets (or for a focused text field)
+        let app_ui = self.app_ui;
+
+        #[cfg(feature = "editor")]
+        let egui_consumed = if let Some(editor_gui) = &mut self.editor_gui
+        {
+            if editor_gui.editor_state.visible || app_ui
+            {
+                self.context.egui.on_event(event, self.context.window.clone())
+            }
+            else
+            {
+                // keep egui's modifier state in sync while hidden, otherwise a Ctrl held on entering play mode stays stuck and turns the wheel into zoom
+                if matches!(event, winit::event::WindowEvent::ModifiersChanged(_) | winit::event::WindowEvent::Focused(_))
+                {
+                    _ = self.context.egui.on_event(event, self.context.window.clone());
+                }
+
+                false
+            }
+        }
+        else
+        {
+            app_ui && self.context.egui.on_event(event, self.context.window.clone())
+        };
+
+        #[cfg(not(feature = "editor"))]
+        let egui_consumed = app_ui && self.context.egui.on_event(event, self.context.window.clone());
+
+
+        // Always forward mouse button releases to the input manager, even if egui consumed the event.
+        // Otherwise, if the user presses in the scene and releases over egui, the scene gets stuck
+        // thinking a button is held, causing unwanted camera rotation.
+        if egui_consumed
+        {
+            let global_state = &mut *(self.context.state.borrow_mut());
+
+            match event
+            {
+                winit::event::WindowEvent::MouseInput { state: ElementState::Released, button, .. } =>
+                {
+                    let button = winit_map_mouse_button(button);
+                    global_state.io.input_manager.mouse.set_button(button, false, global_state.stats.frame);
+                },
+                winit::event::WindowEvent::CursorMoved { .. } =>
+                {
+                    global_state.io.input_manager.mouse.invalidate_pos();
+                },
+                _ => {}
+            }
+
             return;
         }
         else
         {
-            let global_state = &mut *(self.state.borrow_mut());
+            let global_state = &mut *(self.context.state.borrow_mut());
+            //let main_queue = global_state.main_thread_execution_queue.clone();
 
             match event
             {
-                winit::event::WindowEvent::KeyboardInput { device_id: _, input, is_synthetic: _ } =>
+                winit::event::WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } =>
                 {
-                    if let Some(key) = input.virtual_keycode
+                    let mut key = winit_map_key(&event.logical_key, event.location);
+
+                    // fall back to the physical (layout-independent) key when the logical key is mangled by the layout - e.g. ctrl+alt is treated as altgr on windows, breaking shortcuts like ctrl+alt+b
+                    if key == Key::Unknown
                     {
-                        let key = winit_map_key(key);
-                        if input.state == ElementState::Pressed
-                        {
-                            global_state.input_manager.keyboard.set_key(key, true);
-                        }
-                        else
-                        {
-                            global_state.input_manager.keyboard.set_key(key, false);
-                        }
+                        key = winit_map_physical_key(&event.physical_key);
+                    }
+
+                    if event.state == ElementState::Pressed
+                    {
+                        global_state.io.input_manager.keyboard.set_key(key, true, global_state.stats.frame);
+                    }
+                    else
+                    {
+                        global_state.io.input_manager.keyboard.set_key(key, false, global_state.stats.frame);
                     }
                 },
                 winit::event::WindowEvent::ModifiersChanged(modifiers_state) =>
                 {
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Alt, modifiers_state.alt());
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Ctrl, modifiers_state.ctrl());
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Logo, modifiers_state.logo());
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Shift, modifiers_state.shift());
+                    // TODO: Check if windows/linux is able to catch left/right difference
+                    if is_mac()
+                    {
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.lalt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.ralt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.lcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.rcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.lsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.rsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.lshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.rshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                    }
+                    else
+                    {
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
+
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
+
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.state().super_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.state().super_key(), global_state.stats.frame);
+
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.state().shift_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.state().shift_key(), global_state.stats.frame);
+                    }
                 },
                 winit::event::WindowEvent::MouseInput { device_id: _, state, button, .. } =>
                 {
@@ -781,7 +1366,7 @@ impl MainInterface
 
                     let button = winit_map_mouse_button(button);
 
-                    global_state.input_manager.mouse.set_button(button, pressed);
+                    global_state.io.input_manager.mouse.set_button(button, pressed, global_state.stats.frame);
                 },
                 winit::event::WindowEvent::MouseWheel { device_id: _, delta, phase: _, ..} =>
                 {
@@ -789,13 +1374,15 @@ impl MainInterface
                     {
                         winit::event::MouseScrollDelta::LineDelta(x, y) =>
                         {
-                            global_state.input_manager.mouse.set_wheel_delta_x(*x);
-                            global_state.input_manager.mouse.set_wheel_delta_y(*y);
+                            global_state.io.input_manager.mouse.set_wheel_delta_x(*x);
+                            global_state.io.input_manager.mouse.set_wheel_delta_y(*y);
                         },
                         winit::event::MouseScrollDelta::PixelDelta(delta) =>
                         {
-                            global_state.input_manager.mouse.set_wheel_delta_y(delta.x as f32);
-                            global_state.input_manager.mouse.set_wheel_delta_y(delta.y as f32);
+                            // browsers/trackpads send physical pixels, ~100 logical px are one wheel notch (= one line)
+                            let px_per_line = 100.0 * global_state.scale_factor;
+                            global_state.io.input_manager.mouse.set_wheel_delta_x(delta.x as f32 / px_per_line);
+                            global_state.io.input_manager.mouse.set_wheel_delta_y(delta.y as f32 / px_per_line);
                         },
                     }
                 },
@@ -803,77 +1390,105 @@ impl MainInterface
                 {
                     let mut pos = Point2::<f32>::new(position.x as f32, position.y as f32);
 
-                    pos.x = pos.x;
                     // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
                     pos.y = global_state.height as f32 - pos.y;
 
-                    global_state.input_manager.mouse.set_pos(pos, global_state.frame, global_state.width, global_state.height);
+                    global_state.io.input_manager.mouse.set_pos(pos, global_state.stats.frame, global_state.width, global_state.height);
+                },
+                winit::event::WindowEvent::CursorLeft { device_id: _ } =>
+                {
+                    global_state.io.input_manager.mouse.invalidate_pos();
+                },
+                winit::event::WindowEvent::Touch(touch) =>
+                {
+                    let mut pos = Point2::<f32>::new(touch.location.x as f32, touch.location.y as f32);
+
+                    // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
+                    pos.y = global_state.height as f32 - pos.y;
+
+                    let mut force = None;
+                    if let Some(touch_force) = touch.force
+                    {
+                        force = Some(touch_force.normalized() as f32);
+                    }
+
+                    let state = match touch.phase
+                    {
+                        winit::event::TouchPhase::Started => PointState::Down,
+                        winit::event::TouchPhase::Moved => PointState::Move,
+                        winit::event::TouchPhase::Ended => PointState::Up,
+                        winit::event::TouchPhase::Cancelled => PointState::Up,
+                    };
+
+                    global_state.io.input_manager.touch.set(touch.id, pos, state, global_state.stats.frame, force);
                 },
                 winit::event::WindowEvent::Focused(focus) =>
                 {
                     global_state.in_focus = *focus;
-                    global_state.input_manager.reset();
+                    global_state.io.input_manager.reset();
+                },
+                winit::event::WindowEvent::DroppedFile(path) =>
+                {
+                    if let Some(path) = path.to_str()
+                    {
+                        #[cfg(feature = "editor")]
+                        if let Some(editor_gui) = &mut self.editor_gui
+                        {
+                            editor_gui.apply_external_asset_drag(global_state, path.to_string());
+                        }
+
+                        self.context.window.request_redraw();
+                    }
                 },
                 _ => {}
-                /*
-                winit::event::WindowEvent::Resized(_) => todo!(),
-                winit::event::WindowEvent::Moved(_) => todo!(),
-                winit::event::WindowEvent::CloseRequested => todo!(),
-                winit::event::WindowEvent::Destroyed => todo!(),
-                winit::event::WindowEvent::DroppedFile(_) => todo!(),
-                winit::event::WindowEvent::HoveredFile(_) => todo!(),
-                winit::event::WindowEvent::HoveredFileCancelled => todo!(),
-                winit::event::WindowEvent::ReceivedCharacter(_) => todo!(),
-                winit::event::WindowEvent::Focused(_) => todo!(),
-                winit::event::WindowEvent::KeyboardInput { device_id, input, is_synthetic } => todo!(),
-                winit::event::WindowEvent::ModifiersChanged(_) => todo!(),
-                winit::event::WindowEvent::Ime(_) => todo!(),
-                winit::event::WindowEvent::CursorMoved { device_id, position, modifiers } => todo!(),
-                winit::event::WindowEvent::CursorEntered { device_id } => todo!(),
-                winit::event::WindowEvent::CursorLeft { device_id } => todo!(),
-                winit::event::WindowEvent::MouseWheel { device_id, delta, phase, modifiers } => todo!(),
-                winit::event::WindowEvent::MouseInput { device_id, state, button, modifiers } => todo!(),
-                winit::event::WindowEvent::TouchpadMagnify { device_id, delta, phase } => todo!(),
-                winit::event::WindowEvent::SmartMagnify { device_id } => todo!(),
-                winit::event::WindowEvent::TouchpadRotate { device_id, delta, phase } => todo!(),
-                winit::event::WindowEvent::TouchpadPressure { device_id, pressure, stage } => todo!(),
-                winit::event::WindowEvent::AxisMotion { device_id, axis, value } => todo!(),
-                winit::event::WindowEvent::Touch(_) => todo!(),
-                winit::event::WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size } => todo!(),
-                winit::event::WindowEvent::ThemeChanged(_) => todo!(),
-                winit::event::WindowEvent::Occluded(_) => todo!(),
-                 */
             }
+        }
+    }
+
+    // events of the other egui windows (e.g. the assets window) - they only drive their egui ui
+    pub fn viewport_window_input(&mut self, window_id: WindowId, event: &winit::event::WindowEvent)
+    {
+        self.context.egui.on_viewport_window_event(window_id, event);
+    }
+
+    pub fn has_pending_viewport_windows(&self) -> bool
+    {
+        self.context.egui.has_pending_viewport_windows()
+    }
+
+    pub fn create_pending_viewport_windows(&mut self, event_loop: &ActiveEventLoop, icon: Option<Icon>)
+    {
+        self.context.egui.create_pending_viewport_windows(event_loop, &self.context.wgpu, icon);
+    }
+
+    pub fn device_input(&mut self, event: &winit::event::DeviceEvent)
+    {
+        let global_state = &mut *(self.context.state.borrow_mut());
+
+        match event
+        {
+            winit::event::DeviceEvent::MouseMotion { delta } =>
+            {
+                let velocity = Vector2::<f32>::new(delta.0 as f32, -delta.1 as f32);
+                global_state.io.input_manager.mouse.set_raw_velocity(velocity, global_state.stats.frame);
+            },
+            _ => {}
         }
     }
 
     pub fn update_done(&mut self)
     {
-        let global_state = &mut *(self.state.borrow_mut());
+        let global_state = &mut *(self.context.state.borrow_mut());
 
-        let (visible, change) = global_state.input_manager.mouse.visible.consume_clone();
-
-        if change
+        // center mouse (needed on windows) - the web has the pointer lock and can not set the position
+        if !*global_state.io.input_manager.mouse.visible.get_ref() && !is_mac() && !cfg!(target_arch = "wasm32")
         {
-            if visible
-            {
-                _ = self.window.set_cursor_grab(CursorGrabMode::None);
-            }
-            else
-            {
-                self.window.set_cursor_grab(CursorGrabMode::Confined)
-                .or_else(|_e| self.window.set_cursor_grab(CursorGrabMode::Locked))
-                .unwrap();
-            }
-        }
-
-        if !*global_state.input_manager.mouse.visible.get_ref()
-        {
-            let window_size = self.window.inner_size();
+            let window_size = self.context.window.inner_size();
             let center = PhysicalPosition::new(window_size.width as f64 / 2.0, window_size.height as f64 / 2.0);
 
-            self.window.set_cursor_position(center).unwrap_or_else(|e|{
-                dbg!("Failed to set mouse position: {:?}", e);
+            self.context.window.set_cursor_position(center).unwrap_or_else(|e|
+            {
+                console_error!("Failed to set mouse position: {:?}", e);
             });
         }
     }
