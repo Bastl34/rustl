@@ -17,10 +17,13 @@ const args = process.argv.slice(2);
 const profile = args.find(arg => arg.startsWith("--profile="))?.slice("--profile=".length) ?? "dev-dylib";
 const editorArgs = args.filter(arg => !arg.startsWith("--profile="));
 
-// the versions of the engine workspace
+// the versions of the engine workspace - by content, not by date: project builds use the engine lock, any other version in the editor lock rebuilds the engine library
 const lock = path.join(ROOT, "Cargo.lock");
 const editorLock = path.join(EDITOR_DIR, "Cargo.lock");
-if (!fs.existsSync(editorLock) || fs.statSync(lock).mtimeMs > fs.statSync(editorLock).mtimeMs)
+const lockPackages = (file) => fs.existsSync(file) ? fs.readFileSync(file, "utf8").replaceAll("\r\n", "\n").split("\n[[package]]\n").slice(1).map(block => block.trimEnd()) : null;
+const enginePackages = new Set(lockPackages(lock));
+const editorPackages = lockPackages(editorLock);
+if (editorPackages === null || editorPackages.some(block => !enginePackages.has(block) && !block.startsWith('name = "rustl_editor"\n')))
 {
     fs.copyFileSync(lock, editorLock);
 }
