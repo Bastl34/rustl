@@ -4,8 +4,8 @@ use std::sync::{Arc, RwLock};
 
 use bytemuck::cast_slice;
 use colored::Colorize;
-use nalgebra::{Isometry3, Matrix4, Point2, Point3, Vector3};
-use parry3d::{bounding_volume::{Aabb, BoundingSphere}, shape::TriMesh};
+use nalgebra::{Matrix4, Point2, Point3, Vector3};
+use parry3d::{bounding_volume::{Aabb, BoundingSphere}, math::{Pose3, Vec3}, shape::TriMesh};
 use serde::{Deserialize, Serialize};
 
 use crate::{console_error, helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::{point2_as_array, point3_as_array, vec3_as_array}, math::calculate_normal}, state::{helper::render_item::RenderItemOption, scene::{manager::id_manager, utilities::tags::Tags}}};
@@ -26,7 +26,7 @@ fn default_aabb() -> Aabb
 
 fn default_sphere() -> BoundingSphere
 {
-    BoundingSphere::new(Point3::new(0.0, 0.0, 0.0), 0.0)
+    BoundingSphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -56,6 +56,9 @@ pub struct MeshResourceData
     pub normals: Vec<Vector3<f32>>,
     #[serde(skip, default)]
     pub normals_indices: Vec<[u32; 3]>,
+
+    #[serde(skip, default)]
+    pub colors: Vec<[f32; 4]>, // vertex colors (COLOR_0) - empty means white
 
     #[serde(skip, default)]
     pub joints: Vec<[u32; JOINTS_LIMIT]>,
@@ -92,6 +95,8 @@ impl MeshResourceData
         self.normals.clear();
         self.normals_indices.clear();
 
+        self.colors.clear();
+
         self.joints.clear();
         self.weights.clear();
 
@@ -100,7 +105,7 @@ impl MeshResourceData
         self.morph_target_tangents.clear();
 
         // "empty" triangle
-        let triangle = [Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0)];
+        let triangle = [Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0)];
         let indices: [u32; 3] = [0, 1, 2];
 
         let mesh_res = TriMesh::new(triangle.to_vec(), [indices].to_vec());
@@ -123,7 +128,7 @@ impl MeshResourceData
 pub struct MeshResource
 {
     #[serde(skip, default)]
-    pub id: u64,
+    pub id: u32,
     pub uuid: String,
     pub source: Option<AssetPathDesciptor>,
 
@@ -170,6 +175,8 @@ impl Default for MeshResource
                 normals: vec![],
                 normals_indices: vec![],
 
+                colors: vec![],
+
                 joints: vec![],
                 weights: vec![],
 
@@ -178,7 +185,7 @@ impl Default for MeshResource
                 morph_target_tangents: vec![],
 
                 b_box: Aabb::new_invalid(),
-                b_sphere: BoundingSphere::new(Point3::new(0.0, 0.0, 0.0), 0.0)
+                b_sphere: BoundingSphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0)
             }),
 
             render_item: None,
@@ -192,7 +199,8 @@ impl MeshResource
 {
     pub fn new_with_data(name: &str, vertices: Vec<Point3<f32>>, indices: Vec<[u32; 3]>, uvs: Vec<Point2<f32>>, uv_indices: Vec<[u32; 3]>, normals: Vec<Vector3<f32>>, normals_indices: Vec<[u32; 3]>) -> MeshResource
     {
-        let tri_mesh_res = TriMesh::new(vertices.clone(), indices.clone());
+        let vertices_vec3: Vec<Vec3> = vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
+        let tri_mesh_res = TriMesh::new(vertices_vec3, indices.clone());
 
         let tri_mesh = match tri_mesh_res
         {
@@ -230,6 +238,8 @@ impl MeshResource
                 normals: normals,
                 normals_indices: normals_indices,
 
+                colors: vec![],
+
                 joints: vec![],
                 weights: vec![],
 
@@ -238,7 +248,7 @@ impl MeshResource
                 morph_target_tangents: vec![],
 
                 b_box: Aabb::new_invalid(),
-                b_sphere: BoundingSphere::new(Point3::new(0.0, 0.0, 0.0), 0.0)
+                b_sphere: BoundingSphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0)
             }),
 
             render_item: None,
@@ -337,6 +347,169 @@ impl MeshResource
         }
     }
 
+    // Mesh resources are shared by hash, so anything that edits geometry has to work on a
+    // copy first. There is no Clone on this type because of the render item and the id.
+    pub fn duplicate(&self) -> MeshResource
+    {
+        let mut copy =
+        {
+            let data = self.get_data();
+
+            MeshResource::new_with_data(self.name.as_str(), data.vertices.clone(), data.indices.clone(), data.uvs_0.clone(), data.uv_indices.clone(), data.normals.clone(), data.normals_indices.clone())
+        };
+
+        {
+            let source = self.get_data();
+            let uvs_1 = source.uvs_1.clone();
+            let uvs_2 = source.uvs_2.clone();
+            let uvs_3 = source.uvs_3.clone();
+            let colors = source.colors.clone();
+            let joints = source.joints.clone();
+            let weights = source.weights.clone();
+            let morph_target_positions = source.morph_target_positions.clone();
+            let morph_target_normals = source.morph_target_normals.clone();
+            let morph_target_tangents = source.morph_target_tangents.clone();
+
+            let data = copy.get_data_mut().get_mut();
+
+            data.uvs_1 = uvs_1;
+            data.uvs_2 = uvs_2;
+            data.uvs_3 = uvs_3;
+
+            data.colors = colors;
+
+            data.joints = joints;
+            data.weights = weights;
+
+            data.morph_target_positions = morph_target_positions;
+            data.morph_target_normals = morph_target_normals;
+            data.morph_target_tangents = morph_target_tangents;
+        }
+
+        copy.source = self.source.clone();
+        copy.tags = self.tags.clone();
+
+        copy
+    }
+
+    // Bakes a scale into the geometry itself, so the node above it can go back to a scale
+    // of one. A rigid body under a non-uniform scale is stretched differently for every
+    // orientation, which is what makes a rotating physics object change shape.
+    pub fn apply_scale(&mut self, scale: &Vector3<f32>)
+    {
+        self.apply_transform(&Matrix4::new_nonuniform_scaling(scale));
+    }
+
+    // Bakes a whole transform into the geometry. Translation and rotation are rigid, so
+    // this is only ever about tidying a node up - the scale is the part that a physics body
+    // actually needs baked.
+    pub fn apply_transform(&mut self, transform: &Matrix4<f32>)
+    {
+        // normals transform by the inverse transpose, otherwise a non-uniform scale tilts
+        // them off the surface they belong to
+        let normal_matrix = match transform.fixed_view::<3, 3>(0, 0).into_owned().try_inverse()
+        {
+            Some(inverse) => inverse.transpose(),
+            None =>
+            {
+                console_error!("{}", "cannot bake a transform that has no inverse".red());
+                return;
+            }
+        };
+
+        {
+            let data = self.get_data_mut().get_mut();
+
+            let move_vertices = |vertices: &mut Vec<Point3<f32>>|
+            {
+                for vertex in vertices
+                {
+                    let moved = transform * vertex.to_homogeneous();
+                    *vertex = moved.xyz().into();
+                }
+            };
+
+            move_vertices(&mut data.vertices);
+
+            for positions in &mut data.morph_target_positions
+            {
+                move_vertices(positions);
+            }
+
+            let rescale_normals = |normals: &mut Vec<Vector3<f32>>|
+            {
+                for normal in normals
+                {
+                    *normal = normal_matrix * *normal;
+
+                    let length = normal.norm();
+
+                    if length > 0.0
+                    {
+                        *normal /= length;
+                    }
+                }
+            };
+
+            rescale_normals(&mut data.normals);
+
+            for normals in &mut data.morph_target_normals
+            {
+                rescale_normals(normals);
+            }
+
+            // the collision mesh is built from the vertices, so it has to follow
+            let vertices_vec3: Vec<Vec3> = data.vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
+
+            data.mesh = match TriMesh::new(vertices_vec3, data.indices.clone())
+            {
+                Ok(mesh) => mesh,
+                Err(e) =>
+                {
+                    console_error!("{}", (format!("error rebuilding mesh after baking the scale: {}", e)).red());
+                    TriMesh::new(vec![], vec![]).unwrap()
+                }
+            };
+        }
+
+        self.calc_bounding_volumes();
+
+        // the hash identifies the geometry, and the geometry just changed
+        self.calc_hash();
+    }
+
+    pub fn flip_faces(&mut self)
+    {
+        {
+            let data = self.get_data_mut().get_mut();
+
+            // reverse the winding order [i0, i1, i2] --> [i0, i2, i1]
+            for face in &mut data.indices         { face.swap(1, 2); }
+            for face in &mut data.normals_indices { face.swap(1, 2); }
+            for face in &mut data.uv_indices      { face.swap(1, 2); }
+
+            // invert normals
+            for n in &mut data.normals { *n = -*n; }
+
+            // morph targets store deltas relative to the base data -> invert them too
+            for morph in &mut data.morph_target_normals
+            {
+                for n in morph { *n = -*n; }
+            }
+
+            for morph in &mut data.morph_target_tangents
+            {
+                for t in morph { *t = -*t; }
+            }
+
+            // rebuild trimesh
+            let vertices_vec3: Vec<Vec3> = data.vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
+            data.mesh = TriMesh::new(vertices_vec3, data.indices.clone()).unwrap();
+        }
+
+        self.calc_bounding_volumes();
+    }
+
     pub fn calc_hash(&mut self)
     {
         let mesh_data = self.get_data();
@@ -383,6 +556,11 @@ impl MeshResource
             bytes.extend_from_slice(cast_slice(tri));
         }
 
+        for color in &mesh_data.colors
+        {
+            bytes.extend_from_slice(cast_slice(color));
+        }
+
         for joint in &mesh_data.joints
         {
             bytes.extend_from_slice(cast_slice(joint));
@@ -422,36 +600,10 @@ impl MeshResource
 
     fn calc_bounding_volumes(&mut self)
     {
-        let trans = Isometry3::<f32>::identity();
+        let trans = Pose3::identity();
         let data = self.data.get_mut();
         data.b_box = data.mesh.aabb(&trans);
         data.b_sphere = data.mesh.bounding_sphere(&trans);
-    }
-
-    fn apply_transform(&mut self, transform: &Matrix4<f32>)
-    {
-        let data = self.data.get_mut();
-
-        for v in &mut data.vertices
-        {
-            let new_pos = transform * v.to_homogeneous();
-            v.x = new_pos.x;
-            v.y = new_pos.y;
-            v.z = new_pos.z;
-        }
-
-        for n in &mut data.normals
-        {
-            let new_vec = transform * n.to_homogeneous();
-            n.x = new_vec.x;
-            n.y = new_vec.y;
-            n.z = new_vec.z;
-        }
-
-        // clear trimesh and rebuild
-        data.mesh = TriMesh::new(data.vertices.clone(), data.indices.clone()).unwrap();
-
-        self.calc_bounding_volumes();
     }
 
     pub fn merge(&mut self, mesh_data: &MeshResourceData)
@@ -498,7 +650,16 @@ impl MeshResource
             data.normals_indices.push([i0, i1, i2]);
         }
 
-        let mesh_res = TriMesh::new(data.vertices.clone(), data.indices.clone());
+        // vertex colors - pad the side without colors with white so they stay aligned to the vertices
+        if !data.colors.is_empty() || !mesh_data.colors.is_empty()
+        {
+            data.colors.resize(vertices_offset as usize, [1.0; 4]);
+            data.colors.extend(&mesh_data.colors);
+            data.colors.resize(data.vertices.len(), [1.0; 4]);
+        }
+
+        let vertices_vec3: Vec<Vec3> = data.vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
+        let mesh_res = TriMesh::new(vertices_vec3, data.indices.clone());
         let mesh = match mesh_res
         {
             Ok(mesh) => mesh,
@@ -528,6 +689,8 @@ impl MeshResource
         let cloned_normals;
         let cloned_normals_indices;
 
+        let cloned_colors;
+
         {
             let data = self.get_data();
 
@@ -542,6 +705,8 @@ impl MeshResource
 
             cloned_normals = data.normals.clone();
             cloned_normals_indices = data.indices.clone();
+
+            cloned_colors = data.colors.clone();
         }
 
         {
@@ -587,6 +752,8 @@ impl MeshResource
                 data.uvs_2.extend(&cloned_uvs_3);
                 data.uvs_3.extend(&cloned_uvs_4);
 
+                data.colors.extend(&cloned_colors);
+
                 for i in &cloned_uv_indices
                 {
                     let i0 = i[0] + uv_offset;
@@ -605,7 +772,8 @@ impl MeshResource
             }
 
             // create mesh
-            let mesh_res = TriMesh::new(data.vertices.clone(), data.indices.clone());
+            let vertices_vec3: Vec<Vec3> = data.vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
+            let mesh_res = TriMesh::new(vertices_vec3, data.indices.clone());
             let mesh = match mesh_res
             {
                 Ok(mesh) => mesh,
@@ -698,6 +866,8 @@ impl MeshResource
         ui.label(format!(" ⚫ normals: {}", data.normals.len()));
         ui.label(format!(" ⚫ normals_indices: {}", data.normals_indices.len()));
 
+        ui.label(format!(" ⚫ colors: {}", data.colors.len()));
+
         ui.label(format!(" ⚫ joints: {}", data.joints.len()));
         ui.label(format!(" ⚫ weights: {}", data.weights.len()));
 
@@ -709,5 +879,16 @@ impl MeshResource
         ui.label(format!(" ⚫ bbox max: [{:.3}, {:.3}, {:.3}]", data.b_box.maxs.x, data.b_box.maxs.z, data.b_box.maxs.z));
 
         ui.label(format!(" ⚫ b sphere: [{:.3}, {:.3}, {:.3}] r={:.3}", data.b_sphere.center.x, data.b_sphere.center.y, data.b_sphere.center.z, data.b_sphere.radius));
+    }
+
+    pub fn ui(&mut self, ui: &mut egui::Ui)
+    {
+        ui.horizontal(|ui|
+        {
+            if ui.button("Flip Faces").on_hover_text("Flip all faces ot the mesh").clicked()
+            {
+                self.flip_faces();
+            };
+        });
     }
 }

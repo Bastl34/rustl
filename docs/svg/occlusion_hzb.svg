@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="oc_arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="760" height="400" fill="#f8fafc" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">The hierarchical z-buffer (HZB) — a max-depth mip pyramid</text>
+
+  <!-- mip 0: 4x4 grid with depth values -->
+  <g>
+    <text x="150" y="82" text-anchor="middle" font-size="13" font-weight="700" fill="#d97706">mip 0 (full res)</text>
+    <!-- values: darker = closer -->
+    <g font-size="12" text-anchor="middle">
+      <rect x="70"  y="96"  width="40" height="40" fill="#fde68a" stroke="#f59e0b"/><text x="90"  y="121" fill="#78350f">.2</text>
+      <rect x="110" y="96"  width="40" height="40" fill="#fef3c7" stroke="#f59e0b"/><text x="130" y="121" fill="#78350f">.5</text>
+      <rect x="150" y="96"  width="40" height="40" fill="#fffbeb" stroke="#f59e0b"/><text x="170" y="121" fill="#78350f">.9</text>
+      <rect x="190" y="96"  width="40" height="40" fill="#fffbeb" stroke="#f59e0b"/><text x="210" y="121" fill="#78350f">.9</text>
+
+      <rect x="70"  y="136" width="40" height="40" fill="#fde68a" stroke="#f59e0b"/><text x="90"  y="161" fill="#78350f">.2</text>
+      <rect x="110" y="136" width="40" height="40" fill="#fde68a" stroke="#f59e0b"/><text x="130" y="161" fill="#78350f">.3</text>
+      <rect x="150" y="136" width="40" height="40" fill="#fef3c7" stroke="#f59e0b"/><text x="170" y="161" fill="#78350f">.6</text>
+      <rect x="190" y="136" width="40" height="40" fill="#fffbeb" stroke="#f59e0b"/><text x="210" y="161" fill="#78350f">.9</text>
+
+      <rect x="70"  y="176" width="40" height="40" fill="#fde68a" stroke="#f59e0b"/><text x="90"  y="201" fill="#78350f">.3</text>
+      <rect x="110" y="176" width="40" height="40" fill="#fde68a" stroke="#f59e0b"/><text x="130" y="201" fill="#78350f">.3</text>
+      <rect x="150" y="176" width="40" height="40" fill="#fef3c7" stroke="#f59e0b"/><text x="170" y="201" fill="#78350f">.4</text>
+      <rect x="190" y="176" width="40" height="40" fill="#fef3c7" stroke="#f59e0b"/><text x="210" y="201" fill="#78350f">.5</text>
+
+      <rect x="70"  y="216" width="40" height="40" fill="#fde68a" stroke="#f59e0b"/><text x="90"  y="241" fill="#78350f">.3</text>
+      <rect x="110" y="216" width="40" height="40" fill="#fde68a" stroke="#f59e0b"/><text x="130" y="241" fill="#78350f">.2</text>
+      <rect x="150" y="216" width="40" height="40" fill="#fef3c7" stroke="#f59e0b"/><text x="170" y="241" fill="#78350f">.4</text>
+      <rect x="190" y="216" width="40" height="40" fill="#fef3c7" stroke="#f59e0b"/><text x="210" y="241" fill="#78350f">.4</text>
+    </g>
+    <text x="150" y="280" text-anchor="middle" font-size="11.5" fill="#64748b">depth of the drawn occluders</text>
+    <text x="150" y="296" text-anchor="middle" font-size="11.5" fill="#64748b">(0 = near, 1 = far)</text>
+  </g>
+
+  <line x1="248" y1="176" x2="320" y2="176" stroke="#475569" stroke-width="2" marker-end="url(#oc_arrow3)"/>
+  <text x="284" y="162" text-anchor="middle" font-size="11.5" font-weight="600" fill="#475569">max of</text>
+  <text x="284" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#475569">each 2×2</text>
+
+  <!-- mip 1: 2x2 -->
+  <g>
+    <text x="390" y="120" text-anchor="middle" font-size="13" font-weight="700" fill="#d97706">mip 1</text>
+    <g font-size="12" text-anchor="middle">
+      <rect x="330" y="136" width="60" height="60" fill="#fef3c7" stroke="#f59e0b"/><text x="360" y="171" fill="#78350f">.5</text>
+      <rect x="390" y="136" width="60" height="60" fill="#fffbeb" stroke="#f59e0b"/><text x="420" y="171" fill="#78350f">.9</text>
+      <rect x="330" y="196" width="60" height="60" fill="#fde68a" stroke="#f59e0b"/><text x="360" y="231" fill="#78350f">.3</text>
+      <rect x="390" y="196" width="60" height="60" fill="#fef3c7" stroke="#f59e0b"/><text x="420" y="231" fill="#78350f">.5</text>
+    </g>
+  </g>
+
+  <line x1="468" y1="196" x2="540" y2="196" stroke="#475569" stroke-width="2" marker-end="url(#oc_arrow3)"/>
+  <text x="504" y="182" text-anchor="middle" font-size="11.5" font-weight="600" fill="#475569">max</text>
+
+  <!-- mip 2: 1x1 -->
+  <g>
+    <text x="605" y="150" text-anchor="middle" font-size="13" font-weight="700" fill="#d97706">mip 2</text>
+    <rect x="550" y="166" width="110" height="60" fill="#fffbeb" stroke="#f59e0b"/>
+    <text x="605" y="201" text-anchor="middle" font-size="12" fill="#78350f">.9</text>
+  </g>
+
+  <!-- caption -->
+  <rect x="40" y="320" width="680" height="62" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="380" y="341" text-anchor="middle" font-size="12.5" fill="#334155">Every mip texel stores the <tspan font-weight="700">farthest</tspan> depth of its 2×2 source texels — one coarse texel answers</text>
+  <text x="380" y="358" text-anchor="middle" font-size="12.5" fill="#334155">"how far can I see at worst in this whole region?". Odd-sized mips include a third row/column</text>
+  <text x="380" y="375" text-anchor="middle" font-size="12.5" fill="#334155">in the max so no depth sample is ever lost (the reduction stays conservative).</text>
+</svg>

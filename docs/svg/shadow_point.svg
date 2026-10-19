@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 440" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#334155"/>
+    </marker>
+  </defs>
+  <rect width="760" height="440" fill="#f8fafc" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">Point light: six 90° views form a cube</text>
+
+  <!-- quadrant frustums around the light (2D cut) -->
+  <g opacity="0.9">
+    <polygon points="330,210 200,80 460,80"  fill="#dbeafe"/>
+    <polygon points="330,210 200,340 460,340" fill="#dcfce7"/>
+    <polygon points="330,210 200,80 200,340" fill="#fee2e2"/>
+    <polygon points="330,210 460,80 460,340" fill="#fef3c7"/>
+  </g>
+  <g stroke="#94a3b8" stroke-width="1.5">
+    <line x1="330" y1="210" x2="200" y2="80"/>
+    <line x1="330" y1="210" x2="460" y2="80"/>
+    <line x1="330" y1="210" x2="200" y2="340"/>
+    <line x1="330" y1="210" x2="460" y2="340"/>
+  </g>
+
+  <!-- cube outline -->
+  <rect x="200" y="80" width="260" height="260" fill="none" stroke="#475569" stroke-width="2.5" stroke-dasharray="8 6" rx="6"/>
+
+  <!-- labels -->
+  <text x="330" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#1e3a8a">+Y</text>
+  <text x="330" y="308" text-anchor="middle" font-size="13" font-weight="600" fill="#14532d">−Y</text>
+  <text x="240" y="215" text-anchor="middle" font-size="13" font-weight="600" fill="#991b1b">−X</text>
+  <text x="420" y="215" text-anchor="middle" font-size="13" font-weight="600" fill="#92400e">+X</text>
+  <text x="330" y="368" text-anchor="middle" font-size="12" fill="#64748b">(+Z / −Z point toward / away from the viewer)</text>
+
+  <!-- light -->
+  <circle cx="330" cy="210" r="13" fill="#f6b73c" stroke="#b45309" stroke-width="2.5"/>
+
+  <!-- fragment + face selection -->
+  <circle cx="600" cy="300" r="7" fill="#3b82f6" stroke="#fff" stroke-width="2"/>
+  <line x1="342" y1="214" x2="590" y2="297" stroke="#334155" stroke-width="2" marker-end="url(#arrow6)"/>
+  <text x="614" y="290" font-size="12.5" font-weight="600" fill="#1d4ed8">fragment P</text>
+
+  <text x="560" y="120" font-size="13" font-weight="600" fill="#1e293b">Which face to sample?</text>
+  <text x="560" y="142" font-size="12.5" fill="#334155">d = P − light position</text>
+  <text x="560" y="162" font-size="12.5" fill="#334155">largest |axis| of d → face</text>
+  <text x="560" y="182" font-size="12.5" fill="#92400e">here: |x| wins, x &gt; 0 → +X</text>
+
+  <text x="380" y="412" text-anchor="middle" font-size="12.5" fill="#64748b">6 renders per point light — the most expensive shadow type. Each face is a 90° perspective view.</text>
+</svg>

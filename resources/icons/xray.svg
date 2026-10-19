@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="100%" height="100%" viewBox="0 0 24 24" version="1.1" xmlns="http://www.w3.org/2000/svg" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;">
+    <!-- back square (upper-right): solid outline, dashed where occluded by front square -->
+    <g style="fill:none;stroke:white;stroke-width:1.8px;">
+        <!-- solid: top edge, right edge, and the non-overlapped portions of bottom + left edges -->
+        <path d="M9,9L9,3L21,3L21,15L15,15"/>
+        <!-- dashed: portion of back square's outline that lies behind the front square -->
+        <path d="M15,15L9,15L9,9" style="stroke-dasharray:2,2;stroke-dashoffset:-1;stroke-linecap:butt;"/>
+    </g>
+
+    <!-- front square (lower-left): fully solid -->
+    <g style="fill:none;stroke:white;stroke-width:1.8px;">
+        <rect x="3" y="9" width="12" height="12" rx="0.5" ry="0.5"/>
+    </g>
+</svg>

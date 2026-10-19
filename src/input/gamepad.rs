@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, Display, FromRepr};
 
@@ -7,10 +8,10 @@ use crate::helper::generic::get_secs;
 
 use super::press_state::{PressState, is_pressed_by_state};
 
-const GAMEPAD_MAX_TIMEOUT: u64 = 5 * 60 * 1000;
+const GAMEPAD_MAX_TIMEOUT: u64 = 5 * 60;
 const DEFAULT_DEADZONE: f32 = 0.1;
 
-#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr)]
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr, Serialize, Deserialize)]
 pub enum GamepadButton
 {
     South, // xBox: A
@@ -36,7 +37,7 @@ pub enum GamepadButton
     Unkown
 }
 
-#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr)]
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr, Serialize, Deserialize)]
 pub enum GamepadAxis
 {
     LeftStickX,
@@ -65,7 +66,8 @@ pub enum GamepadPowerInfo
 pub struct Gamepad
 {
     pub name: String,
-    pub id: usize,
+    pub uid: usize, // from gilrs, only to match its events
+    pub id: usize, // player id 1.., the key in InputManager::gamepads - the lowest free one when it connects
 
     pub connected: bool,
     pub has_force_feedback: bool,
@@ -83,7 +85,7 @@ pub struct Gamepad
 
 impl Gamepad
 {
-    pub fn new(id: usize, name: String) -> Self
+    pub fn new(uid: usize, id: usize, name: String) -> Self
     {
         let button_vec = GamepadButton::iter().collect::<Vec<_>>();
         let axis_vec = GamepadAxis::iter().collect::<Vec<_>>();
@@ -95,6 +97,7 @@ impl Gamepad
         Self
         {
             name,
+            uid,
             id,
 
             connected: true,

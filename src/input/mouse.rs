@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use nalgebra::{Vector2, Point2};
+use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, Display, FromRepr};
 
@@ -10,7 +11,7 @@ use super::{press_state::{PressState, is_pressed_by_state}, input_point::InputPo
 
 const MOUSE_MAX_CLICK_MOVEMENT: f32 = 12.0;
 
-#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr)]
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr, Serialize, Deserialize)]
 pub enum MouseButton
 {
     Left,
@@ -101,6 +102,11 @@ impl Mouse
         {
             self.point.start_pos = Some(self.point.last_pos.unwrap().clone());
         }
+    }
+
+    pub fn invalidate_pos(&mut self)
+    {
+        self.point.pos = None;
     }
 
     pub fn set_pos(&mut self, pos: Point2::<f32>, engine_frame: u64, window_width: u32, window_height: u32)
