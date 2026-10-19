@@ -6,7 +6,7 @@ use web_time::Instant;
 use nalgebra::Vector3;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{project::project::ProjectData, resources::{utilities::resource_utils::play_and_forget_sound, mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem, canonical_sound_path}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{project::project::{ProjectData, SceneLoadingStatus, SceneLoadingStatusItem}, resources::{utilities::resource_utils::play_and_forget_sound, mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem, canonical_sound_path}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::{Scene, SceneLoadState}}}};
 
 use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, loader::loader::load_texture, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox};
 
@@ -493,6 +493,12 @@ pub struct State
     // freezes the running mode without changing it - resuming continues where it stopped
     pub pause: bool,
 
+    // the game paused itself (its pause menu): frozen like pause, but the game cameras stay on screen and the editor does not come back
+    pub game_pause: bool,
+
+    // the game hides the cursor now (driving) - over the mouse capture setting and its release by Esc / focus loss (builds without the editor)
+    pub hide_cursor: bool,
+
     pub exit: bool,
 
     // the game asks to end its run (a Quit in its menu): the editor goes back to edit mode, without the editor the app exits
@@ -500,9 +506,15 @@ pub struct State
 
     pub scenes: Vec<SceneItem>,
 
-    // scenes the project loader is still filling - and the ones it finished since the last frame (App::scene_loaded)
-    pub loading_scenes: Vec<u32>,
+    // scenes the loader finished / unload_scene emptied since the last frame (App::scene_loaded, App::scene_unloaded)
     pub loaded_scenes: Vec<u32>,
+    pub unloaded_scenes: Vec<u32>,
+
+    // what the scene loader works on right now - for loading screens
+    pub scene_loading: SceneLoadingStatusItem,
+
+    // activated before their content was there - they get the run mode change once loaded
+    activated_while_loading: Vec<u32>,
 
     pub oneshot_sounds: Vec<Sound>,
 
@@ -590,13 +602,19 @@ impl State
             // a build without the editor just runs - the editor switches to edit on init
             run_mode: RunMode::Play,
             pause: false,
+            game_pause: false,
+            hide_cursor: false,
             exit: false,
             stop_request: false,
 
             scenes: vec![],
 
-            loading_scenes: vec![],
             loaded_scenes: vec![],
+            unloaded_scenes: vec![],
+
+            scene_loading: Arc::new(RwLock::new(SceneLoadingStatus::default())),
+
+            activated_while_loading: vec![],
 
             oneshot_sounds: vec![],
 
@@ -1114,7 +1132,17 @@ impl State
         for index in changed
         {
             let scene = &mut self.scenes[index];
-            if scene.active
+            if scene.active && !scene.is_loaded()
+            {
+                // it starts once its content is there - see finish_scene_loading
+                let scene_id = scene.id;
+                if !self.activated_while_loading.contains(&scene_id)
+                {
+                    self.activated_while_loading.push(scene_id);
+                }
+                self.load_scene(scene_id);
+            }
+            else if scene.active
             {
                 scene.notify_run_mode_changed(RunMode::Edit, run_mode);
             }
@@ -1180,6 +1208,12 @@ impl State
         if was_active && self.scenes.len() > 0 && self.get_active_scene().is_none()
         {
             self.scenes[0].active = true;
+
+            let first_id = self.scenes[0].id;
+            if self.scenes[0].load_state == SceneLoadState::Unloaded
+            {
+                self.load_scene(first_id);
+            }
         }
 
         success
@@ -1187,14 +1221,104 @@ impl State
 
     pub fn is_scene_loading(&self, id: u32) -> bool
     {
-        self.loading_scenes.contains(&id)
+        self.find_scene_by_id(id).is_some_and(|scene| scene.load_state == SceneLoadState::Loading)
+    }
+
+    pub fn is_scene_loaded(&self, id: u32) -> bool
+    {
+        self.find_scene_by_id(id).is_some_and(|scene| scene.is_loaded())
+    }
+
+    // loads the content of a scene of the project in the background - App::scene_loaded tells when it is there
+    pub fn load_scene(&mut self, id: u32) -> bool
+    {
+        crate::state::project::loader::load_scene_content(self, id)
+    }
+
+    // removes the content of a scene, the scene itself stays (load_scene brings it back from its file)
+    // textures and meshes no other scene uses are freed - sound sources are shared resources and stay
+    pub fn unload_scene(&mut self, id: u32) -> bool
+    {
+        let Some(scene) = self.find_scene_by_id_mut(id) else { return false; };
+
+        match scene.load_state
+        {
+            SceneLoadState::Unloaded => return true,
+            SceneLoadState::Loading =>
+            {
+                console_warning!("scene '{}' is still loading - it can not be unloaded yet", scene.name);
+                return false;
+            },
+            SceneLoadState::Loaded => {},
+        }
+
+        if scene.active
+        {
+            console_warning!("scene '{}' is active - activate another one before unloading it", scene.name);
+            return false;
+        }
+
+        if scene.source.is_none()
+        {
+            console_warning!("scene '{}' has no file to load it from again - save the project first", scene.name);
+            return false;
+        }
+
+        let name = scene.name.clone();
+        let content = scene.unload_content();
+
+        let mut freed_textures = 0;
+        for texture in content.textures
+        {
+            let texture_id = texture.read().unwrap().id;
+            let used = self.scenes.iter().any(|scene| scene.materials.values().any(|material|
+            {
+                component_downcast!(material, Material);
+                material.has_texture_id(texture_id)
+            }));
+
+            if !used
+            {
+                texture.write().unwrap().delete_later();
+                freed_textures += 1;
+            }
+        }
+
+        // the content is gone: only the list of the resources (and this loop) still hold the mesh
+        let mut freed_meshes = 0;
+        for mesh_resource in content.mesh_resources
+        {
+            if Arc::strong_count(&mesh_resource) <= 2
+            {
+                mesh_resource.write().unwrap().delete_later();
+                freed_meshes += 1;
+            }
+        }
+
+        self.activated_while_loading.retain(|scene_id| *scene_id != id);
+        self.loaded_scenes.retain(|scene_id| *scene_id != id);
+        self.unloaded_scenes.push(id);
+
+        console_log!("scene '{}' unloaded: {} textures, {} meshes freed", name, freed_textures, freed_meshes);
+        true
     }
 
     pub fn finish_scene_loading(&mut self, id: u32)
     {
-        self.loading_scenes.retain(|scene_id| *scene_id != id);
+        let run_mode = self.run_mode;
+        let start = self.activated_while_loading.contains(&id);
+        self.activated_while_loading.retain(|scene_id| *scene_id != id);
 
-        if self.scenes.iter().any(|scene| scene.id == id)
+        let Some(scene) = self.find_scene_by_id_mut(id) else { return; };
+        scene.load_state = SceneLoadState::Loaded;
+
+        if scene.active && start
+        {
+            scene.notify_run_mode_changed(RunMode::Edit, run_mode);
+        }
+
+        self.unloaded_scenes.retain(|scene_id| *scene_id != id);
+        if !self.loaded_scenes.contains(&id)
         {
             self.loaded_scenes.push(id);
         }
@@ -1215,6 +1339,7 @@ impl State
 
         let len = self.scenes.len();
         self.scenes.clear();
+        self.activated_while_loading.clear();
 
         len > 0 && self.scenes.is_empty()
     }
@@ -1242,6 +1367,7 @@ impl State
 
         self.run_mode = run_mode;
         self.pause = false;
+        self.game_pause = false;
 
         self.sync_physics_run_state();
 
@@ -1256,6 +1382,19 @@ impl State
     // untouched and resuming continues exactly where it stopped.
     pub fn effective_run_mode(&self) -> RunMode
     {
+        if self.paused()
+        {
+            self.run_mode.min(RunMode::Edit)
+        }
+        else
+        {
+            self.run_mode
+        }
+    }
+
+    // the mode the picture, the cameras and the editor follow: a pause of the game keeps the game view
+    pub fn view_run_mode(&self) -> RunMode
+    {
         if self.pause
         {
             self.run_mode.min(RunMode::Edit)
@@ -1264,6 +1403,12 @@ impl State
         {
             self.run_mode
         }
+    }
+
+    // frozen by the editor or by the game
+    pub fn paused(&self) -> bool
+    {
+        self.pause || self.game_pause
     }
 
     pub fn sync_physics_run_state(&mut self)

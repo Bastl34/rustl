@@ -33,6 +33,7 @@ use crate::rendering::scene::Scene;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::project::loader::load_and_apply_project;
+use crate::state::scene::scene::SceneLoadState;
 use crate::state::state::{State, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
 use super::app::{App, project_app_factory};
@@ -205,7 +206,7 @@ impl MainInterface
     }
 
     // native: the .project command line arg, else the project packed by scripts/build.mjs
-    fn startup_project() -> Option<String>
+    pub fn startup_project() -> Option<String>
     {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(project) = env::args().find(|a| a.ends_with(".project"))
@@ -228,10 +229,10 @@ impl MainInterface
                 state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
             }
 
-            // projects saved with cameras and lights bring their own
+            // projects saved with cameras and lights bring their own - the not loaded ones get theirs when they are loaded
             for scene in &mut state.scenes
             {
-                if scene.cameras.is_empty()
+                if scene.load_state != SceneLoadState::Unloaded && scene.cameras.is_empty()
                 {
                     scene.add_default_lights_and_cam();
                 }
@@ -372,6 +373,14 @@ impl MainInterface
         {
             let state = &mut *(self.context.state.borrow_mut());
 
+            // builds without the editor: the title is the project and its version ("Rustl-Volt v0.1.0") as soon as it is loaded
+            #[cfg(not(feature = "editor"))]
+            {
+                let name = state.project.name.trim();
+                let game_title = match state.project.version.trim() { "" => name.to_string(), version => format!("{name} v{version}") };
+                if !name.is_empty() && self.context.window.title() != game_title { self.context.window.set_title(&game_title); }
+            }
+
             // fps
             let current_time = state.stats.fps_timer.elapsed().as_millis();
             state.stats.fps += 1;
@@ -400,6 +409,7 @@ impl MainInterface
                     state.stats.fps_1_percent_low_chart.pop_front();
                 }
 
+                #[cfg(any(feature = "editor", target_arch = "wasm32"))]
                 let title = if state.project.name.trim().is_empty()
                 {
                     self.context.window_title.clone()
@@ -413,6 +423,8 @@ impl MainInterface
                     format!("{} | {} v{}", &self.context.window_title, state.project.name.trim(), state.project.version.trim())
                 };
 
+                // builds without the editor set only the project and its version (top of the stats, every frame)
+                #[cfg(feature = "editor")]
                 self.context.window.set_title(format!("{} | FPS: {} (1%L: {})", title, state.stats.last_fps, state.stats.last_fps_1_percent_low).as_str());
 
                 // winit only sets the canvas alt text on web - the tab title gets the project without fps
@@ -461,7 +473,8 @@ impl MainInterface
 
             for scene in &mut scenes
             {
-                if scene.render_item.is_some()
+                // a scene without its content gets no gpu resources
+                if scene.render_item.is_some() || scene.load_state == SceneLoadState::Unloaded
                 {
                     continue;
                 }
@@ -637,6 +650,7 @@ impl MainInterface
                     state.stats.gpu_hzb_time = None;
                     state.stats.gpu_egui_time = None;
 
+                    let effective_run_mode = state.view_run_mode();
                     for scene in &mut state.scenes
                     {
                         if !scene.visible || !scene.active
@@ -655,7 +669,7 @@ impl MainInterface
                         render_scene.distance_sorting = state.rendering.distance_sorting;
                         render_scene.frustum_culling = state.rendering.frustum_culling;
                         render_scene.occlusion_culling = state.rendering.occlusion_culling;
-                        render_scene.run_mode = state.run_mode;
+                        render_scene.run_mode = effective_run_mode;
 
                         scene.notify_before_render_all();
 
@@ -785,6 +799,7 @@ impl MainInterface
                 {
                     let state = &mut *(self.context.state.borrow_mut());
 
+                    let effective_run_mode = state.view_run_mode();
                     for scene in &mut state.scenes
                     {
                         if !scene.visible || !scene.active
@@ -798,7 +813,7 @@ impl MainInterface
                         render_scene.distance_sorting = state.rendering.distance_sorting;
                         render_scene.frustum_culling = state.rendering.frustum_culling;
                         render_scene.occlusion_culling = state.rendering.occlusion_culling;
-                        render_scene.run_mode = state.run_mode;
+                        render_scene.run_mode = effective_run_mode;
                         render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut encoder, scene);
 
                         scene.render_item = render_item;
@@ -852,8 +867,19 @@ impl MainInterface
 
                 let img_data = self.context.wgpu.end_offscreen_render(buffer_dimensions, output_buffer, texture, encoder);
 
-                img_data.save("data/screenshot.png").unwrap();
-                img_data.save("data/screenshot.webp").unwrap();
+                // exports have no data folder - it is made here, a failed save (read only folder) is only logged
+                if let Err(error) = std::fs::create_dir_all("data")
+                {
+                    console_error!("screenshot: can not create the data folder: {}", error);
+                }
+                for path in ["data/screenshot.png", "data/screenshot.webp"]
+                {
+                    match img_data.save(path)
+                    {
+                        Ok(()) => { console_log!("screenshot: {}", path); },
+                        Err(error) => { console_error!("screenshot: can not save {}: {}", path, error); },
+                    }
+                }
 
                 let state = &mut *(self.context.state.borrow_mut());
 
@@ -1096,7 +1122,7 @@ impl MainInterface
                 let ready: Vec<u32> =
                 {
                     let state = self.context.state.borrow();
-                    state.scenes.iter().filter(|scene| !scene.is_engine_internal() && !state.is_scene_loading(scene.id)).map(|scene| scene.id).collect()
+                    state.scenes.iter().filter(|scene| !scene.is_engine_internal() && scene.is_loaded()).map(|scene| scene.id).collect()
                 };
 
                 for scene_id in ready
@@ -1121,10 +1147,32 @@ impl MainInterface
     // before update_project_app: a project app created this frame gets the ready scenes from its init
     fn notify_scenes_loaded(&mut self)
     {
+        let unloaded = std::mem::take(&mut self.context.state.borrow_mut().unloaded_scenes);
+
+        for scene_id in unloaded
+        {
+            if let Some(app) = &mut self.app
+            {
+                app.scene_unloaded(&mut self.context, scene_id);
+            }
+
+            if let Some(app) = &mut self.project_app
+            {
+                app.scene_unloaded(&mut self.context, scene_id);
+            }
+        }
+
         let loaded = std::mem::take(&mut self.context.state.borrow_mut().loaded_scenes);
 
         for scene_id in loaded
         {
+            // without the editor nobody else gives a scene without cameras one (the project load does it for its scenes)
+            #[cfg(not(feature = "editor"))]
+            if let Some(scene) = self.context.state.borrow_mut().find_scene_by_id_mut(scene_id).filter(|scene| scene.cameras.is_empty())
+            {
+                scene.add_default_lights_and_cam();
+            }
+
             if let Some(app) = &mut self.app
             {
                 app.scene_loaded(&mut self.context, scene_id);
@@ -1177,7 +1225,7 @@ impl MainInterface
             self.pointer_lock_seen = locked && !self.mouse_released;
         }
 
-        let visible = !wanted || self.mouse_released;
+        let visible = !state.hide_cursor && (!wanted || self.mouse_released);
         if *state.io.input_manager.mouse.visible.get_ref() != visible
         {
             state.io.input_manager.mouse.visible.set(visible);

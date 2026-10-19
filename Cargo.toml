@@ -18,7 +18,7 @@ default-members = ["."]
 # without features (cargo run, exports): the game without editor
 [features]
 default = []
-editor = ["dep:rfd", "dep:arboard", "dep:egui_plot", "dep:libloading"]
+editor = ["dep:rfd", "dep:arboard", "dep:egui_plot", "dep:libloading", "dep:zip"]
 
 [dependencies]
 simple_logger = "5.2.0"
@@ -55,6 +55,7 @@ parry3d = "0.31.1"
 rapier3d = { version = "0.36.0", default-features = false, features = ["dim3", "f32", "std"] }
 
 arboard = { version = "3.6.1", optional = true }
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"], optional = true }
 
 tobj = { version = "4.0.5", features = ["async"]}
 

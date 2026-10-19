@@ -534,7 +534,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
         move_grid_y_to = Some(0.0);
     }
 
-    let run_mode = state.run_mode;
+    let run_mode = state.view_run_mode();
 
     for scene in &mut state.scenes
     {

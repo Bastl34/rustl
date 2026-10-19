@@ -180,6 +180,9 @@ pub struct TextureSampler
     pub mag_filter: TextureFilterMode,
     pub min_filter: TextureFilterMode,
     pub mipmap_filter: TextureFilterMode,
+    // only the full size image is sampled (glTF minFilter NEAREST / LINEAR)
+    #[serde(default)]
+    pub no_mipmaps: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -209,7 +212,8 @@ impl TextureState
                 address_mode_w: TextureAddressMode::ClampToEdge,
                 mag_filter: TextureFilterMode::Linear,
                 min_filter: TextureFilterMode::Linear,
-                mipmap_filter: TextureFilterMode::Linear
+                mipmap_filter: TextureFilterMode::Linear,
+                no_mipmaps: false,
             },
 
             transform: TextureTransform::default(),

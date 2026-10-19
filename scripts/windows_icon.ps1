@@ -80,4 +80,19 @@ foreach ($size in $sizes)
 }
 
 $source.Dispose()
-[ExeIcon]::Set((Resolve-Path $Exe).Path, [byte[][]]$images, [int[]]$sizes)
+
+# a virus scanner holds the fresh exe open for a moment (EndUpdateResource error 110) - try again a few times
+for ($attempt = 1; ; $attempt++)
+{
+    try
+    {
+        [ExeIcon]::Set((Resolve-Path $Exe).Path, [byte[][]]$images, [int[]]$sizes)
+        break
+    }
+    catch
+    {
+        if ($attempt -ge 10) { throw }
+        Write-Host "setting the icon failed ($($_.Exception.InnerException.Message)) - retry $attempt"
+        Start-Sleep -Milliseconds 500
+    }
+}

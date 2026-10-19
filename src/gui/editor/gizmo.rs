@@ -366,7 +366,7 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, first_action: bool, input
                 {
                     let selected_gizmo = editor_state.selected_gizmo.clone();
 
-                    let run_mode = state.run_mode;
+                    let run_mode = state.view_run_mode();
                     let (scene, _, _) = editor_state.get_selected_node(state);
                     let scene = scene.unwrap();
                     for camera in &scene.cameras
@@ -432,7 +432,7 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, first_action: bool, input
             {
                 let anchor_camera_id = anchor.camera_id;
 
-                let run_mode = state.run_mode;
+                let run_mode = state.view_run_mode();
                 let (scene, _, _) = editor_state.get_selected_node(state);
                 let scene = scene.unwrap();
                 for camera in &scene.cameras
@@ -642,7 +642,7 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
             {
                 let selected_gizmo = editor_state.selected_gizmo.clone();
 
-                let run_mode = state.run_mode;
+                let run_mode = state.view_run_mode();
                 let (scene, _, _) = editor_state.get_selected_node(state);
                 let scene = scene.unwrap();
                 for camera in &scene.cameras
@@ -824,7 +824,7 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
             {
                 let selected_gizmo = editor_state.selected_gizmo.clone();
 
-                let run_mode = state.run_mode;
+                let run_mode = state.view_run_mode();
                 let (scene, _, _) = editor_state.get_selected_node(state);
                 let scene = scene.unwrap();
                 for camera in &scene.cameras
@@ -984,7 +984,7 @@ pub fn update_gizmo_transforms_and_visibility(editor_state: &mut EditorState, st
         }
     }
 
-    let run_mode = state.run_mode;
+    let run_mode = state.view_run_mode();
     let (scene, _, _) = editor_state.get_selected_node(state);
     let scene = scene.unwrap();
 

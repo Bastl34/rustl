@@ -1,5 +1,5 @@
 use std::io::{BufRead, BufReader, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -213,7 +213,7 @@ pub struct ExportDialog
     pub open: bool,
     pub platform: ExportPlatform,
     pub dev: bool,
-    pub save_first: bool,
+    pub zip: bool,
     pub problems_only: bool,
 
     status_bar_height: f32,
@@ -222,6 +222,7 @@ pub struct ExportDialog
     pid: Option<u32>,
     started: Option<Instant>,
     target_dir: Option<PathBuf>,
+    zip_path: Option<PathBuf>,
 }
 
 impl ExportDialog
@@ -233,13 +234,14 @@ impl ExportDialog
             open: false,
             platform: ExportPlatform::Web,
             dev: false,
-            save_first: true,
+            zip: false,
             problems_only: false,
             status_bar_height: 30.0,
             run: Arc::new(Mutex::new(ExportRun::new())),
             pid: None,
             started: None,
             target_dir: None,
+            zip_path: None,
         }
     }
 
@@ -257,7 +259,7 @@ impl ExportDialog
         self.open = true;
     }
 
-    fn start(&mut self, project_path: &str, out_dir: &str)
+    fn start(&mut self, project_path: &str, out_dir: &str, zip_name: Option<String>)
     {
         let root = repo_root();
         let target_dir = match out_dir.trim()
@@ -265,6 +267,9 @@ impl ExportDialog
             "" => root.join("dist").join(self.platform.arg()),
             dir => root.join(dir),
         };
+
+        // next to the build folder, not inside it
+        let zip_path = zip_name.map(|name| target_dir.parent().unwrap_or(&target_dir).join(name));
 
         let mut args = vec![BUILD_SCRIPT.to_string(), format!("--platform={}", self.platform.arg())];
         if self.dev
@@ -285,7 +290,8 @@ impl ExportDialog
         }
 
         self.started = Some(Instant::now());
-        self.target_dir = Some(target_dir);
+        self.target_dir = Some(target_dir.clone());
+        self.zip_path = zip_path.clone();
         self.pid = None;
 
         // scripts/build.mjs drops the build env of the editor itself (RUSTFLAGS of cargo dev, ...)
@@ -342,6 +348,17 @@ impl ExportDialog
 
             let result = child.wait();
 
+            let built = matches!(&result, Ok(status) if status.success()) && !run.lock().unwrap().cancel_requested;
+            let zipped = match (&zip_path, built)
+            {
+                (Some(zip_path), true) =>
+                {
+                    run.lock().unwrap().push(LineKind::Info, format!("zipping to {}", zip_path.display()));
+                    Some(write_zip(&target_dir, zip_path, &run))
+                },
+                _ => None,
+            };
+
             let mut run = run.lock().unwrap();
             run.duration = Some(started.elapsed());
             run.status = if run.cancel_requested
@@ -353,7 +370,20 @@ impl ExportDialog
             {
                 match result
                 {
-                    Ok(status) if status.success() => ExportStatus::Success,
+                    Ok(status) if status.success() => match zipped
+                    {
+                        Some(Err(err)) =>
+                        {
+                            run.push(LineKind::Error, format!("zip failed: {}", err));
+                            ExportStatus::Failed
+                        },
+                        Some(Ok(())) =>
+                        {
+                            run.push(LineKind::Success, format!("zip ready: {}", zip_path.as_ref().map(|path| path.display().to_string()).unwrap_or_default()));
+                            ExportStatus::Success
+                        },
+                        None => ExportStatus::Success,
+                    },
                     Ok(status) =>
                     {
                         run.push(LineKind::Error, format!("export failed ({})", status));
@@ -415,6 +445,86 @@ fn read_lines<R: Read + Send + 'static>(reader: R, run: Arc<Mutex<ExportRun>>) -
             }
         }
     })
+}
+
+// <name>_<version>_<platform>.zip - the name like the build script (project name, else the file name)
+fn zip_file_name(name: &str, version: &str, platform: ExportPlatform, project_path: &str) -> String
+{
+    let name = match name.trim()
+    {
+        "" | "Untitled" => Path::new(project_path).file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default(),
+        name => name.to_string(),
+    };
+    let file = format!("{}_{}_{}", name, version.trim(), platform.arg());
+    let file: String = file.chars().map(|c| if c.is_control() || "<>:\"/\\|?*".contains(c) { '_' } else { c }).collect();
+    format!("{}.zip", file)
+}
+
+// the files of the build folder below a folder named like the zip, a partial zip is removed again
+fn write_zip(dir: &Path, zip_path: &Path, run: &Arc<Mutex<ExportRun>>) -> anyhow::Result<()>
+{
+    let result = pack_zip(dir, zip_path, run);
+    if result.is_err()
+    {
+        let _ = std::fs::remove_file(zip_path);
+    }
+    result
+}
+
+fn pack_zip(dir: &Path, zip_path: &Path, run: &Arc<Mutex<ExportRun>>) -> anyhow::Result<()>
+{
+    let root = zip_path.file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
+
+    let mut files = vec![];
+    collect_files(dir, &mut files)?;
+
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let mut writer = zip::ZipWriter::new(std::fs::File::create(zip_path)?);
+
+    for file in files
+    {
+        if run.lock().unwrap().cancel_requested
+        {
+            anyhow::bail!("cancelled");
+        }
+
+        if file == zip_path
+        {
+            continue;
+        }
+
+        let relative: Vec<String> = file.strip_prefix(dir)?.components().map(|part| part.as_os_str().to_string_lossy().to_string()).collect();
+
+        // keeps the executable bit of linux/mac builds
+        #[cfg(unix)]
+        let options = { use std::os::unix::fs::PermissionsExt; options.unix_permissions(std::fs::metadata(&file)?.permissions().mode()) };
+
+        writer.start_file(format!("{}/{}", root, relative.join("/")), options)?;
+        std::io::copy(&mut std::fs::File::open(&file)?, &mut writer)?;
+    }
+
+    writer.finish()?;
+    Ok(())
+}
+
+fn collect_files(dir: &Path, files: &mut Vec<PathBuf>) -> std::io::Result<()>
+{
+    let mut entries: Vec<_> = std::fs::read_dir(dir)?.collect::<Result<_, _>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+
+    for entry in entries
+    {
+        if entry.file_type()?.is_dir()
+        {
+            collect_files(&entry.path(), files)?;
+        }
+        else
+        {
+            files.push(entry.path());
+        }
+    }
+
+    Ok(())
 }
 
 // the editor is started from the repo root (like data/editor_settings.json), the manifest dir is the fallback
@@ -554,7 +664,8 @@ pub fn create_modal_export(editor_state: &mut EditorState, state: &mut State, ct
                 ui.horizontal(|ui|
                 {
                     ui.checkbox(&mut dialog.dev, "Dev build").on_hover_text("faster build, slower app");
-                    ui.checkbox(&mut dialog.save_first, "Save project first").on_hover_text("the export packs the saved project file");
+                    let zip_name = zip_file_name(&state.project.name, &state.project.version, dialog.platform, project_path.as_deref().unwrap_or(""));
+                    ui.checkbox(&mut dialog.zip, "Create zip").on_hover_text(format!("packs the build into {} next to the target folder", zip_name));
                 });
                 ui.end_row();
 
@@ -573,12 +684,11 @@ pub fn create_modal_export(editor_state: &mut EditorState, state: &mut State, ct
         let run = dialog.run.lock().unwrap();
 
         // ********** export button **********
-        let can_start = !running && (project_path.is_some() || dialog.save_first);
+        let can_start = !running;
         let button = egui::Button::new(RichText::new(format!("▶ Export {}", dialog.platform.name())).strong().color(Color32::WHITE))
             .fill(Color32::from_rgb(80, 120, 200))
             .min_size(egui::vec2(120.0, 26.0));
-        let hint = if running { "an export is running" } else { "save the project first" };
-        if ui.add_enabled(can_start, button).on_disabled_hover_text(hint).clicked()
+        if ui.add_enabled(can_start, button).on_disabled_hover_text("an export is running").clicked()
         {
             start = true;
         }
@@ -702,27 +812,36 @@ pub fn create_modal_export(editor_state: &mut EditorState, state: &mut State, ct
     }
 }
 
+// the export packs the saved project file: a saved project asks whether to save it first (Save / Don't Save / Cancel), a new one is saved in any case
 fn start_export(editor_state: &mut EditorState, state: &mut State)
 {
-    if editor_state.export.save_first || editor_state.project_path.is_none()
+    if editor_state.project_path.is_some()
     {
-        match crate::gui::editor::editor_project::save_editor_project_with_dialog(editor_state, state, false)
-        {
-            Some(path) => editor_state.recent_projects.add_and_save(path),
-            None =>
-            {
-                let mut run = editor_state.export.run.lock().unwrap();
-                *run = ExportRun::new();
-                run.add_output("error: the project was not saved - nothing exported");
-                run.status = ExportStatus::Failed;
-                return;
-            }
-        }
+        editor_state.show_save_changes_dialog("Export", "Save the project before the export? The export packs the saved project file.", run_export);
+        return;
     }
 
+    match crate::gui::editor::editor_project::save_editor_project_with_dialog(editor_state, state, false)
+    {
+        Some(path) => editor_state.recent_projects.add_and_save(path),
+        None =>
+        {
+            let mut run = editor_state.export.run.lock().unwrap();
+            *run = ExportRun::new();
+            run.add_output("error: the project was not saved - nothing exported");
+            run.status = ExportStatus::Failed;
+            return;
+        }
+    }
+    run_export(editor_state, state);
+}
+
+fn run_export(editor_state: &mut EditorState, state: &mut State)
+{
     if let Some(path) = editor_state.project_path.clone()
     {
         let out_dir = editor_state.export.platform.export_dir(&mut state.project.export_dirs).clone();
-        editor_state.export.start(&path, &out_dir);
+        let zip_name = editor_state.export.zip.then(|| zip_file_name(&state.project.name, &state.project.version, editor_state.export.platform, &path));
+        editor_state.export.start(&path, &out_dir, zip_name);
     }
 }

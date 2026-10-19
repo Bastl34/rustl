@@ -303,24 +303,19 @@ editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
         None => return,
     };
 
-    let mut open = true;
     let mut confirmed = false;
     let mut save = false;
     let mut cancelled = false;
 
-    // own window with .anchor() instead of modal_with_title:
-    // modal_with_title uses .pivot() + .default_pos(), which together with auto-sizing
-    // makes the window grow a little every frame. anchoring pins it and keeps it stable.
-    egui::Window::new(&title)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .collapsible(false)
-        .resizable(false)
-        .movable(false)
-        .open(&mut open)
-        .show(ctx, |ui|
+    // egui::Modal dims the editor behind it, so it does not look like a part of other windows (export)
+    let response = egui::Modal::new(egui::Id::unique("confirm_dialog")).show(ctx, |ui|
     {
         ui.set_width(360.0);
-        ui.add_space(8.0);
+        ui.add_space(4.0);
+
+        ui.label(egui::RichText::new(&title).size(16.0).strong());
+
+        ui.add_space(10.0);
 
         // icon + message row
         ui.horizontal(|ui|
@@ -421,7 +416,8 @@ editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
             (dialog.callback)(editor_state, state);
         }
     }
-    else if cancelled || !open
+    // should_close covers a click on the backdrop and the escape key
+    else if cancelled || response.should_close()
     {
         editor_state.confirm_dialog = None;
     }

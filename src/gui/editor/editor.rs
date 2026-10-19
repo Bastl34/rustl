@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::{ensure_preview_scene, preview_scene_ready}}, helper::{concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene, load_sound}, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, RunMode, State}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::{ensure_preview_scene, preview_scene_ready}}, helper::{concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene, load_sound}, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, RunMode, State}}};
 
 use self::math::approx_zero;
 
@@ -74,6 +74,48 @@ impl Editor
     {
         self.create_editor_cams(state, scene_id);
         self.create_util_objects(state, scene_id);
+    }
+
+    // the setting "unload other scenes": in edit mode another active scene unloads the loaded ones left behind
+    fn unload_inactive_scenes(&mut self, state: &mut State)
+    {
+        let active = state.get_active_scene_id();
+        if active == self.editor_state.last_active_scene
+        {
+            return;
+        }
+
+        let had_active = self.editor_state.last_active_scene.is_some();
+        self.editor_state.last_active_scene = active;
+
+        // the game switches scenes itself while it runs - and a project load is no switch
+        if !self.editor_state.settings.unload_inactive_scenes || state.run_mode != RunMode::Edit || !had_active || active.is_none()
+        {
+            return;
+        }
+
+        let unload: Vec<(u32, String)> = state.scenes.iter()
+            .filter(|scene| !scene.active && !scene.preload && scene.is_loaded() && scene.source.is_some())
+            .filter(|scene| !scene.has_tag(ENGINE_INTERNAL_TAG) && !scene.has_tag(EDITOR_INTERNAL_TAG))
+            .map(|scene| (scene.id, scene.name.clone()))
+            .collect();
+
+        if unload.is_empty()
+        {
+            return;
+        }
+
+        // unsaved changes would be lost - save first, unload anyway, or keep them loaded (Cancel)
+        let names: Vec<String> = unload.iter().map(|(_, name)| format!("'{}'", name)).collect();
+        let message = format!("Activating another scene unloads {} - unsaved changes of them are lost, they load again from their files.\n\nSave the project first?", names.join(", "));
+        self.editor_state.show_save_changes_dialog("Unload Scenes", &message, move |editor_state, state|
+        {
+            for (scene_id, _) in unload
+            {
+                editor_state.de_select_scene_items(scene_id);
+                state.unload_scene(scene_id);
+            }
+        });
     }
 
     pub fn create_editor_cams(&mut self, state: &mut State, scene_id: u32)
@@ -314,6 +356,8 @@ impl Editor
             }
         }
 
+        self.unload_inactive_scenes(state);
+
         // preview scene + material thumbnail rendering / reloading
         self.update_material_thumbnails(state, wgpu, egui_ctx);
 
@@ -336,7 +380,7 @@ impl Editor
         update_grid(&mut self.editor_state, state);
 
         // authoring tools are off while the game owns the input
-        if state.run_mode != RunMode::Play
+        if state.view_run_mode() != RunMode::Play
         {
             // key bindings (copy paste, instancing, ...)
             self.key_bindings(state);
@@ -426,11 +470,34 @@ impl Editor
             self.editor_state.set_run_mode(state, RunMode::Edit, false);
         }
 
-        // pause mode
-        if state.run_mode.is_running() && state.io.input_manager.keyboard.is_pressed(Key::P)
+        let ctrl_or_logo = state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo);
+
+        // pause mode (Ctrl+P, in play: editor + editor camera at the game camera)
+        if state.run_mode.is_running() && ctrl_or_logo && state.io.input_manager.keyboard.is_pressed(Key::P)
         {
             let paused = !state.pause;
             self.editor_state.set_paused(state, paused);
+        }
+
+        // debug views (Ctrl+1..5)
+        if ctrl_or_logo
+        {
+            let volumes = state.rendering_adapter.storage_buffer_array_support;
+            let wireframe = state.rendering_adapter.wireframe_mode_support;
+            let debug = &mut state.rendering.debug;
+            if volumes && state.io.input_manager.keyboard.is_pressed(Key::Key1) { debug.draw_physics_volumes = !debug.draw_physics_volumes; }
+            if volumes && state.io.input_manager.keyboard.is_pressed(Key::Key2) { debug.draw_light_camera_volumes = !debug.draw_light_camera_volumes; }
+            if volumes && state.io.input_manager.keyboard.is_pressed(Key::Key3)
+            {
+                match (debug.draw_bounding_boxes, debug.draw_bounding_spheres)
+                {
+                    (false, false) => { debug.draw_bounding_boxes = true; },
+                    (true, false) => { debug.draw_bounding_boxes = false; debug.draw_bounding_spheres = true; },
+                    _ => { debug.draw_bounding_boxes = false; debug.draw_bounding_spheres = false; },
+                }
+            }
+            if wireframe && state.io.input_manager.keyboard.is_pressed(Key::Key4) { debug.wireframe_mode = !debug.wireframe_mode; }
+            if state.io.input_manager.keyboard.is_pressed(Key::Key5) { debug.xray_mode = !debug.xray_mode; }
         }
 
         // hide ui
@@ -837,7 +904,7 @@ impl Editor
 
         let mut scene_id = scene_id.unwrap();
 
-        if state.run_mode != RunMode::Play && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None)
+        if state.view_run_mode() != RunMode::Play && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None)
         {
             let left_mouse_button = state.io.input_manager.mouse.clicked(MouseButton::Left);
             let right_mouse_button = state.io.input_manager.mouse.clicked(MouseButton::Right);

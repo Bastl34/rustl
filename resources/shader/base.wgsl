@@ -1032,6 +1032,39 @@ fn shadow_factor(light_index: i32, world_pos: vec3<f32>) -> f32
 }
 
 
+// reflection with the env map (specular IBL), zero without env map or reflectivity
+fn environment_reflection(in: VertexOutput, normal: vec3<f32>, view_dir: vec3<f32>) -> vec3<f32>
+{
+    if (!has_environment_sampler_texture() || material.reflectivity <= 0.001)
+    {
+        return vec3<f32>(0.0);
+    }
+
+    var reflectivity = material.reflectivity;
+    if (has_reflectivity_texture())
+    {
+        let reflectivity_value = sample_material_texture(tex_reflectivity, tex_reflectivity_sampler, in, TEXTURE_INDEX_REFLECTIVITY);
+        reflectivity *= reflectivity_value.x;
+    }
+
+    var roughness = material.roughness;
+    if (has_roughness_texture())
+    {
+        let roughness_value = sample_material_texture(tex_roughness, tex_roughness_sampler, in, TEXTURE_INDEX_ROUGHNESS);
+        roughness *= roughness_value.x;
+    }
+
+    let reflection = reflect(-view_dir, normal);
+    let sphere_coords = sphericalCoords(reflection);
+
+    let environment_map_levels = textureNumLevels(tex_environment) - 1u;
+    let mipmap_level = roughness * f32(environment_map_levels);
+
+    let sphere_coords_transformed = transform_uv(sphere_coords, TEXTURE_INDEX_ENVIRONMENT);
+    let reflection_color = textureSampleLevel(tex_environment, tex_environment_sampler, sphere_coords_transformed, mipmap_level);
+    return reflection_color.rgb * reflectivity;
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
@@ -1156,6 +1189,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
                 shadow = min(shadow, mix(1.0, shadow_factor(i, in.position), lights[i].shadow_strength));
             }
             color *= shadow;
+        }
+
+        // env map reflection on top (shine of pre-lit surfaces)
+        if (material.unlit_shading != 0u)
+        {
+            color += environment_reflection(in, normal, normalize(in.view_dir));
         }
     }
     else
@@ -1309,34 +1348,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         }
 
         // reflection with env map (specular IBL)
-        if (has_environment_sampler_texture() && material.reflectivity > 0.001)
-        {
-            var reflectivity = material.reflectivity;
-            if (has_reflectivity_texture())
-            {
-                let reflectivity_value = sample_material_texture(tex_reflectivity, tex_reflectivity_sampler, in, TEXTURE_INDEX_REFLECTIVITY);
-                reflectivity *= reflectivity_value.x;
-            }
-
-            var roughness = material.roughness;
-            if (has_roughness_texture())
-            {
-                let roughness_value = sample_material_texture(tex_roughness, tex_roughness_sampler, in, TEXTURE_INDEX_ROUGHNESS);
-                roughness *= roughness_value.x;
-            }
-
-            let reflection = reflect(-view_dir, normal);
-            let sphere_coords = sphericalCoords(reflection);
-
-            let environment_map_levels = textureNumLevels(tex_environment) - 1u;
-            let mipmap_level = roughness * f32(environment_map_levels);
-
-            let sphere_coords_transformed = transform_uv(sphere_coords, TEXTURE_INDEX_ENVIRONMENT);
-            let reflection_color = textureSampleLevel(tex_environment, tex_environment_sampler, sphere_coords_transformed, mipmap_level);
-            color.x += reflection_color.x * reflectivity * ssao_factor;
-            color.y += reflection_color.y * reflectivity * ssao_factor;
-            color.z += reflection_color.z * reflectivity * ssao_factor;
-        }
+        color += environment_reflection(in, normal, view_dir) * ssao_factor;
 
         // Diffuse IBL (Irradiance)
         let ibl_diffuse_intensity = material.ibl_diffuse_intensity * scene.ibl_diffuse_intensity;

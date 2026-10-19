@@ -60,6 +60,7 @@ pub fn create_run_mode_bar(editor_state: &mut EditorState, state: &mut State, ui
 
     let mut picked_run_mode: Option<(RunMode, bool)> = None;
     let mut stop = false;
+    let mut keep_fullscreen = false;
     let mut toggle_pause = false;
     let mut toggle_engine = false;
     let mut toggle_fullscreen = false;
@@ -95,6 +96,7 @@ pub fn create_run_mode_bar(editor_state: &mut EditorState, state: &mut State, ui
                 {
                     if ui.button("Play (Fullscreen)").clicked() { picked_run_mode = Some((RunMode::Play, true)); }
                     if ui.button("Simulate (Fullscreen)").clicked() { picked_run_mode = Some((RunMode::Simulate, true)); }
+                    if ui.add_enabled(running, egui::Button::new("Stop (Keep Fullscreen)")).clicked() { stop = true; keep_fullscreen = true; }
                 });
 
                 response.on_hover_text("More run options");
@@ -113,7 +115,7 @@ pub fn create_run_mode_bar(editor_state: &mut EditorState, state: &mut State, ui
                 stop = true;
             }
 
-            if icon_button(ui, egui::include_image!("../../../../resources/icons/pause.svg"), ICON_COLOR, paused, running, "Pause (P) - keeps everything where it is")
+            if icon_button(ui, egui::include_image!("../../../../resources/icons/pause.svg"), ICON_COLOR, paused, running, "Pause (Ctrl+P) - keeps everything where it is")
             {
                 toggle_pause = true;
             }
@@ -186,6 +188,7 @@ pub fn create_run_mode_bar(editor_state: &mut EditorState, state: &mut State, ui
 
     if stop
     {
+        if keep_fullscreen { editor_state.run_set_fullscreen = false; }
         editor_state.set_run_mode(state, RunMode::Edit, false);
     }
     else if let Some((run_mode, fullscreen)) = picked_run_mode

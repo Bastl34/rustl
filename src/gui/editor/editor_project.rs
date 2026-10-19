@@ -274,8 +274,20 @@ pub fn save_editor_project(state: &mut State, editor_state: &mut EditorState, pa
     let mut total_objects = 0;
     let mut used_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    // the resources are shared, so every scene file lists all of them - a scene can be loaded on its own
-    let sounds = extract_sounds(&state.list_sound_sources(), path);
+    // the resources are shared: a scene file lists the ones of its file and of its components (it can be loaded on its own) - the ones no scene has (added in the editor) go into every scene
+    let sound_sources = state.list_sound_sources();
+    let scene_sounds: Vec<(u32, std::collections::HashSet<String>)> = state.scenes.iter()
+        .filter(|scene| !scene.has_tag(ENGINE_INTERNAL_TAG) && !scene.has_tag(EDITOR_INTERNAL_TAG))
+        .map(|scene| (scene.id, scene.sound_uuids()))
+        .collect();
+    let has_source = |uuids: &std::collections::HashSet<String>, source: &SoundSourceItem| { let source = source.read().unwrap(); uuids.iter().any(|uuid| source.matches_uuid(uuid)) };
+    let unowned: Vec<bool> = sound_sources.iter().map(|source| !scene_sounds.iter().any(|(_, uuids)| has_source(uuids, source))).collect();
+    let sounds_of = |scene_id: u32| -> Vec<SceneSound>
+    {
+        let uuids = scene_sounds.iter().find(|(id, _)| *id == scene_id).map(|(_, uuids)| uuids.clone()).unwrap_or_default();
+        let sources: Vec<SoundSourceItem> = sound_sources.iter().zip(&unowned).filter(|(source, unowned)| **unowned || has_source(&uuids, source)).map(|(source, _)| source.clone()).collect();
+        extract_sounds(&sources, path)
+    };
 
     for scene in &state.scenes
     {
@@ -286,7 +298,24 @@ pub fn save_editor_project(state: &mut State, editor_state: &mut EditorState, pa
             continue;
         }
 
-        let editor_scene = extract_editor_scene(scene, sounds.clone(), path);
+        // not (completely) loaded: its file is the truth - writing the empty scene would wipe it
+        if !scene.is_loaded()
+        {
+            if let Some(descriptor) = &scene.source
+            {
+                let scene_full_path = descriptor.origin_path.clone();
+                used_paths.insert(scene_full_path.clone());
+                let relative = make_relative_path(path, &scene_full_path).unwrap_or(scene_full_path);
+                project_scenes.push(ProjectSceneRef { path: relative, active: scene.active, preload: scene.preload });
+            }
+            else
+            {
+                console_warning!("scene '{}' is not loaded and has no file - not saved", scene.name);
+            }
+            continue;
+        }
+
+        let editor_scene = extract_editor_scene(scene, sounds_of(scene.id), path);
         total_objects += editor_scene.objects.len();
 
         // determine scene file path: reuse source if set, otherwise generate from name
@@ -327,7 +356,7 @@ pub fn save_editor_project(state: &mut State, editor_state: &mut EditorState, pa
         }
 
         let relative = make_relative_path(path, &scene_full_path).unwrap_or(scene_full_path);
-        project_scenes.push(ProjectSceneRef { path: relative, active: scene.active });
+        project_scenes.push(ProjectSceneRef { path: relative, active: scene.active, preload: scene.preload });
     }
 
     let project = ProjectFile

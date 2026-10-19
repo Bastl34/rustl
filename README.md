@@ -47,7 +47,7 @@ cargo run -- "path/to/x.project"
 
 ```bash
 # builds without the editor into dist/<platform> - scripts/build.mjs
-# the project is packed in and starts directly: its whole folder (without code/ and hidden entries), files of the scenes outside of it go to external/
+# the project is packed in and starts directly: its whole folder (without code/, hidden entries and what <project folder>/.exportignore lists - patterns like .gitignore), files of the scenes outside of it go to external/
 # a project next to other projects (old layout) only packs its scenes and the files they use
 # web: wasm with threads, one time: rustup toolchain install nightly && rustup +nightly target add wasm32-unknown-unknown && rustup +nightly component add rust-src
 npm run build-web -- x.project                                   # dist/web, the project is required

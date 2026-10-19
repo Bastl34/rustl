@@ -19,12 +19,15 @@ const BUNDLE_PROJECT = "app.project";
 
 // the code of a project: <project folder>/code (src/gui/editor/project_code.rs) - never packed, the build links it in
 const CODE_DIR = "code";
+// <project folder>/.exportignore: gitignore like patterns of files and folders the export leaves out of the whole folder (notes, tools, ...)
+const EXPORT_IGNORE = ".exportignore";
 
 // what the engine itself loads from resources/ without the editor (resources/engine_resources.txt) - everything else only goes in when the project uses it (resources://)
 const ENGINE_RESOURCES = fs.readFileSync(path.join(ROOT, "resources", "engine_resources.txt"), "utf8").split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith("#"));
 
-// the rustl logo for now - later the app icon of the project
-const APP_ICON = path.join(ROOT, "resources", "designs", "logo", "logo.png");
+// the app icon: icon.png next to the .project (packed with the folder, the window takes it too), else the rustl logo
+const ENGINE_ICON = path.join(ROOT, "resources", "designs", "logo", "logo.png");
+const PROJECT_ICON = "icon.png";
 
 // host: the platform a native build has to run on (cross compiling needs the linker and SDK of the target)
 const PLATFORMS =
@@ -49,6 +52,12 @@ const outDir = outArg ? path.resolve(process.env.INIT_CWD ?? process.cwd(), outA
 const editorLibrary = args.includes("--editor-library");
 const profileArg = args.find(arg => arg.startsWith("--profile="))?.slice("--profile=".length);
 const targetDirArg = args.find(arg => arg.startsWith("--target-dir="))?.slice("--target-dir=".length);
+
+function appIcon()
+{
+    const own = project ? path.join(path.dirname(project), PROJECT_ICON) : null;
+    return own && fs.existsSync(own) ? own : ENGINE_ICON;
+}
 
 // ******************** commands ********************
 
@@ -172,7 +181,7 @@ function buildNative(target, name, code)
     // the exe is named like the project already - windows shows that name without a version resource
     if (platformName === "windows")
     {
-        run("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(ROOT, "scripts", "windows_icon.ps1"), "-Exe", target.exe, "-Png", APP_ICON]);
+        run("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(ROOT, "scripts", "windows_icon.ps1"), "-Exe", target.exe, "-Png", appIcon()]);
     }
 
     if (platformName === "mac")
@@ -248,17 +257,27 @@ function prepareLock(dir)
     return target;
 }
 
-// header and [[package]] blocks of a Cargo.lock - the key is name + version + source
+// header and [[package]] blocks of a Cargo.lock - the key is name + version + source, compat: name + source + semver compatible part of the version
 function lockBlocks(text)
 {
     const [header, ...parts] = text.split("\n[[package]]\n");
     const blocks = parts.map(part =>
     {
         const block = part.trimEnd();
-        const key = block.split("\n").filter(line => line.startsWith("name = ") || line.startsWith("version = ") || line.startsWith("source = ")).join("|");
-        return { key, block };
+        const lines = block.split("\n");
+        const value = (field) => lines.find(line => line.startsWith(`${field} = `)) ?? "";
+        const key = [value("name"), value("version"), value("source")].join("|");
+        const compat = [value("name"), semverCompat(value("version")), value("source")].join("|");
+        return { key, compat, block };
     });
     return { header: header.trimEnd(), blocks };
+}
+
+// 1.5.2 -> 1, 0.3.9 -> 0.3, 0.0.4 -> 0.0.4 - cargo allows only one version per compatible range
+function semverCompat(versionLine)
+{
+    const [major, minor, patch] = versionLine.replace(/^version = "|"$/g, "").split(/[.+-]/);
+    return major !== "0" ? major : minor !== "0" ? `0.${minor}` : `0.0.${patch}`;
 }
 
 // null: every entry of the engine is in the project lock as it is
@@ -273,8 +292,9 @@ function mergeLock(engine, project)
         return null;
     }
 
-    const engineKeys = new Set(engineLock.blocks.map(entry => entry.key));
-    const blocks = [...engineLock.blocks, ...projectLock.blocks.filter(entry => !engineKeys.has(entry.key))];
+    // an older compatible version of an engine crate would win in the project and change the engine build
+    const engineCompat = new Set(engineLock.blocks.map(entry => entry.compat));
+    const blocks = [...engineLock.blocks, ...projectLock.blocks.filter(entry => !engineCompat.has(entry.compat))];
     blocks.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
     return engineLock.header + "\n" + blocks.map(entry => "\n[[package]]\n" + entry.block + "\n").join("");
@@ -418,7 +438,7 @@ function writeWebFiles(dist, projectFile)
     const template = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
     const html = template.replace("<title>Rustl</title>", webHead(projectFile));
     fs.writeFileSync(path.join(dist, "index.html"), html);
-    fs.copyFileSync(APP_ICON, path.join(dist, "favicon.png"));
+    fs.copyFileSync(appIcon(), path.join(dist, "favicon.png"));
 }
 
 // title, description and the link preview of slack, discord, messengers (open graph + twitter card) - they need an absolute image url, project.url is where the build is hosted
@@ -429,7 +449,7 @@ function webHead(projectFile)
     const description = (info.description ?? "").replace(/\s+/g, " ").trim();
     const author = (info.author ?? "").trim();
     const url = (info.url ?? "").trim();
-    const [width, height] = pngSize(APP_ICON);
+    const [width, height] = pngSize(appIcon());
 
     let image = "favicon.png";
     if (url)
@@ -484,7 +504,7 @@ function writeMacIcon(app)
         for (const [scale, suffix] of [[1, ""], [2, "@2x"]])
         {
             const pixels = String(size * scale);
-            run("sips", ["-z", pixels, pixels, APP_ICON, "--out", path.join(iconset, `icon_${size}x${size}${suffix}.png`)], {}, "", ["ignore", "ignore", "inherit"]);
+            run("sips", ["-z", pixels, pixels, appIcon(), "--out", path.join(iconset, `icon_${size}x${size}${suffix}.png`)], {}, "", ["ignore", "ignore", "inherit"]);
         }
     }
 
@@ -637,13 +657,19 @@ function packageProject(projectPath, bundleDir, resources, outputDir)
     const projectJson = JSON.parse(readText(projectFile));
     const bundle = new Bundle(bundleDir, projectDir);
     let sceneCount = 0;
+    let linkedCount = 0;
 
     fs.mkdirSync(bundleDir, { recursive: true });
 
     const ownFolder = fs.readdirSync(projectDir).filter(entry => entry.toLowerCase().endsWith(".project")).length === 1;
     if (ownFolder)
     {
+        bundle.ignore = exportIgnore(projectDir);
         bundle.addFolder(projectDir, [projectFile, path.join(projectDir, CODE_DIR), outputDir]);
+        if (bundle.ignored > 0)
+        {
+            console.log(`${EXPORT_IGNORE}: ${bundle.ignored} files and folders left out`);
+        }
     }
     else
     {
@@ -652,7 +678,16 @@ function packageProject(projectPath, bundleDir, resources, outputDir)
 
     for (const sceneRef of projectJson.scenes ?? [])
     {
-        const scenePath = fs.realpathSync.native(path.resolve(projectDir, sceneRef.path));
+        // left out by .exportignore: only the link stays in the .project, the file is not read (it may not exist, the game writes it)
+        const sceneFile = path.resolve(projectDir, sceneRef.path);
+        if (ownFolder && bundle.ignoredPath(sceneFile))
+        {
+            sceneRef.path = bundle.bundlePath(sceneFile);
+            linkedCount++;
+            continue;
+        }
+
+        const scenePath = fs.realpathSync.native(sceneFile);
         const text = readText(scenePath);
         const sceneDir = path.dirname(scenePath);
         const scenePacked = bundle.bundlePath(scenePath);
@@ -688,9 +723,14 @@ function packageProject(projectPath, bundleDir, resources, outputDir)
         sceneCount++;
     }
 
+    // the export folders are paths of the developer's machine - an editor setting, not part of the game
+    if (projectJson.project)
+    {
+        delete projectJson.project.export_dirs;
+    }
     fs.writeFileSync(path.join(bundleDir, BUNDLE_PROJECT), JSON.stringify(projectJson, null, 2) + "\n");
 
-    console.log(`packaged ${path.basename(projectFile)} (${sceneCount} scenes, ${bundle.copied.size} files${ownFolder ? ", the whole project folder" : ""})`);
+    console.log(`packaged ${path.basename(projectFile)} (${sceneCount} scenes, ${bundle.copied.size} files${ownFolder ? ", the whole project folder" : ""}${linkedCount > 0 ? `, ${linkedCount} scenes only linked (${EXPORT_IGNORE})` : ""})`);
 
     return `${BUNDLE_DIR}/${BUNDLE_PROJECT}`;
 }
@@ -724,6 +764,49 @@ function sceneSources(scene)
     return sources;
 }
 
+// the patterns of <project folder>/.exportignore like a .gitignore: # comments, ! takes back, / at the end only folders, / at the start or inside anchors to the project folder, * ** ? globs
+function exportIgnore(projectDir)
+{
+    const file = path.join(projectDir, EXPORT_IGNORE);
+    if (!fs.existsSync(file))
+    {
+        return () => false;
+    }
+
+    const rules = readText(file).split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith("#")).map(line =>
+    {
+        const negate = line.startsWith("!");
+        let pattern = negate ? line.slice(1) : line;
+        const folderOnly = pattern.endsWith("/");
+        pattern = pattern.replace(/\/+$/, "");
+        const anchored = pattern.includes("/");
+        pattern = pattern.replace(/^\/+/, "");
+        // ** any folders (a trailing one: everything inside), * and ? within one name
+        const name = (part) => part.replace(/[.+^${}()|[\]\\]/g, "\\$&").replaceAll("*", "[^/]*").replaceAll("?", "[^/]");
+        const parts = pattern.split("/");
+        const glob = parts.map((part, i) => part !== "**" ? name(part) + (i + 1 < parts.length ? "/" : "") : i + 1 < parts.length ? "(?:.*/)?" : ".*").join("");
+        const regex = new RegExp(anchored ? `^${glob}$` : `(?:^|/)${glob}$`, "i");
+        return { negate, folderOnly, regex };
+    });
+
+    return (relative, isFolder) =>
+    {
+        let ignored = false;
+        for (const rule of rules)
+        {
+            if (rule.folderOnly && !isFolder)
+            {
+                continue;
+            }
+            if (rule.regex.test(relative))
+            {
+                ignored = !rule.negate;
+            }
+        }
+        return ignored;
+    };
+}
+
 class Bundle
 {
     constructor(dir, projectDir)
@@ -732,6 +815,9 @@ class Bundle
         this.projectDir = projectDir;
         this.root = fs.realpathSync.native(ROOT);
         this.copied = new Map();
+        // relative path (posix), is a folder -> left out (.exportignore) - files the scenes use are packed anyway
+        this.ignore = () => false;
+        this.ignored = 0;
     }
 
     // the project folder is the bundle dir - files outside of it go to external/ (engine files by their path in the repo, others by their path on the disk)
@@ -750,6 +836,18 @@ class Bundle
         return relative.replaceAll("\\", "/");
     }
 
+    // a file in the project folder that .exportignore leaves out - by itself or by one of its folders
+    ignoredPath(file)
+    {
+        const relative = path.relative(this.projectDir, file).replaceAll("\\", "/");
+        if (relative.startsWith("..") || path.isAbsolute(relative))
+        {
+            return false;
+        }
+        const parts = relative.split("/");
+        return parts.some((_, i) => this.ignore(parts.slice(0, i + 1).join("/"), i + 1 < parts.length));
+    }
+
     // every file of a folder - without hidden entries, the skipped paths and sub folders of other projects (backups, ...)
     addFolder(dir, skip)
     {
@@ -758,6 +856,11 @@ class Bundle
             const full = path.join(dir, entry.name);
             if (entry.name.startsWith(".") || skip.some(skipped => skipped && path.relative(skipped, full) === ""))
             {
+                continue;
+            }
+            if (this.ignore(path.relative(this.projectDir, full).replaceAll("\\", "/"), entry.isDirectory()))
+            {
+                this.ignored++;
                 continue;
             }
 

@@ -53,6 +53,22 @@ pub struct SceneData
     pub ibl_diffuse_intensity: Option<f32>,
 }
 
+// a scene of a project exists right away, its content only once it is loaded (see State::load_scene)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SceneLoadState
+{
+    Unloaded,
+    Loading,
+    Loaded,
+}
+
+// what State::unload_scene frees after the content is gone
+pub struct UnloadedContent
+{
+    pub textures: Vec<TextureItem>,
+    pub mesh_resources: Vec<MeshResourceItem>,
+}
+
 pub struct Scene
 {
     pub id: u32,
@@ -63,6 +79,17 @@ pub struct Scene
     pub name: String,
     pub visible: bool,
     pub active: bool,
+
+    pub load_state: SceneLoadState,
+
+    // loaded with the project - otherwise only when it becomes active or State::load_scene is called
+    pub preload: bool,
+
+    // a shell made while its file was missing (written later, e.g. by a converter) - settings, physics and tags come with the content
+    pub file_missing: bool,
+
+    // the uuids of the sound list of its file - saved again with it (kept when it is unloaded)
+    pub file_sounds: Vec<String>,
 
     pub extras: Extras,
     pub tags: Tags,
@@ -218,6 +245,11 @@ impl Scene
             visible: true,
             active: false,
 
+            load_state: SceneLoadState::Loaded,
+            preload: false,
+            file_missing: false,
+            file_sounds: vec![],
+
             extras: Extras::new(),
             tags: Tags::new(),
 
@@ -255,6 +287,60 @@ impl Scene
     pub fn get_data_mut(&mut self) -> &mut ChangeTracker<SceneData>
     {
         &mut self.data
+    }
+
+    pub fn is_loaded(&self) -> bool
+    {
+        self.load_state == SceneLoadState::Loaded
+    }
+
+    // drops nodes, cameras, lights, materials, controllers, physics and the render items - name, settings, tags, extras stay
+    pub fn unload_content(&mut self) -> UnloadedContent
+    {
+        let mut textures: HashMap<u32, TextureItem> = HashMap::new();
+        for (_, material) in &self.materials
+        {
+            component_downcast!(material, Material);
+            for texture in material.get_all_textures()
+            {
+                let id = texture.read().unwrap().id;
+                textures.insert(id, texture);
+            }
+        }
+
+        let mut mesh_resources: HashMap<u32, MeshResourceItem> = HashMap::new();
+        for node in Scene::list_all_child_nodes(&self.nodes)
+        {
+            for mesh in node.read().unwrap().find_components::<Mesh>()
+            {
+                component_downcast!(mesh, Mesh);
+                if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+                {
+                    mesh_resources.insert(mesh_resource.read().unwrap().id, mesh_resource.clone());
+                }
+            }
+        }
+
+        // parent, instances and components hold the nodes in cycles - without this nothing of them is freed
+        Node::cleanup_cyclic_references(&Scene::list_all_child_nodes(&self.nodes));
+
+        self.nodes.clear();
+        self.cameras.clear();
+        self.lights.get_mut().clear();
+        self.materials.clear();
+        self.controller.clear();
+
+        let physics_settings = self.physics.settings;
+        self.physics = PhysicsWorld::new();
+        self.physics.settings = physics_settings;
+
+        self.render_item = None;
+        self.lights_render_item = None;
+
+        self.add_defaults();
+        self.load_state = SceneLoadState::Unloaded;
+
+        UnloadedContent { textures: textures.into_values().collect(), mesh_resources: mesh_resources.into_values().collect() }
     }
 
     pub fn get_node_amount_recursive(&self, include_internals: bool) -> usize
@@ -1075,6 +1161,25 @@ impl Scene
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
+    }
+
+    // the sound sources this scene needs: the list of its file and the ones its sound components use
+    pub fn sound_uuids(&self) -> std::collections::HashSet<String>
+    {
+        let mut uuids: std::collections::HashSet<String> = self.file_sounds.iter().cloned().collect();
+        for node in Scene::list_all_child_nodes(&self.nodes)
+        {
+            for sound in node.read().unwrap().find_components::<Sound>()
+            {
+                component_downcast!(sound, Sound);
+                match sound.sound_source.as_ref()
+                {
+                    Some(source) => { uuids.insert(source.read().unwrap().uuid.clone()); },
+                    None => { uuids.extend(sound.sound_source.id().map(str::to_string)); },
+                }
+            }
+        }
+        uuids
     }
 
     pub fn list_all_child_nodes(nodes: &Vec<NodeItem>) -> Vec<NodeItem>

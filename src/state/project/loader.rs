@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
@@ -12,9 +12,11 @@ use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::file::resolve_relative_path;
 use crate::helper::option_or_id::OptionOrId;
-use crate::resources::resources::{RESOURCE_SCHEME, load_binary, load_string};
+use crate::resources::resources::{RESOURCE_SCHEME, exists, load_binary, load_string};
 use crate::state::resources::sound_source::SoundSource;
-use crate::state::project::project::{EDITOR_VIEW_EXTRA, SceneObject, SceneObjectOptions, ProjectFile, SceneFile, SceneSound, LoadingGuard, ProjectDoneCallback, ProjectSettings, RESUSE_MATERIALS_TAG};
+use crate::state::project::project::{EDITOR_VIEW_EXTRA, SceneObject, SceneObjectOptions, ProjectFile, SceneFile, SceneSound, LoadingGuard, ProjectDoneCallback, ProjectSettings, RESUSE_MATERIALS_TAG, SceneLoadingStatusItem, SceneSettings};
+use crate::state::scene::scene::{Scene, SceneLoadState};
+use crate::state::scene::physics::physics_world::PhysicsWorldSettings;
 use crate::state::scene::utilities::{extras::Extras, origin::Origin};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::component::{ComponentBox, ComponentItem, DeserializationContext};
@@ -99,7 +101,7 @@ struct PreparedSceneObject
 // components saved with a node - they need the deserialization context, so they are applied with the controllers
 type PendingComponents = Vec<(crate::state::scene::node::NodeItem, Vec<serde_json::Value>)>;
 
-fn load_editor_object(obj: &SceneObject, base_path: &str, create_mipmaps: bool, max_tex_res: u32, tex_cache: &mut TextureCache, mat_cache: &mut MaterialCache, progress_callback: &dyn Fn()) -> PreparedSceneObject
+fn load_editor_object(obj: &SceneObject, base_path: &str, create_mipmaps: bool, max_tex_res: u32, tex_cache: &mut TextureCache, mat_cache: &mut MaterialCache, progress: &LoadProgress) -> PreparedSceneObject
 {
     let reuse_materials = obj.options.reuse_materials_by_name.unwrap_or(false);
 
@@ -117,6 +119,7 @@ fn load_editor_object(obj: &SceneObject, base_path: &str, create_mipmaps: bool, 
             {
                 resolve_relative_path(base_path, source)
             };
+            progress.begin(source);
             let extension = Path::new(&path).extension().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy().to_string();
             let loader_options = LoaderOptions
             {
@@ -172,12 +175,12 @@ fn load_editor_object(obj: &SceneObject, base_path: &str, create_mipmaps: bool, 
         None => None,
     };
 
-    progress_callback();
+    progress.done(obj.source.as_deref());
 
     let mut children = Vec::with_capacity(obj.objects.len());
     for child_object in &obj.objects
     {
-        children.push(load_editor_object(child_object, base_path, create_mipmaps, max_tex_res, tex_cache, mat_cache, progress_callback));
+        children.push(load_editor_object(child_object, base_path, create_mipmaps, max_tex_res, tex_cache, mat_cache, progress));
     }
 
     PreparedSceneObject
@@ -326,18 +329,25 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
     }
 }
 
-// the files of the sound resources, read off the main thread: entry, path, bytes
-fn load_editor_sounds(sounds: &[SceneSound], base_path: &str) -> Vec<(SceneSound, String, Vec<u8>)>
+// the files of the sound resources, read off the main thread: entry, path, bytes - known ones (loaded by another scene) are skipped
+fn load_editor_sounds(sounds: &[SceneSound], base_path: &str, known: &HashSet<String>, progress: &LoadProgress) -> Vec<(SceneSound, String, Vec<u8>)>
 {
     sounds.iter().filter_map(|sound|
     {
+        if known.contains(&sound.uuid)
+        {
+            progress.done(None);
+            return None;
+        }
+
         let path = match sound.source.strip_prefix(RESOURCE_SCHEME)
         {
             Some(resource) => resource.to_string(),
             None => resolve_relative_path(base_path, &sound.source),
         };
 
-        match load_binary(&path)
+        progress.begin(&sound.source);
+        let result = match load_binary(&path)
         {
             Ok(bytes) => Some((sound.clone(), path, bytes)),
             Err(error) =>
@@ -345,7 +355,9 @@ fn load_editor_sounds(sounds: &[SceneSound], base_path: &str) -> Vec<(SceneSound
                 console_error!("can not load sound '{}' ({}): {}", sound.name, sound.source, error);
                 None
             }
-        }
+        };
+        progress.done(Some(&sound.source));
+        result
     }).collect()
 }
 
@@ -455,64 +467,141 @@ fn apply_scene_entries(state: &mut State, scene_id: u32, node_components: Pendin
     }
 }
 
-fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(SceneFile, String, bool)>, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, log_label: String, done_callback: ProjectDoneCallback) -> Vec<u32>
+// a scene of the project file without its content - load_scene_content fills it
+fn create_scene_shell(state: &mut State, editor_scene: &SceneFile, full_path: &str, active: bool, preload: bool) -> u32
 {
-    let mut scenes: Vec<(SceneFile, u32, String)> = Vec::new();
-    let mut added_ids: Vec<u32> = Vec::new();
-
-    for (editor_scene, full_path, active) in editor_scenes
+    let id = state.add_scene(&editor_scene.name).id;
+    if let Some(scene) = state.scenes.iter_mut().find(|s| s.id == id)
     {
-        let id = state.add_scene(&editor_scene.name).id;
-        if let Some(scene) = state.scenes.iter_mut().find(|s| s.id == id)
-        {
-            scene.active = active;
-            scene.source = Some(AssetPathDesciptor::new_from_path(full_path.clone()));
+        scene.active = active;
+        scene.preload = preload;
+        scene.load_state = SceneLoadState::Unloaded;
+        scene.source = Some(AssetPathDesciptor::new_from_path(full_path.to_string()));
 
-            if let Some(settings) = &editor_scene.settings
-            {
-                // unmarked: the render scene does not exist yet and builds from these values - a change mark would recreate pipelines it has not created yet
-                let data = scene.get_data_mut().get_unmarked_mut();
-                data.max_lights = settings.max_lights;
-                data.gamma = settings.gamma;
-                data.exposure = settings.exposure;
-                data.ibl_diffuse_intensity = settings.ibl_diffuse_intensity;
-            }
-
-            if let Some(physics) = editor_scene.physics
-            {
-                scene.physics.settings = physics;
-            }
-
-            for tag in &editor_scene.tags
-            {
-                scene.tags.insert_with_origin(tag, Origin::Scene);
-            }
-
-            if !editor_scene.editor_cameras.is_empty()
-            {
-                match serde_json::to_string(&editor_scene.editor_cameras)
-                {
-                    Ok(json) => { scene.extras.insert(EDITOR_VIEW_EXTRA, json); },
-                    Err(e) => { console_error!("failed to keep the editor cameras: {}", e); },
-                }
-            }
-        }
-        scenes.push((editor_scene, id, full_path));
-        added_ids.push(id);
+        apply_scene_file_settings(scene, editor_scene.settings.as_ref(), editor_scene.physics, &editor_scene.tags);
+        apply_editor_cameras_extra(scene, &editor_scene.editor_cameras);
     }
 
-    state.loading_scenes.extend(added_ids.iter().copied());
-    let loading_ids = added_ids.clone();
+    id
+}
+
+// a linked scene whose file is not there yet: an empty shell named like the file - it loads once the file exists
+// preload is kept for the save, the file is not loaded with the project
+fn create_missing_scene_shell(state: &mut State, full_path: &str, active: bool, preload: bool) -> u32
+{
+    let name = Path::new(full_path).file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_else(|| full_path.to_string());
+    let id = create_scene_shell(state, &SceneFile { name, ..Default::default() }, full_path, active, preload);
+    if let Some(scene) = state.find_scene_by_id_mut(id)
+    {
+        scene.file_missing = true;
+    }
+
+    id
+}
+
+// the values of the scene file the shell keeps (the content comes later)
+fn apply_scene_file_settings(scene: &mut Scene, settings: Option<&SceneSettings>, physics: Option<PhysicsWorldSettings>, tags: &[String])
+{
+    if let Some(settings) = settings
+    {
+        // unmarked: the render scene does not exist yet and builds from these values - a change mark would recreate pipelines it has not created yet
+        let data = scene.get_data_mut().get_unmarked_mut();
+        data.max_lights = settings.max_lights;
+        data.gamma = settings.gamma;
+        data.exposure = settings.exposure;
+        data.ibl_diffuse_intensity = settings.ibl_diffuse_intensity;
+    }
+
+    if let Some(physics) = physics
+    {
+        scene.physics.settings = physics;
+    }
+
+    for tag in tags
+    {
+        scene.tags.insert_with_origin(tag, Origin::Scene);
+    }
+}
+
+fn apply_editor_cameras_extra(scene: &mut Scene, editor_cameras: &[serde_json::Value])
+{
+    if editor_cameras.is_empty()
+    {
+        return;
+    }
+
+    match serde_json::to_string(editor_cameras)
+    {
+        Ok(json) => { scene.extras.insert(EDITOR_VIEW_EXTRA, json); },
+        Err(e) => { console_error!("failed to keep the editor cameras: {}", e); },
+    }
+}
+
+fn count_objects(objects: &[SceneObject]) -> usize
+{
+    objects.iter().map(|o| 1 + count_objects(&o.objects)).sum()
+}
+
+// the loader steps into the loading status of the state and the progress bar of the caller
+struct LoadProgress
+{
+    status: SceneLoadingStatusItem,
+    bar: Arc<RwLock<f32>>,
+}
+
+impl LoadProgress
+{
+    fn begin(&self, item: &str)
+    {
+        self.status.write().unwrap().begin_item(item);
+    }
+
+    fn done(&self, item: Option<&str>)
+    {
+        let mut status = self.status.write().unwrap();
+        status.finish_item(item);
+        *self.bar.write().unwrap() = status.progress();
+    }
+}
+
+// a scene to fill: the parsed file (None: read from the path in the thread), id, path
+type SceneLoadJob = (Option<SceneFile>, u32, String);
+
+// fills the given (shell) scenes in a background thread - one after another, App::scene_loaded per scene
+fn load_scene_jobs(state: &mut State, jobs: Vec<SceneLoadJob>, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, log_label: String, done_callback: ProjectDoneCallback)
+{
+    let mut status_scenes = vec![];
+    for (_, id, _) in &jobs
+    {
+        if let Some(scene) = state.find_scene_by_id_mut(*id)
+        {
+            scene.load_state = SceneLoadState::Loading;
+            status_scenes.push((*id, scene.name.clone()));
+        }
+    }
+    let job_ids: Vec<u32> = jobs.iter().map(|(_, id, _)| *id).collect();
+
+    let known_total: usize = jobs.iter().filter_map(|(file, _, _)| file.as_ref()).map(|file| count_objects(&file.objects) + file.sounds.len()).sum();
+    let status = state.scene_loading.clone();
+    status.write().unwrap().begin_job(&status_scenes, known_total);
 
     let main_queue = state.main_thread_execution_queue.clone();
     let create_mipmaps = state.rendering.create_mipmaps;
     let max_tex_res = state.max_texture_resolution();
 
-    fn count_objects(objects: &[SceneObject]) -> usize
+    // what other scenes loaded already is used again: textures by hash, sounds by uuid
+    let mut tex_cache: TextureCache = state.resources.textures.iter()
+        .filter(|(_, texture)| !texture.read().unwrap().delete_later_request)
+        .map(|(hash, texture)| (hash.clone(), texture.clone()))
+        .collect();
+
+    let mut known_sounds: HashSet<String> = HashSet::new();
+    for sound_source in state.resources.sound_sources.values()
     {
-        objects.iter().map(|o| 1 + count_objects(&o.objects)).sum()
+        let sound_source = sound_source.read().unwrap();
+        known_sounds.insert(sound_source.uuid.clone());
+        known_sounds.extend(sound_source.uuid_aliases.iter().cloned());
     }
-    let total_objects: usize = scenes.iter().map(|(s, _, _)| count_objects(&s.objects)).sum();
 
     *loading_state.write().unwrap() = true;
     *loading_progress_state.write().unwrap() = 0.0;
@@ -520,36 +609,55 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(SceneFil
     spawn_thread(move ||
     {
         let _guard = LoadingGuard(loading_state);
-        console_log!("loading {} ({} scenes, {} objects)", log_label, scenes.len(), total_objects);
+        console_log!("loading {} ({} scenes)", log_label, jobs.len());
 
-        let loaded_count = Arc::new(RwLock::new(0usize));
-        let total = total_objects.max(1);
+        let progress = LoadProgress { status: status.clone(), bar: loading_progress_state.clone() };
 
-        let mut tex_cache: TextureCache = HashMap::new();
-
-        for (editor_scene, scene_id, base_path) in scenes
+        for (editor_scene, scene_id, base_path) in jobs
         {
+            // read again: the file is the truth for a scene that was not loaded
+            let reread = editor_scene.is_none();
+            let mut editor_scene = match editor_scene
+            {
+                Some(editor_scene) => editor_scene,
+                None =>
+                {
+                    progress.begin(&base_path);
+                    match load_editor_scene(&base_path)
+                    {
+                        Some(editor_scene) =>
+                        {
+                            status.write().unwrap().add_total(count_objects(&editor_scene.objects) + editor_scene.sounds.len());
+                            editor_scene
+                        },
+                        None =>
+                        {
+                            // load_editor_scene logged why - the scene stays empty
+                            execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
+                            {
+                                if let Some(scene) = state.find_scene_by_id_mut(scene_id) { scene.load_state = SceneLoadState::Unloaded; }
+                            }));
+                            continue;
+                        },
+                    }
+                },
+            };
+
             // parse pass: share caches across all objects in this scene
             let mut mat_cache: MaterialCache = HashMap::new();
-
-            let loaded_count_callback = loaded_count.clone();
-            let progress_callback_state = loading_progress_state.clone();
-            let progress_callback = move ||
-            {
-                let mut count = loaded_count_callback.write().unwrap();
-                *count += 1;
-                *progress_callback_state.write().unwrap() = *count as f32 / total as f32;
-            };
 
             let mut loaded_objects: Vec<PreparedSceneObject> = Vec::with_capacity(editor_scene.objects.len());
             for object in &editor_scene.objects
             {
-                loaded_objects.push(load_editor_object(object, &base_path, create_mipmaps, max_tex_res, &mut tex_cache, &mut mat_cache, &progress_callback));
+                loaded_objects.push(load_editor_object(object, &base_path, create_mipmaps, max_tex_res, &mut tex_cache, &mut mat_cache, &progress));
             }
 
-            let sounds = load_editor_sounds(&editor_scene.sounds, &base_path);
+            let sounds = load_editor_sounds(&editor_scene.sounds, &base_path, &known_sounds, &progress);
+            known_sounds.extend(editor_scene.sounds.iter().map(|sound| sound.uuid.clone()));
+            let file_sounds: Vec<String> = editor_scene.sounds.iter().map(|sound| sound.uuid.clone()).collect();
 
-            let SceneFile { cameras, lights, controller, .. } = editor_scene;
+            let editor_cameras = if reread { std::mem::take(&mut editor_scene.editor_cameras) } else { vec![] };
+            let SceneFile { cameras, lights, controller, settings, physics, tags, .. } = editor_scene;
 
             // apply pass: single main-thread round-trip for all prepared objects of this scene
             execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
@@ -560,6 +668,16 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(SceneFil
                     sound_source.uuid = sound.uuid;
                     sound_source.name = sound.name;
                     state.add_sound_source(sound_source);
+                }
+
+                if let Some(scene) = state.find_scene_by_id_mut(scene_id)
+                {
+                    apply_editor_cameras_extra(scene, &editor_cameras);
+                    scene.file_sounds = file_sounds;
+                    if std::mem::take(&mut scene.file_missing)
+                    {
+                        apply_scene_file_settings(scene, settings.as_ref(), physics, &tags);
+                    }
                 }
 
                 let mut node_components = vec![];
@@ -581,19 +699,43 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(SceneFil
         }
 
         // after the done callback: it may still add cameras and lights
+        let finished_ids = job_ids.clone();
         execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
         {
-            for id in loading_ids
+            for id in finished_ids
             {
-                state.finish_scene_loading(id);
+                if state.is_scene_loading(id)
+                {
+                    state.finish_scene_loading(id);
+                }
             }
         }));
 
+        status.write().unwrap().end_job(&job_ids);
         *loading_progress_state.write().unwrap() = 0.0;
         console_success!("{} loaded", log_label);
     });
+}
 
-    added_ids
+// loads the content of a scene of the project from its file - nothing happens when it is loaded or loading already
+pub fn load_scene_content(state: &mut State, scene_id: u32) -> bool
+{
+    let Some(scene) = state.find_scene_by_id(scene_id) else { return false; };
+
+    if scene.load_state != SceneLoadState::Unloaded
+    {
+        return true;
+    }
+
+    let Some(path) = scene.source.as_ref().map(|source| source.origin_path.clone()) else
+    {
+        console_warning!("scene '{}' has no file to load", scene.name);
+        return false;
+    };
+
+    let log_label = format!("scene: {}", scene.name);
+    load_scene_jobs(state, vec![(None, scene_id, path)], Arc::new(RwLock::new(false)), Arc::new(RwLock::new(0.0)), log_label, None);
+    true
 }
 
 // missing settings fall back to the defaults, so nothing is carried over from the previous project
@@ -618,6 +760,7 @@ pub fn apply_project_settings(state: &mut State, settings: &ProjectSettings)
     }
 }
 
+// every scene gets its shell, only the active one and the preload ones their content - the others load when they become active
 pub fn apply_editor_project(state: &mut State, project: ProjectFile, path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, done_callback: ProjectDoneCallback)
 {
     if project.scenes.is_empty()
@@ -630,20 +773,59 @@ pub fn apply_editor_project(state: &mut State, project: ProjectFile, path: &str,
     apply_project_settings(state, &project.settings);
     state.delete_all_scenes(true);
 
-    let mut editor_scenes: Vec<(SceneFile, String, bool)> = Vec::new();
+    // None: the file is not there (yet) - the scene stays in the project as an empty shell
+    let mut scenes: Vec<(Option<SceneFile>, String, bool, bool)> = Vec::new();
     for scene_ref in project.scenes
     {
         let full_path = resolve_relative_path(path, scene_ref.path.as_str());
+        if !exists(&full_path)
+        {
+            scenes.push((None, full_path, scene_ref.active, scene_ref.preload));
+            continue;
+        }
         let editor_scene = match load_editor_scene(&full_path)
         {
             Some(scene) => scene,
             None => continue,
         };
-        editor_scenes.push((editor_scene, full_path, scene_ref.active));
+        scenes.push((Some(editor_scene), full_path, scene_ref.active, scene_ref.preload));
     }
 
-    let log_label = format!("editor project: {}", project.project.name);
-    load_editor_scenes_into_state(state, editor_scenes, loading_state, loading_progress_state, log_label, done_callback);
+    // without an active scene the first one is
+    if !scenes.iter().any(|(_, _, active, _)| *active)
+    {
+        if let Some(first) = scenes.iter_mut().find(|(file, ..)| file.is_some()) { first.2 = true; }
+    }
+
+    let missing: Vec<&str> = scenes.iter().filter(|(file, ..)| file.is_none()).map(|(_, path, ..)| path.as_str()).collect();
+    if !missing.is_empty()
+    {
+        console_warning!("{} linked scene files are not there (yet) - empty until their files exist: {}", missing.len(), missing.join(", "));
+    }
+
+    let scenes_amount = scenes.len();
+    let mut jobs: Vec<SceneLoadJob> = Vec::new();
+    for (editor_scene, full_path, active, preload) in scenes
+    {
+        let Some(editor_scene) = editor_scene else
+        {
+            create_missing_scene_shell(state, &full_path, active, preload);
+            continue;
+        };
+        let id = create_scene_shell(state, &editor_scene, &full_path, active, preload);
+        if active
+        {
+            // the active scene first - it is the one to see
+            jobs.insert(0, (Some(editor_scene), id, full_path));
+        }
+        else if preload
+        {
+            jobs.push((Some(editor_scene), id, full_path));
+        }
+    }
+
+    let log_label = format!("editor project: {} ({} of {} scenes)", project.project.name, jobs.len(), scenes_amount);
+    load_scene_jobs(state, jobs, loading_state, loading_progress_state, log_label, done_callback);
 }
 
 pub fn apply_editor_scene(state: &mut State, scene_path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>,) -> Option<u32>
@@ -656,8 +838,9 @@ pub fn apply_editor_scene(state: &mut State, scene_path: &str, loading_state: Ar
 
     let log_label = format!("editor scene: {}", editor_scene.name);
     let active = editor_scene.active;
-    let added_ids = load_editor_scenes_into_state(state, vec![(editor_scene, scene_path.to_string(), active)], loading_state, loading_progress_state, log_label, None);
-    added_ids.first().copied()
+    let id = create_scene_shell(state, &editor_scene, scene_path, active, false);
+    load_scene_jobs(state, vec![(Some(editor_scene), id, scene_path.to_string())], loading_state, loading_progress_state, log_label, None);
+    Some(id)
 }
 
 pub fn load_and_apply_project(state: &mut State, path: &str, done_callback: ProjectDoneCallback)

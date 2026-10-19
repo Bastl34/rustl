@@ -882,6 +882,7 @@ struct WheelVisual
     spin: f32,
     steering: f32,
     ground: Option<(Vector3<f32>, Vector3<f32>)>, // under the wheel as shown, and the ground normal - world space
+    fixed_ground: bool, // on a fixed body - tire marks only there, not on objects that move or fly off later
 }
 
 // what drive() leaves for the visuals, the camera and the sound
@@ -1344,7 +1345,7 @@ impl VehicleController
         cam.node = OptionOrId::Some(node.clone());
         self.cam_name = cam.name.clone();
 
-        cam.controller = Some(Box::new(self.new_chase_controller(node)));
+        cam.controller = Some(Box::new(self.new_chase_controller(node, None)));
 
         self.chase_controller = None;
 
@@ -1364,7 +1365,7 @@ impl VehicleController
     {
         if !self.has_camera() { return; }
         let Some(node) = self.node.as_ref().cloned() else { return; };
-        let controller = self.new_chase_controller(&node);
+        let controller = self.new_chase_controller(&node, None);
         if let Some(cam) = scene.get_game_camera_mut(&self.cam_name)
         {
             cam.controller = Some(Box::new(controller));
@@ -1372,12 +1373,12 @@ impl VehicleController
         self.chase_controller = None;
     }
 
-    // starts behind the vehicle
-    fn new_chase_controller(&self, node: &NodeItem) -> TargetRotationController
+    // starts behind the vehicle - rotation: the one it was just placed with (the node follows the physics a frame later)
+    fn new_chase_controller(&self, node: &NodeItem, rotation: Option<UnitQuaternion<f32>>) -> TargetRotationController
     {
         let alpha = self.frame.map(|frame|
         {
-            let rotation = extract_rotation_quat_from_transform(&node.read().unwrap().get_full_transform());
+            let rotation = rotation.unwrap_or_else(|| extract_rotation_quat_from_transform(&node.read().unwrap().get_full_transform()));
             yaw_pitch_from_direction(rotation * frame.forward).0 + PI
         }).unwrap_or(0.0);
 
@@ -2404,6 +2405,8 @@ impl VehicleController
             let info = wheel.raycast_info();
             let mut suspension_length = info.suspension_length;
             let mut ground = None;
+            let fixed_ground = info.ground_object.and_then(|handle| physics.colliders.get(handle))
+                .is_none_or(|collider| collider.parent().and_then(|body| physics.bodies.get(body)).is_none_or(|body| body.is_fixed()));
 
             if info.is_in_contact
             {
@@ -2423,7 +2426,7 @@ impl VehicleController
             }
 
             // the spring length without the ray headroom
-            WheelVisual { contact: info.is_in_contact, suspension_length: suspension_length - headroom, spin: wheel.rotation, steering: wheel.steering, ground }
+            WheelVisual { contact: info.is_in_contact, suspension_length: suspension_length - headroom, spin: wheel.rotation, steering: wheel.steering, ground, fixed_ground }
         }).collect()
     }
 
@@ -2491,7 +2494,7 @@ impl VehicleController
         let Some(cam) = scene.get_game_camera_mut(&self.cam_name) else { return false; };
         if !cam.controller.as_ref().is_some_and(|controller| controller.as_any().is::<FollowController>()) { return false; }
 
-        cam.controller = Some(self.chase_controller.take().unwrap_or_else(|| Box::new(self.new_chase_controller(&node))));
+        cam.controller = Some(self.chase_controller.take().unwrap_or_else(|| Box::new(self.new_chase_controller(&node, None))));
         cam.data.get_mut().up = Vector3::y(); // the cockpit rolled it
 
         true
@@ -2694,7 +2697,7 @@ impl VehicleController
         let mut marks = Vec::with_capacity(self.wheels.len());
         for (index, wheel) in self.wheels.iter().enumerate()
         {
-            let ground = wheel_visuals.get(index).and_then(|visual| visual.ground);
+            let ground = wheel_visuals.get(index).filter(|visual| visual.fixed_ground).and_then(|visual| visual.ground);
             let slide = slides.get(index).copied().unwrap_or(0.0);
 
             let locked = if input.handbrake && wheel.handbrake && speed.abs() > 1.0 { (speed.abs() / 10.0).min(1.0) } else if brake > 0.8 && speed.abs() > 8.0 { 0.4 } else { 0.0 };
@@ -3040,7 +3043,7 @@ impl SceneController for VehicleController
         for (index, wheel) in self.wheels.iter().enumerate()
         {
             let Some(runtime) = wheel.runtime.as_ref() else { continue; };
-            let visual = wheel_visuals.get(index).copied().unwrap_or(WheelVisual { contact: false, suspension_length: self.suspension.rest_length, spin: 0.0, steering: 0.0, ground: None });
+            let visual = wheel_visuals.get(index).copied().unwrap_or(WheelVisual { contact: false, suspension_length: self.suspension.rest_length, spin: 0.0, steering: 0.0, ground: None, fixed_ground: true });
 
             let compression = if visual.contact { self.suspension.rest_length - self.sag - visual.suspension_length } else { -self.sag };
 
@@ -3581,6 +3584,14 @@ impl VehicleController
         let pose = scene.physics.free_vehicle_pose(node_id, pose);
         scene.physics.place_vehicle(node_id, pose);
         self.reset_drive_state();
+
+        // teleported: the chase camera starts behind it again, not turned like before
+        if self.has_camera() && let Some(node) = self.node.as_ref().cloned()
+        {
+            let controller = self.new_chase_controller(&node, Some(upright));
+            if let Some(cam) = scene.get_game_camera_mut(&self.cam_name) { cam.controller = Some(Box::new(controller)); }
+            self.chase_controller = None;
+        }
     }
 
     // the chassis forward along the flat heading, its up along the world up

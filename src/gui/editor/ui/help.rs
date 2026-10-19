@@ -139,7 +139,7 @@ pub fn create_modal_help_shortcuts(editor_state: &mut EditorState, ctx: &egui::C
             binding_row(ui, &["Ctrl", "Shift", "R"], "Play in fullscreen");
             binding_row(ui, &["Ctrl", "T"],          "Simulate - physics runs, the editor stays open");
             binding_row(ui, &["Ctrl", "Shift", "T"], "Simulate in fullscreen");
-            binding_row(ui, &["P"],                  "Pause / resume");
+            binding_row(ui, &["Ctrl", "P"],          "Pause / resume (play: editor + free camera at the game view)");
             binding_row(ui, &["Escape"],             "Stop - back to edit mode");
 
             // selection
@@ -179,6 +179,11 @@ pub fn create_modal_help_shortcuts(editor_state: &mut EditorState, ctx: &egui::C
             category_header(ui, "  Rendering");
             binding_row(ui, &["Shift", "Z"],  "Toggle wireframe mode");
             binding_row(ui, &["Alt", "Z"],    "Toggle x-ray mode");
+            binding_row(ui, &["Ctrl", "1"],   "Toggle physics volumes (also in play)");
+            binding_row(ui, &["Ctrl", "2"],   "Toggle lights and cameras (also in play)");
+            binding_row(ui, &["Ctrl", "3"],   "Bounding volumes: off -> boxes -> spheres (also in play)");
+            binding_row(ui, &["Ctrl", "4"],   "Toggle wireframe mode (also in play)");
+            binding_row(ui, &["Ctrl", "5"],   "Toggle x-ray mode (also in play)");
 
             // grid
             category_header(ui, "  Grid");

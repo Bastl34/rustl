@@ -117,7 +117,7 @@ pub fn create_debug_settings(editor_state: &mut EditorState, state: &mut State, 
 
                 DebugPanel::HzbImage =>
                 {
-                    let run_mode = state.run_mode;
+                    let run_mode = state.view_run_mode();
                     let hzb_mip_max = state.scenes.iter()
                         .find(|scene| Some(scene.id) == editor_state.selected_scene_id || scene.active)
                         .and_then(|scene| scene.get_active_camera(run_mode))

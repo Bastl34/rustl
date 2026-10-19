@@ -73,6 +73,12 @@ pub struct Sound
     runtime_pitch: f32,
     #[serde(skip, default)]
     runtime_changed: bool,
+    // emitter, left ear, right ear of the last update - a new spatial player starts there or far away (between the ears it clicked at full volume)
+    #[serde(skip, default)]
+    spatial_positions: Option<[[f32; 3]; 3]>,
+    // stop() only flags the rodio player (it empties on the mixer thread) - a start() after it needs a new player
+    #[serde(skip, default)]
+    stop_requested: bool,
 }
 
 fn default_one() -> f32 { 1.0 }
@@ -109,6 +115,8 @@ impl Sound
             runtime_gain: 1.0,
             runtime_pitch: 1.0,
             runtime_changed: false,
+            spatial_positions: None,
+            stop_requested: false,
         };
 
         sound.set_sound_source(sound_source.clone());
@@ -146,6 +154,8 @@ impl Sound
             runtime_gain: 1.0,
             runtime_pitch: 1.0,
             runtime_changed: false,
+            spatial_positions: None,
+            stop_requested: false,
         };
 
         sound
@@ -196,6 +206,7 @@ impl Sound
     pub fn set_sound_source(&mut self, sound_source: SoundSourceItem)
     {
         self.reset();
+        self.stop_requested = false;
 
         self.sound_source = OptionOrId::Some(sound_source.clone());
         self.audio_device = Some(sound_source.read().unwrap().audio_device.clone());
@@ -239,7 +250,8 @@ impl Sound
             }
             else
             {
-                let s = rodio::SpatialPlayer::connect_new(stream.mixer(), [0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+                let [emitter, left, right] = self.spatial_positions.unwrap_or([[0.0, 0.0, 1.0e4], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]);
+                let s = rodio::SpatialPlayer::connect_new(stream.mixer(), emitter, left, right);
                 if let Some(decoder) = sound_source.decoder()
                 {
                     if let Some(total_duration) = decoder.total_duration()
@@ -303,7 +315,7 @@ impl Sound
 
     pub fn start(&mut self)
     {
-        if self.stopped()
+        if self.stopped() || self.stop_requested
         {
             self.set_sound_source(self.sound_source.clone().unwrap());
         }
@@ -321,6 +333,8 @@ impl Sound
 
     pub fn stop(&mut self)
     {
+        self.stop_requested = true;
+
         if let Some(player) = &mut self.player
         {
             player.stop()
@@ -482,6 +496,7 @@ impl Sound
                 let left = [left_pos.x, left_pos.y, left_pos.z];
                 let right = [right_pos.x, right_pos.y, right_pos.z];
 
+                self.spatial_positions = Some([pos, left, right]);
                 player.set_emitter_position(pos);
                 player.set_left_ear_position(left);
                 player.set_right_ear_position(right);
@@ -572,6 +587,8 @@ impl Component for Sound
             runtime_gain: 1.0,
             runtime_pitch: 1.0,
             runtime_changed: false,
+            spatial_positions: None,
+            stop_requested: false,
         };
 
         if let Some(sound_source) = source.sound_source.as_ref()

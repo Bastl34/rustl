@@ -1283,8 +1283,8 @@ fn apply_texture_filtering_settings<'a>(tex_state: &mut TextureState, gltf_textu
     {
         match min_filter
         {
-            texture::MinFilter::Nearest => tex_state.sampler.min_filter = TextureFilterMode::Nearest,
-            texture::MinFilter::Linear => tex_state.sampler.min_filter = TextureFilterMode::Linear,
+            texture::MinFilter::Nearest => { tex_state.sampler.min_filter = TextureFilterMode::Nearest; tex_state.sampler.no_mipmaps = true; },
+            texture::MinFilter::Linear => { tex_state.sampler.min_filter = TextureFilterMode::Linear; tex_state.sampler.no_mipmaps = true; },
             texture::MinFilter::NearestMipmapNearest =>
             {
                 tex_state.sampler.min_filter = TextureFilterMode::Nearest;

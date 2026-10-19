@@ -9,3 +9,6 @@ crate-type = ["dylib"]
 
 [dependencies]
 rustl = { path = "../..", features = ["editor"] }
+
+# feature alignment only: project crates must not add features to engine deps, otherwise the engine dll is built again (ureq -> percent-encoding/default)
+percent-encoding = "2.3.2"

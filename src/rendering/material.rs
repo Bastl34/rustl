@@ -545,6 +545,7 @@ impl MaterialBuffer
             mag_filter: mag_filter,
             min_filter: min_filter,
             mipmap_filter: mipmap_filter,
+            lod_max_clamp: if texture_state.sampler.no_mipmaps { 0.0 } else { 32.0 },
             ..Default::default()
         });
 

@@ -277,6 +277,20 @@ pub fn to_resource_path(path: &str) -> Option<String>
 
 // packaged builds have the resources next to the executable (mac app bundle: Contents/Resources), the dev build uses the copy of build.rs
 #[cfg(not(target_arch = "wasm32"))]
+// folders a game adds for relative paths (data it writes itself, e.g. converted files) - searched before the resource folders
+#[cfg(not(target_arch = "wasm32"))]
+static EXTRA_ROOTS: std::sync::RwLock<Vec<std::path::PathBuf>> = std::sync::RwLock::new(Vec::new());
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn add_resource_root(root: std::path::PathBuf)
+{
+    let mut roots = EXTRA_ROOTS.write().unwrap();
+    if !roots.contains(&root)
+    {
+        roots.insert(0, root);
+    }
+}
+
 fn resource_roots() -> &'static [std::path::PathBuf]
 {
     static ROOTS: std::sync::OnceLock<Vec<std::path::PathBuf>> = std::sync::OnceLock::new();
@@ -311,8 +325,8 @@ pub fn get_path(path: &str) -> String
                 return path.to_string();
             }
 
-            // resource path
-            for root in resource_roots()
+            // added roots, then the resource path
+            for root in EXTRA_ROOTS.read().unwrap().iter().chain(resource_roots())
             {
                 let resource_path = root.join(path);
                 if resource_path.exists()

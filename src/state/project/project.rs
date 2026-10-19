@@ -112,6 +112,10 @@ pub struct ProjectSceneRef
 
     #[serde(default, skip_serializing_if = "is_false")]
     pub active: bool,
+
+    // loaded with the project even when not active
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub preload: bool,
 }
 
 // the global settings of the engine - missing ones fall back to the defaults on load
@@ -158,7 +162,7 @@ pub struct ProjectFile
     pub scenes: Vec<ProjectSceneRef>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct SceneFile
 {
     pub name: String,
@@ -272,6 +276,84 @@ pub struct SceneObject
 
 
 // ******************** loading state ********************
+
+// what the scene loader works on - read it for a loading screen: state.scene_loading.read().unwrap()
+#[derive(Clone, Default, Debug)]
+pub struct SceneLoadingStatus
+{
+    // scenes of the running loads - empty when nothing loads
+    pub scenes: Vec<(u32, String)>,
+
+    // the file (or object name) loaded right now
+    pub current: String,
+
+    // the finished files of the running loads, oldest first
+    pub loaded: Vec<String>,
+
+    // objects and sounds: done / all of the running loads
+    pub done: usize,
+    pub total: usize,
+
+    jobs: u32,
+}
+
+pub type SceneLoadingStatusItem = Arc<RwLock<SceneLoadingStatus>>;
+
+impl SceneLoadingStatus
+{
+    pub fn is_loading(&self) -> bool
+    {
+        self.jobs > 0
+    }
+
+    pub fn progress(&self) -> f32
+    {
+        if self.total == 0 { 0.0 } else { (self.done as f32 / self.total as f32).min(1.0) }
+    }
+
+    // a new load: starts from zero unless another one is still running
+    pub(crate) fn begin_job(&mut self, scenes: &[(u32, String)], total: usize)
+    {
+        if self.jobs == 0
+        {
+            *self = SceneLoadingStatus::default();
+        }
+
+        self.jobs += 1;
+        self.scenes.extend(scenes.iter().cloned());
+        self.total += total;
+    }
+
+    // a scene file read in the thread brings its count later
+    pub(crate) fn add_total(&mut self, total: usize)
+    {
+        self.total += total;
+    }
+
+    pub(crate) fn begin_item(&mut self, item: &str)
+    {
+        self.current = item.to_string();
+    }
+
+    pub(crate) fn finish_item(&mut self, item: Option<&str>)
+    {
+        self.done += 1;
+        if let Some(item) = item
+        {
+            self.loaded.push(item.to_string());
+        }
+    }
+
+    pub(crate) fn end_job(&mut self, scene_ids: &[u32])
+    {
+        self.jobs = self.jobs.saturating_sub(1);
+        self.scenes.retain(|(id, _)| !scene_ids.contains(id));
+        if self.jobs == 0
+        {
+            self.current.clear();
+        }
+    }
+}
 
 /// Resets the shared "is loading" flag when the loading task ends (also on early return/panic).
 pub struct LoadingGuard(pub Arc<RwLock<bool>>);

@@ -421,7 +421,8 @@ fn build(project_path: &str, dir: &Path, crate_name: &str, diagnostics: &mut Vec
 
     // stderr: the errors of cargo itself (manifest, locked files, ...)
     const PROGRESS: [&str; 11] = ["Compiling", "Checking", "Blocking", "Fresh", "Finished", "Building", "Locking", "Adding", "Updating", "Downloading", "Downloaded"];
-    for line in String::from_utf8_lossy(&result.stderr).lines()
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    for line in stderr.lines()
     {
         let trimmed = line.trim_start();
         let other_crate_summary = trimmed.starts_with("warning: `") && trimmed.contains(" generated ");
@@ -431,6 +432,24 @@ fn build(project_path: &str, dir: &Path, crate_name: &str, diagnostics: &mut Vec
             continue;
         }
         output.push(line.to_string());
+    }
+
+    // the engine library is loaded by the editor - a project that builds the engine differently can not replace it
+    if !result.status.success() && stderr.contains("failed to remove file") && stderr.contains("rustl_dylib")
+    {
+        let rebuilt: Vec<&str> = stderr.lines()
+            .filter_map(|line| line.trim_start().strip_prefix("Compiling "))
+            .map(|name| name.split(" (").next().unwrap_or(name))
+            .filter(|name| !name.starts_with(&format!("{} ", crate_name)) && !name.starts_with("rustl ") && !name.starts_with("rustl_dylib "))
+            .collect();
+
+        output.push("error: the project needs another build of the engine library (rustl_dylib), but the running editor holds it open".to_string());
+        output.push("  cause: the engine sources changed since the editor build, or the project resolves other crate versions/features (.cargo/Cargo.lock of the code folder)".to_string());
+        if !rebuilt.is_empty()
+        {
+            output.push(format!("  built again for the project: {}", rebuilt.join(", ")));
+        }
+        output.push("  fix: rebuild and restart the editor - if it stays, compare the versions above with the Cargo.lock of the engine".to_string());
     }
 
     if output.len() > BUILD_OUTPUT_MAX_LINES

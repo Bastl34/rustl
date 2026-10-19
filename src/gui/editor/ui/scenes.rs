@@ -3,7 +3,7 @@ use std::mem::swap;
 use crate::state::scene::utilities::origin::Origin;
 use egui::{Ui, RichText, Color32};
 
-use crate::{component_downcast, gui::{editor::editor_state::EditorState, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::concurrency::thread::spawn_thread, state::{scene::{components::{material::{Material, TextureType}, mesh::Mesh}, scene::Scene, scene_controller::scene_controller::{ControllerPhase, ControllerUiContext}}, state::State}};
+use crate::{component_downcast, gui::{editor::editor_state::EditorState, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::concurrency::thread::spawn_thread, state::{scene::{components::{material::{Material, TextureType}, mesh::Mesh}, scene::{Scene, SceneLoadState}, utilities::scene_utils::execute_on_state_mut, scene_controller::scene_controller::{ControllerPhase, ControllerUiContext}}, state::State}};
 
 use super::dialogs::load_texture_dialog;
 
@@ -84,6 +84,42 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
 
         ui.label(RichText::new("◼ geometry").strong());
         ui.label(format!(" ⚫ meshes: {}", meshes_amout));
+    });
+
+    // Loading
+    collapse_with_title(ui, "scene_loading", true, "⬇ Loading", None, |ui|
+    {
+        let (state_text, color) = match scene.load_state
+        {
+            SceneLoadState::Loaded => ("loaded", Color32::LIGHT_GREEN),
+            SceneLoadState::Loading => ("loading ...", Color32::YELLOW),
+            SceneLoadState::Unloaded => ("not loaded", ui.visuals().weak_text_color()),
+        };
+        ui.horizontal(|ui|
+        {
+            ui.label("state:");
+            ui.label(RichText::new(state_text).color(color));
+        });
+
+        ui.checkbox(&mut scene.preload, "Load at start").on_hover_text("loaded with the project even when it is not the active scene - otherwise it loads when it becomes active (or State::load_scene)");
+
+        let scene_id = scene.id;
+        ui.horizontal(|ui|
+        {
+            if ui.add_enabled(scene.load_state == SceneLoadState::Unloaded, egui::Button::new("⬇ Load")).on_hover_text("load the content without activating the scene").clicked()
+            {
+                execute_on_state_mut(main_queue.clone(), Box::new(move |state| { state.load_scene(scene_id); }));
+            }
+
+            let can_unload = scene.load_state == SceneLoadState::Loaded && !scene.active && scene.source.is_some();
+            let unload = ui.add_enabled(can_unload, egui::Button::new("⬆ Unload"))
+                .on_hover_text("frees the content (ram + vram) - unsaved changes of this scene are lost, it loads again from its file")
+                .on_disabled_hover_text("only a loaded, not active scene with a file can be unloaded");
+            if unload.clicked()
+            {
+                editor_state.request_unload_scene(scene_id, &scene.name);
+            }
+        });
     });
 
     // Extras

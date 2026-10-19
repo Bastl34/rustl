@@ -9,6 +9,7 @@ use nalgebra::{Point2, Point3, Vector3};
 use crate::{gui::editor::gizmo::hide_gizmos, state::{project::{loader::apply_project_settings, project::{ProjectData, ProjectSettings}}, scene::node::NodeSettings}};
 use crate::{console_log, gui::editor::{helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::{RunMode, State}}};
 use crate::gui::editor::ui::export::ExportDialog;
+use crate::state::{scene::camera::CameraProjectionType, state::ENGINE_INTERNAL_TAG_PREFX};
 use crate::gui::editor::project_code::ProjectCode;
 use crate::gui::editor::ui::code_editor::CodeEditor;
 use crate::helper::console_log::LogSource;
@@ -222,6 +223,12 @@ pub struct EditorState
     pub right_panel_open: bool,
     pub bottom_panel_open: bool,
 
+    // editor camera poses (scene id, camera id, eye, dir, up, fovy) from before the play pause - restored on resume
+    pub inspect_saved_cameras: Vec<(u32, u32, Point3<f32>, Vector3<f32>, Vector3<f32>, f32)>,
+
+    // the running mode switched fullscreen on, so stop switches it off again
+    pub run_set_fullscreen: bool,
+
     pub recent_projects: RecentProjectsData,
     pub settings: EditorSettings,
 
@@ -360,6 +367,9 @@ pub struct EditorState
     pub highlighted_gizmo_id: Option<u32>,
 
     pub open_scene_tabs: Vec<u32>,
+
+    // the active scene of the last frame - a change unloads the others (settings.unload_inactive_scenes)
+    pub last_active_scene: Option<u32>,
 }
 
 impl EditorState
@@ -379,6 +389,9 @@ impl EditorState
             left_panel_open: true,
             right_panel_open: true,
             bottom_panel_open: true,
+
+            inspect_saved_cameras: vec![],
+            run_set_fullscreen: false,
 
             recent_projects: RecentProjectsData::new(),
             settings: EditorSettings::new(),
@@ -516,6 +529,7 @@ impl EditorState
             },
             highlighted_gizmo_id: None,
             open_scene_tabs: vec![],
+            last_active_scene: None,
         };
 
         state
@@ -683,7 +697,7 @@ impl EditorState
         // ******************** hzb image ********************
         if let Some(show_hzb_image_mip) = state.debug.show_hzb_image
         {
-            let run_mode = state.run_mode;
+            let run_mode = state.view_run_mode();
             let scene = self.get_debug_scene(state);
 
             if let Some(scene) = scene
@@ -1038,6 +1052,33 @@ impl EditorState
         self.selected_gizmo = None;
     }
 
+    // unloading drops unsaved changes of the scene (it loads again from its file) - save first, drop or cancel
+    pub fn request_unload_scene(&mut self, scene_id: u32, scene_name: &str)
+    {
+        let message = format!("Unloading '{}' frees its content - unsaved changes of this scene are lost, it loads again from its file.\n\nSave the project first?", scene_name);
+        self.show_save_changes_dialog("Unload Scene", &message, move |editor_state, state|
+        {
+            editor_state.de_select_scene_items(scene_id);
+            state.unload_scene(scene_id);
+        });
+    }
+
+    // the content of the scene goes away (unload) - the scene itself stays selectable
+    pub fn de_select_scene_items(&mut self, scene_id: u32)
+    {
+        self.hierarchy_multi_select.clear();
+
+        if self.selected_scene_id != Some(scene_id) || self.selected_type == SelectionType::None
+        {
+            return;
+        }
+
+        self.selected_object.clear();
+        self.selected_type = SelectionType::None;
+        self.selected_gizmo = None;
+        self.settings_panel = SettingsPanel::Scene;
+    }
+
     pub fn de_select_current_item_from_scene(&mut self, scene: &mut Scene)
     {
         if self.selected_scene_id == None
@@ -1139,6 +1180,7 @@ impl EditorState
 
         let was_running = state.run_mode.is_running();
 
+        self.restore_inspect_cameras(state);
         state.set_run_mode(run_mode);
 
         let play_mode = run_mode == RunMode::Play;
@@ -1151,6 +1193,7 @@ impl EditorState
             if fullscreen && !*state.rendering.fullscreen.get_ref()
             {
                 state.rendering.fullscreen.set(true);
+                self.run_set_fullscreen = true;
             }
 
             if play_mode
@@ -1159,22 +1202,90 @@ impl EditorState
                 hide_gizmos(state); // TODO: hide grid and other editor stuff too
             }
         }
-        // end fullscreen if needed
-        else if was_running && *state.rendering.fullscreen.get_ref()
+        // end fullscreen only if the run turned it on
+        else if was_running
         {
-            state.rendering.fullscreen.set(false);
+            if self.run_set_fullscreen && *state.rendering.fullscreen.get_ref()
+            {
+                state.rendering.fullscreen.set(false);
+            }
+
+            self.run_set_fullscreen = false;
         }
     }
 
     // Freezing means you want to look around, so the editor comes back while it lasts.
     pub fn set_paused(&mut self, state: &mut State, paused: bool)
     {
+        if state.pause == paused
+        {
+            return;
+        }
+
         state.pause = paused;
 
         if state.run_mode == RunMode::Play
         {
             self.visible = paused;
             state.io.input_manager.mouse.visible.set(paused);
+
+            if paused
+            {
+                self.take_over_game_camera(state);
+            }
+            else
+            {
+                self.restore_inspect_cameras(state);
+                self.de_select_current_item(state);
+                hide_gizmos(state);
+            }
+        }
+    }
+
+    // While paused the editor cameras render, so they start exactly where the game camera is.
+    fn take_over_game_camera(&mut self, state: &mut State)
+    {
+        self.inspect_saved_cameras.clear();
+
+        for scene in &mut state.scenes
+        {
+            if !scene.active { continue; }
+
+            let Some(game_cam) = scene.get_active_camera(RunMode::Play) else { continue; };
+            let game = game_cam.get_data();
+            let (game_eye_pos, game_dir, game_up, game_fovy) = (game.eye_pos, game.dir, game.up, game.fovy);
+
+            let scene_id = scene.id;
+            for cam in &mut scene.cameras
+            {
+                if !cam.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX) || cam.get_data().projection_type != CameraProjectionType::Perspective { continue; }
+
+                let data = cam.get_data();
+                self.inspect_saved_cameras.push((scene_id, cam.id, data.eye_pos, data.dir, data.up, data.fovy));
+
+                let data = cam.get_data_mut().get_mut();
+                data.eye_pos = game_eye_pos;
+                data.dir = game_dir;
+                data.up = game_up;
+                data.fovy = game_fovy;
+                cam.init_matrices();
+            }
+        }
+    }
+
+    fn restore_inspect_cameras(&mut self, state: &mut State)
+    {
+        for (scene_id, cam_id, eye_pos, dir, up, fovy) in self.inspect_saved_cameras.drain(..)
+        {
+            let Some(scene) = state.find_scene_by_id_mut(scene_id) else { continue; };
+            let Some(cam) = scene.cameras.iter_mut().find(|cam| cam.id == cam_id) else { continue; };
+
+            let data = cam.get_data_mut().get_mut();
+            data.eye_pos = eye_pos;
+            data.dir = dir;
+            data.up = up;
+            data.fovy = fovy;
+            cam.init_matrices();
         }
     }
 

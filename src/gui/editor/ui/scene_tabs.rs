@@ -68,12 +68,19 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
                     .map(|s| s.active)
                     .unwrap_or(false);
 
+                let is_loaded = state.is_scene_loaded(scene_id);
+
                 let is_selected = editor_state.selected_scene_id == Some(scene_id)
                     && editor_state.selected_object.is_empty()
                     && editor_state.selected_type == SelectionType::None;
 
                 let mut label = egui::RichText::new(format!("🎬  {}", scene_name)).size(SCENE_TAB_FONT_SIZE);
-                if is_active
+                if !is_loaded
+                {
+                    // not (yet) loaded - a click loads and activates it
+                    label = label.color(ui.visuals().weak_text_color());
+                }
+                else if is_active
                 {
                     // brighter blue + bold so the active scene clearly stands out
                     label = label.color(Color32::from_rgb(170, 230, 255)).strong();

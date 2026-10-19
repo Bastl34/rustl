@@ -48,7 +48,14 @@ fn get_icon() -> Option<winit::window::Icon>
         use image::GenericImageView;
         use winit::window::Icon;
 
+        // builds without the editor: icon.png next to the started .project (scripts/build.mjs takes it for the exe too), else the rustl logo
         let icon_path = crate::resources::resources::get_path("designs/logo/logo.png");
+        #[cfg(not(feature = "editor"))]
+        let icon_path = MainInterface::startup_project()
+            .and_then(|project| std::path::Path::new(&project).parent().map(|dir| dir.join("icon.png").to_string_lossy().replace('\\', "/")))
+            .filter(|path| crate::resources::resources::exists(path))
+            .map_or(icon_path, |path| crate::resources::resources::get_path(&path));
+
         let icon = match File::open(icon_path)
         {
             Ok(file) =>
@@ -58,6 +65,8 @@ fn get_icon() -> Option<winit::window::Icon>
                 {
                     Ok(img) =>
                     {
+                        // a window icon needs no more than 256 px
+                        let img = if img.width() > 256 { img.resize(256, 256, image::imageops::FilterType::Triangle) } else { img };
                         let rgba = img.to_rgba8();
                         let (width, height) = img.dimensions();
                         match Icon::from_rgba(rgba.into_raw(), width, height)

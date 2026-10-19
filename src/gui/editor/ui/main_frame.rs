@@ -21,7 +21,7 @@ use crate::state::scene::components::component::ComponentItem;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::state::State;
 use crate::gui::editor::editor_state::{EditorState, SettingsPanel};
-use crate::state::scene::scene::Scene;
+use crate::state::scene::scene::{Scene, SceneLoadState};
 use egui::{Visuals, Style, ScrollArea, Ui, RichText, Color32};
 use web_time::Instant;
 
@@ -56,8 +56,10 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
         ..Style::default()
     };
 
-    let loading = *editor_state.loading.read().unwrap();
-    let loading_progress: f32 = *editor_state.loading_progress.read().unwrap();
+    // the editor loads (project, assets) or scenes load on demand (activated, State::load_scene)
+    let (scenes_loading, scenes_progress) = { let status = state.scene_loading.read().unwrap(); (status.is_loading(), status.progress()) };
+    let loading = *editor_state.loading.read().unwrap() || scenes_loading;
+    let loading_progress: f32 = if scenes_loading { scenes_progress } else { *editor_state.loading_progress.read().unwrap() };
 
     let frame = egui::Frame::side_top_panel(&style);
 
@@ -596,7 +598,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 {
                     btn = btn.sense(egui::Sense::hover());
                 }
-                let hover = if supported { "toggle wireframe mode" } else { "wireframe mode not supported by this GPU/backend" };
+                let hover = if supported { "toggle wireframe mode (Ctrl+4)" } else { "wireframe mode not supported by this GPU/backend" };
                 if ui.add(btn).on_hover_text(hover).clicked() && supported
                 {
                     state.rendering.debug.wireframe_mode = !state.rendering.debug.wireframe_mode;
@@ -605,7 +607,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
             ui.separator();
 
-            // bounding volume rendering (cycles off -> spheres -> boxes)
+            // bounding volume rendering (cycles off -> boxes -> spheres)
             {
                 let boxes = state.rendering.debug.draw_bounding_boxes;
                 let spheres = state.rendering.debug.draw_bounding_spheres;
@@ -626,7 +628,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 {
                     btn = btn.sense(egui::Sense::hover());
                 }
-                let hover = if supported { "toggle bounding volume rendering (off -> spheres -> boxes)" } else { "bounding volume rendering not supported by this GPU/backend" };
+                let hover = if supported { "toggle bounding volume rendering (off -> boxes -> spheres, Ctrl+3)" } else { "bounding volume rendering not supported by this GPU/backend" };
                 if ui.add(btn).on_hover_text(hover).clicked() && supported
                 {
                     match (boxes, spheres)
@@ -647,7 +649,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 {
                     btn = btn.sense(egui::Sense::hover());
                 }
-                let hover = if supported { "toggle physics volume rendering (colliders and character capsules)" } else { "physics volume rendering not supported by this GPU/backend" };
+                let hover = if supported { "toggle physics volume rendering (colliders and character capsules, Ctrl+1)" } else { "physics volume rendering not supported by this GPU/backend" };
                 if ui.add(btn).on_hover_text(hover).clicked() && supported
                 {
                     state.rendering.debug.draw_physics_volumes = !state.rendering.debug.draw_physics_volumes;
@@ -663,7 +665,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 {
                     btn = btn.sense(egui::Sense::hover());
                 }
-                let hover = if supported { "toggle light and camera rendering (light icons, camera frustums)" } else { "light and camera rendering not supported by this GPU/backend" };
+                let hover = if supported { "toggle light and camera rendering (light icons, camera frustums, Ctrl+2)" } else { "light and camera rendering not supported by this GPU/backend" };
                 if ui.add(btn).on_hover_text(hover).clicked() && supported
                 {
                     state.rendering.debug.draw_light_camera_volumes = !state.rendering.debug.draw_light_camera_volumes;
@@ -676,7 +678,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             {
                 let img = egui::Image::new(egui::include_image!("../../../../resources/icons/xray.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
                 let btn = egui::Button::image(img).selected(state.rendering.debug.xray_mode).frame(true);
-                if ui.add(btn).on_hover_text("toggle x-ray mode (see through objects)").clicked()
+                if ui.add(btn).on_hover_text("toggle x-ray mode (see through objects, Ctrl+5)").clicked()
                 {
                     state.rendering.debug.xray_mode = !state.rendering.debug.xray_mode;
                 }
@@ -1091,8 +1093,21 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         let amounts = SceneAmounts::new(scene, editor_state.show_internal_entries);
         let id = format!("scene_{}", scene_id);
         let ui_id = ui.make_persistent_id(id.clone());
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, scene.active).show_header(ui, |ui|
+        // like show_header, but a scene without content has nothing to expand: its arrow is disabled
+        let loaded = scene.load_state != SceneLoadState::Unloaded;
+        let mut collapsing = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, scene.active);
+        if !loaded
         {
+            collapsing.set_open(false);
+        }
+
+        let header = ui.horizontal(|ui|
+        {
+            let item_spacing = ui.spacing().item_spacing;
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.add_enabled_ui(loaded, |ui| collapsing.show_toggle_button(ui, egui::collapsing_header::paint_default_icon));
+            ui.spacing_mut().item_spacing = item_spacing;
+
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None { selection = true; } else { selection = false; }
@@ -1100,7 +1115,12 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 let total = amounts.total();
                 let mut heading = RichText::new(fit_hierarchy_heading(ui, "🎬 ", &scene.name, "", hierarchy_count_width(ui, total))).strong();
 
-                if scene.active
+                let load_state = scene.load_state;
+                if load_state != SceneLoadState::Loaded
+                {
+                    heading = heading.color(ui.visuals().weak_text_color());
+                }
+                else if scene.active
                 {
                     heading = heading.color(Color32::LIGHT_BLUE);
                 }
@@ -1108,7 +1128,13 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 let mut toggle = ui.toggle_value(&mut selection, heading);
                 paint_hierarchy_count(ui, toggle.rect, total);
 
-                toggle = toggle.on_hover_text(format!("Scene ID: {}\nobjects: {}, cameras: {}, lights: {}, materials: {}", scene.id, amounts.objects, amounts.cameras, amounts.lights, amounts.materials));
+                let load_info = match load_state
+                {
+                    SceneLoadState::Unloaded => "\nnot loaded - double click to load and activate it",
+                    SceneLoadState::Loading => "\nloading ...",
+                    SceneLoadState::Loaded => "",
+                };
+                toggle = toggle.on_hover_text(format!("Scene ID: {}\nobjects: {}, cameras: {}, lights: {}, materials: {}{}", scene.id, amounts.objects, amounts.cameras, amounts.lights, amounts.materials, load_info));
 
                 if toggle.double_clicked()
                 {
@@ -1148,6 +1174,27 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                         {
                             sate.set_active_scene(scene_id);
                         }));
+                    }
+
+                    if load_state == SceneLoadState::Unloaded && ui.button("⬇ Load").on_hover_text("load the content without activating the scene").clicked()
+                    {
+                        ui.close();
+                        execute_on_state_mut(exec_queue.clone(),  Box::new(move |sate|
+                        {
+                            sate.load_scene(scene_id);
+                        }));
+                    }
+
+                    if load_state == SceneLoadState::Loaded
+                    {
+                        let unload = ui.add_enabled(!scene.active && scene.source.is_some(), egui::Button::new("⬆ Unload"))
+                            .on_hover_text("frees the content (ram + vram) - unsaved changes of this scene are lost, it loads again from its file")
+                            .on_disabled_hover_text("the active scene and scenes without a file can not be unloaded");
+                        if unload.clicked()
+                        {
+                            ui.close();
+                            editor_state.request_unload_scene(scene_id, &scene.name);
+                        }
                     }
 
                     ui.separator();
@@ -1194,7 +1241,9 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                     }
                 });
             });
-        }).body(|ui|
+        });
+
+        collapsing.show_body_indented(&header.response, ui, |ui|
         {
             //self.build_node_list(ui, &scene.nodes, scene_id, true);
             create_hierarchy_type_entries(state, editor_state, exec_queue.clone(), scene, &amounts, ui);

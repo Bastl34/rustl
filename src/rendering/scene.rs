@@ -989,8 +989,8 @@ impl Scene
                             vertex_buffers_updated = true; // index counts are baked into the draw slots
                         }
 
-                        // morph target
-                        if mesh_data_changed
+                        // morph target - also when a node shares a mesh resource whose vertex buffer exists already
+                        if mesh_data_changed || mesh.morph_target_render_item.is_none()
                         {
                             //let vertex_buffer = VertexBuffer::new(wgpu, "vertex buffer", mesh.get_data());
                             //mesh.get_base_mut().render_item = Some(Box::new(vertex_buffer));
@@ -1026,9 +1026,10 @@ impl Scene
                         if let Some(weights) = weights
                         {
                             component_downcast_mut!(mesh, crate::state::scene::components::mesh::Mesh);
-                            let morph_render_item = get_render_item_mut::<MorphTarget>(mesh.morph_target_render_item.as_mut().unwrap());
-
-                            morph_render_item.update_buffer(wgpu, &weights);
+                            if let Some(morph_render_item) = mesh.morph_target_render_item.as_mut()
+                            {
+                                get_render_item_mut::<MorphTarget>(morph_render_item).update_buffer(wgpu, &weights);
+                            }
                         }
                     }
                 }
@@ -3142,7 +3143,7 @@ pub fn render_scene_offscreen_to_image(wgpu: &mut WGpu, state: &mut State, scene
     render_scene.distance_sorting = state.rendering.distance_sorting;
     render_scene.frustum_culling = state.rendering.frustum_culling;
     render_scene.occlusion_culling = false;
-    render_scene.run_mode = state.run_mode;
+    render_scene.run_mode = state.view_run_mode();
     render_scene.update(wgpu, state, scene);
 
     // no debug bounding volumes in offscreen renders (material thumbnails etc.)

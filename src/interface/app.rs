@@ -37,6 +37,12 @@ pub trait App
         let _ = (context, scene_id);
     }
 
+    // State::unload_scene emptied a scene - drop what was kept of its nodes, cameras, ...
+    fn scene_unloaded(&mut self, context: &mut Context, scene_id: u32)
+    {
+        let _ = (context, scene_id);
+    }
+
     fn allow_window_minimized_updates(&self) -> bool
     {
         false

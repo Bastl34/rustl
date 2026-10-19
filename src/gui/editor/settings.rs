@@ -6,7 +6,11 @@ const EDITOR_SETTINGS_FILE: &str = "data/editor_settings.json";
 #[derive(Serialize, Deserialize)]
 pub struct EditorSettings
 {
-    pub load_last_recent: bool
+    pub load_last_recent: bool,
+
+    // edit mode: activating a scene unloads the other loaded ones (except "Load at start" ones)
+    #[serde(default)]
+    pub unload_inactive_scenes: bool,
 }
 
 impl EditorSettings
@@ -15,7 +19,8 @@ impl EditorSettings
     {
         let mut settings = Self
         {
-            load_last_recent: false
+            load_last_recent: false,
+            unload_inactive_scenes: false,
         };
 
         settings.load();
@@ -44,6 +49,8 @@ impl EditorSettings
     pub fn ui(&mut self, ui: &mut egui::Ui)
     {
         ui.checkbox(&mut self.load_last_recent, "Load last recent project on startup");
+        ui.checkbox(&mut self.unload_inactive_scenes, "Unload other scenes when activating a scene")
+            .on_hover_text("saves ram + vram - unsaved changes of the unloaded scenes are lost, scenes with \"Load at start\" stay loaded");
 
         if ui.button("Save settings").clicked()
         {
