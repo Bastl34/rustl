@@ -2,19 +2,21 @@
 
 use std::sync::{Arc, RwLock};
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::math::{approx_equal, approx_zero}, input::{input_manager::InputManager, keyboard::{get_keys_as_string_vec, Key}}, state::scene::node::NodeItem};
+use serde::{Deserialize, Serialize};
+
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, helper::math::{approx_equal, approx_zero}, input::keyboard::{get_keys_as_string_vec, Key}, state::{scene::node::NodeItem, state::InputOutput}};
 use crate::helper::easing::{Easing, easing, get_easing_as_string_vec};
 
 use super::{component::{Component, ComponentBase}, morph_target::MorphTarget};
 
 const INFO_STRING: &str = "The changes are applies on the Morph Target Component.\nThey are applied for each frame.\nIf there is no Morph Target Component: Nothing is happening.";
 
-
+#[derive(Serialize, Deserialize)]
 pub struct MorphTargetAnimation
 {
     base: ComponentBase,
 
-    pub target_id: Option<u64>,
+    pub target_id: Option<u32>,
 
     pub looped: bool,
     pub ping_pong: bool,
@@ -34,7 +36,7 @@ pub struct MorphTargetAnimation
 
 impl MorphTargetAnimation
 {
-    pub fn new( name: &str, target_id: u64, from: f32, to: f32, speed: f32, looped: bool) -> MorphTargetAnimation
+    pub fn new( name: &str, target_id: u32, from: f32, to: f32, speed: f32, looped: bool) -> MorphTargetAnimation
     {
         let mut animation = MorphTargetAnimation
         {
@@ -98,11 +100,13 @@ impl MorphTargetAnimation
     }
 }
 
+#[typetag::serde]
 impl Component for MorphTargetAnimation
 {
     component_impl_default!();
     component_impl_no_update_instance!();
     component_impl_no_cleanup_node!();
+    component_impl_no_post_deserialization!();
 
     fn instantiable() -> bool
     {
@@ -160,7 +164,7 @@ impl Component for MorphTargetAnimation
         Some(Arc::new(RwLock::new(Box::new(animation))))
     }
 
-    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, _time: u128, frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, io: &mut InputOutput, _time: u128, frame_scale: f32, _frame: u64)
     {
         if self.target_id.is_none() || !self.base.is_enabled
         {
@@ -169,7 +173,7 @@ impl Component for MorphTargetAnimation
 
         if let Some(keyboard_key) = self.keyboard_key
         {
-            if !input_manager.keyboard.is_holding(Key::from_repr(keyboard_key).unwrap())
+            if !io.input_manager.keyboard.is_holding(Key::from_repr(keyboard_key).unwrap())
             {
                 return;
             }
@@ -276,7 +280,7 @@ impl Component for MorphTargetAnimation
         let mut target_id = self.target_id.unwrap_or(0);
         let mut target_name = "".to_string();
 
-        let mut morph_targets: Vec<(u64, String)> = vec![];
+        let mut morph_targets: Vec<(u32, String)> = vec![];
 
         if let Some(node) = node
         {

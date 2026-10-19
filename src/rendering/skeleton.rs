@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
 use nalgebra::Matrix4;
-use wgpu::{BindGroup, util::DeviceExt};
+use wgpu::{util::DeviceExt};
 use colored::Colorize;
 
-use crate::{state::helper::render_item::RenderItem, render_item_impl_default};
+use crate::{console_error, render_item_impl_default, state::helper::render_item::RenderItem};
 
 use super::{wgpu::WGpu, helper::buffer::create_empty_buffer};
 
@@ -32,7 +32,7 @@ impl SkeletonUniform
             if i + 1 > MAX_JOINTS
             {
                 let error = "MAX_JOINTS reached - try to increase MAX_JOINTS or reduce joints in skeleton".to_string();
-                println!("{}", error.red());
+                console_error!("{}", error.red());
                 break;
             }
 
@@ -53,14 +53,19 @@ pub struct SkeletonBuffer
 {
     pub name: String,
 
-    buffer: wgpu::Buffer,
-
-    pub bind_group: Option<BindGroup>
+    buffer: wgpu::Buffer
 }
+
+crate::render_item_send_sync!(SkeletonBuffer);
 
 impl RenderItem for SkeletonBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+    }
 }
 
 impl SkeletonBuffer
@@ -72,8 +77,7 @@ impl SkeletonBuffer
         let mut buffer = SkeletonBuffer
         {
             name: name.to_string(),
-            buffer: empty_buffer,
-            bind_group: None
+            buffer: empty_buffer
         };
 
         buffer.to_buffer(wgpu, joint_matrices);
@@ -88,8 +92,7 @@ impl SkeletonBuffer
         let mut buffer = SkeletonBuffer
         {
             name: "empty".to_string(),
-            buffer: empty_buffer,
-            bind_group: None
+            buffer: empty_buffer
         };
 
         let joint_matrices: Vec<Matrix4<f32>> = vec![];

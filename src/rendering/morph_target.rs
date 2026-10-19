@@ -1,7 +1,7 @@
 use image::EncodableLayout;
 use wgpu::{BindGroupEntry, BindGroupLayoutEntry, util::DeviceExt};
 
-use crate::{state::{helper::render_item::RenderItem, scene::components::mesh::MeshData}, render_item_impl_default};
+use crate::{console_warning, render_item_impl_default, state::{helper::render_item::RenderItem, resources::mesh_resource::MeshResourceData}};
 
 use super::wgpu::WGpu;
 
@@ -58,14 +58,21 @@ pub struct MorphTarget
     buffer: wgpu::Buffer,
 }
 
+crate::render_item_send_sync!(MorphTarget);
+
 impl RenderItem for MorphTarget
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+    }
 }
 
 impl MorphTarget
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, mesh_data: &MeshData) -> MorphTarget
+    pub fn new(wgpu: &mut WGpu, name: &str, mesh_data: &MeshResourceData) -> MorphTarget
     {
         let device = wgpu.device();
 
@@ -85,7 +92,7 @@ impl MorphTarget
 
         if targets > max_tex_array_size
         {
-            println!("WARNING: can not use more then {} morph targets", max_tex_array_size);
+            console_warning!("can not use more then {} morph targets", max_tex_array_size);
         }
 
         let texture_name = format!("{} Morph Texture Array", name);
@@ -200,7 +207,7 @@ impl MorphTarget
         }
     }
 
-    pub fn get_morph_targets(mesh_data: &MeshData) -> u32
+    pub fn get_morph_targets(mesh_data: &MeshResourceData) -> u32
     {
         let pos_amount = mesh_data.morph_target_positions.len();
         let normal_amount = mesh_data.morph_target_normals.len();
@@ -209,7 +216,7 @@ impl MorphTarget
         pos_amount.max(normal_amount).max(tangent_amount) as u32
     }
 
-    pub fn update_texture_buffer(&mut self, wgpu: &mut WGpu, mesh_data: &MeshData)
+    pub fn update_texture_buffer(&mut self, wgpu: &mut WGpu, mesh_data: &MeshResourceData)
     {
         let queue = wgpu.queue_mut();
 
@@ -328,6 +335,16 @@ impl MorphTarget
     pub fn get_buffer(&self) -> &wgpu::Buffer
     {
         &self.buffer
+    }
+
+    pub fn texture_gpu_usage(&self) -> u64
+    {
+        let bytes_per_texel = (FLOATS_PER_PIXEL * std::mem::size_of::<f32>()) as u64;
+
+        self.texture.width() as u64
+        * self.texture.height() as u64
+        * self.texture.depth_or_array_layers() as u64
+        * bytes_per_texel
     }
 
     pub fn get_bind_group_layout_entry(index_start: u32) -> BindGroupLayoutEntry

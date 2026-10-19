@@ -1,0 +1,23 @@
+{
+  "ambient_color": [0.0, 0.0, 0.0],
+  "base_color": [0.4, 0.24, 0.12],
+  "specular_color": [0.25, 0.2, 0.15],
+  "highlight_color": [0.0, 1.0, 0.0],
+  "locked_color": [1.0, 0.0, 0.0],
+  "blend_mode": "Opaque",
+  "alpha": 1.0,
+  "shininess": 28.0,
+  "reflectivity": 0.02,
+  "refraction_index": 1.0,
+  "ibl_diffuse_intensity": 1.0,
+  "normal_map_strength": 1.0,
+  "unlit_shading": false,
+  "cast_shadow": true,
+  "receive_shadow": true,
+  "shadow_softness": 0.01,
+  "roughness": 0.6,
+  "smooth_shading": true,
+  "reflection_only": false,
+  "backface_culling": true,
+  "allow_xray": true
+}

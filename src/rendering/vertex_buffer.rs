@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::{render_item_impl_default, state::{helper::render_item::RenderItem, scene::components::mesh::MeshData}};
+use crate::{render_item_impl_default, state::{helper::render_item::RenderItem, resources::mesh_resource::MeshResourceData}};
 
 use super::wgpu::WGpu;
 use nalgebra::{Point2, Vector3};
@@ -21,9 +21,11 @@ pub struct Vertex
 
     joints: [u32; 4],
     weights: [f32; 4],
+
+    color: [f32; 4],
 }
 
-pub const VERTEX_ATTRIBUTES_AMOUNT: usize = 8;
+pub const VERTEX_ATTRIBUTES_AMOUNT: usize = 9;
 
 impl Vertex
 {
@@ -39,7 +41,9 @@ impl Vertex
         5 => Float32x3,
 
         6 => Uint32x4,
-        7 => Float32x4
+        7 => Float32x4,
+
+        8 => Float32x4
     ];
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static>
@@ -64,14 +68,21 @@ pub struct VertexBuffer
     index_buffer: wgpu::Buffer,
 }
 
+crate::render_item_send_sync!(VertexBuffer);
+
 impl RenderItem for VertexBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.vertex_buffer.size() + self.index_buffer.size()
+    }
 }
 
 impl VertexBuffer
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, mesh_data: &MeshData) -> VertexBuffer
+    pub fn new(wgpu: &mut WGpu, name: &str, mesh_data: &MeshResourceData) -> VertexBuffer
     {
         let device = wgpu.device();
 
@@ -153,6 +164,9 @@ impl VertexBuffer
                 weights[3] = weights_data[3];
             }
 
+            // no vertex colors -> white (neutral when multiplied)
+            let color = mesh_data.colors.get(i).copied().unwrap_or([1.0, 1.0, 1.0, 1.0]);
+
             vertices.push(Vertex
             {
                 position: [v.x, v.y, v.z],
@@ -173,7 +187,8 @@ impl VertexBuffer
                 tangent: [tangent.x, tangent.y, tangent.z],
                 bitangent: [bitangent.x, bitangent.y, bitangent.z],
                 joints,
-                weights
+                weights,
+                color
             });
         }
 

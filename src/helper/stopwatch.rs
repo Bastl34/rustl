@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::time::{Instant, Duration};
+use web_time::{Instant, Duration};
 
 pub struct StopWatch
 {
@@ -74,6 +74,11 @@ impl StopWatch
             return self.elapsed + start.elapsed();
         }
         self.elapsed
+    }
+
+    pub fn get_time_ms(&self) -> u128
+    {
+        self.get_time().as_millis()
     }
 
     pub fn is_running(&self) -> bool

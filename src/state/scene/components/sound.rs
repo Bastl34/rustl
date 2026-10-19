@@ -1,25 +1,36 @@
 #![allow(dead_code)]
 
-use std::sync::{Arc, RwLock};
+use std::{sync::{Arc, RwLock}};
 
 use egui::RichText;
-use instant::Duration;
 use nalgebra::{distance, Point3};
-use rodio::{Sink, Source, SpatialSink};
+use rodio::{Player, Source, SpatialPlayer};
+use serde::{Deserialize, Serialize};
+use web_time::Duration;
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, helper::{change_tracker::ChangeTracker, math::approx_zero}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::scene::{node::{InstanceItemArc, NodeItem}, sound_source::SoundSourceItem}};
-use crate::state::scene::sound_source::Decodable;
+use crate::{component_impl_default, component_impl_no_cleanup_node, console_error, console_warning, helper::{change_tracker::ChangeTracker, math::approx_zero, option_or_id::OptionOrId}, output::audio_device::AudioDeviceItem, state::{resources::sound_source::{SoundSourceItem, find_sound_source}, scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
+use crate::state::resources::sound_source::Decodable;
+use crate::state::scene::exporter::serialization_helper;
 
 use super::component::{Component, ComponentBase, ComponentItem};
 
-#[derive(PartialEq, Copy, Clone)]
+// which volume of the audio device a sound follows besides the master volume - games set them from their options
+#[derive(PartialEq, Copy, Clone, Debug, Default, Serialize, Deserialize)]
+pub enum SoundCategory
+{
+    #[default]
+    Effects,
+    Music,
+}
+
+#[derive(PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum SoundType
 {
     Spatial,
     Stereo
 }
 
-#[derive( Copy, Clone)]
+#[derive( Copy, Clone, Serialize, Deserialize)]
 pub struct SoundData
 {
     pub sound_type: SoundType,
@@ -30,23 +41,47 @@ pub struct SoundData
 
     pub spatial_distance_scale: f32,
 
-    pub delete_after_playback: bool
-}
+    pub delete_after_playback: bool,
 
+    #[serde(default)]
+    pub category: SoundCategory,
+}
+#[derive(Serialize, Deserialize)]
 pub struct Sound
 {
     base: ComponentBase,
 
     data: ChangeTracker<SoundData>,
 
-    pub sound_source: Option<SoundSourceItem>,
+    #[serde(serialize_with = "serialization_helper::serialize_sound_source", deserialize_with = "serialization_helper::deserialize_sound_source")]
+    pub sound_source: OptionOrId<SoundSourceItem>,
     pub duration: f32,
 
+    #[serde(skip, default)]
     audio_device: Option<AudioDeviceItem>,
 
-    sink: Option<Sink>,
-    sink_spatial: Option<SpatialSink>,
+    #[serde(skip, default)]
+    player: Option<Player>,
+
+    #[serde(skip, default)]
+    player_spatial: Option<SpatialPlayer>,
+
+    // set by a controller every frame on top of volume and speed - not saved
+    #[serde(skip, default = "default_one")]
+    runtime_gain: f32,
+    #[serde(skip, default = "default_one")]
+    runtime_pitch: f32,
+    #[serde(skip, default)]
+    runtime_changed: bool,
+    // emitter, left ear, right ear of the last update - a new spatial player starts there or far away (between the ears it clicked at full volume)
+    #[serde(skip, default)]
+    spatial_positions: Option<[[f32; 3]; 3]>,
+    // stop() only flags the rodio player (it empties on the mixer thread) - a start() after it needs a new player
+    #[serde(skip, default)]
+    stop_requested: bool,
 }
+
+fn default_one() -> f32 { 1.0 }
 
 impl Sound
 {
@@ -56,7 +91,7 @@ impl Sound
         {
             base: ComponentBase::new(name.to_string(), "Sound".to_string(), "🔊".to_string()),
 
-            sound_source: Some(sound_source.clone()),
+            sound_source: OptionOrId::Some(sound_source.clone()),
             duration: 0.0,
 
             data: ChangeTracker::new(SoundData
@@ -69,12 +104,19 @@ impl Sound
                 spatial_distance_scale: 1.0,
 
                 delete_after_playback: false,
+                category: SoundCategory::Effects,
             }),
 
             audio_device: None,
 
-            sink: None,
-            sink_spatial: None,
+            player: None,
+            player_spatial: None,
+
+            runtime_gain: 1.0,
+            runtime_pitch: 1.0,
+            runtime_changed: false,
+            spatial_positions: None,
+            stop_requested: false,
         };
 
         sound.set_sound_source(sound_source.clone());
@@ -88,7 +130,7 @@ impl Sound
         {
             base: ComponentBase::new(name.to_string(), "Sound".to_string(), "🔊".to_string()),
 
-            sound_source: None,
+            sound_source: OptionOrId::None,
             duration: 0.0,
 
             data: ChangeTracker::new(SoundData
@@ -100,13 +142,20 @@ impl Sound
 
                 spatial_distance_scale: 1.0,
 
-                delete_after_playback: false
+                delete_after_playback: false,
+                category: SoundCategory::Effects,
             }),
 
             audio_device: None,
 
-            sink: None,
-            sink_spatial: None,
+            player: None,
+            player_spatial: None,
+
+            runtime_gain: 1.0,
+            runtime_pitch: 1.0,
+            runtime_changed: false,
+            spatial_positions: None,
+            stop_requested: false,
         };
 
         sound
@@ -127,104 +176,123 @@ impl Sound
         &mut self.data
     }
 
+    // gain and pitch factor of a controller, e.g. the engine rpm - 1.0 plays the sound as set
+    pub fn set_runtime_modulation(&mut self, gain: f32, pitch: f32)
+    {
+        if self.runtime_gain != gain || self.runtime_pitch != pitch
+        {
+            self.runtime_gain = gain;
+            self.runtime_pitch = pitch;
+            self.runtime_changed = true;
+        }
+    }
+
     pub fn reset(&mut self)
     {
-        if let Some(sink) = &mut self.sink
+        if let Some(player) = &mut self.player
         {
-            sink.stop();
+            player.stop();
         }
 
-        if let Some(sink) = &mut self.sink_spatial
+        if let Some(player) = &mut self.player_spatial
         {
-            sink.stop();
+            player.stop();
         }
 
-        self.sink = None;
-        self.sink_spatial = None;
+        self.player = None;
+        self.player_spatial = None;
     }
 
     pub fn set_sound_source(&mut self, sound_source: SoundSourceItem)
     {
         self.reset();
+        self.stop_requested = false;
 
-        self.sound_source = Some(sound_source.clone());
+        self.sound_source = OptionOrId::Some(sound_source.clone());
         self.audio_device = Some(sound_source.read().unwrap().audio_device.clone());
 
         let sound_source = sound_source.read().unwrap();
         let audio_device = sound_source.audio_device.read().unwrap();
-        let stream_handle = audio_device.stream_handle.as_ref();
 
         let mut sink = None;
         let mut sink_spatial = None;
 
-        if let Some(stream_handle) = stream_handle
+        let data = self.data.get_ref();
+        if let Some(stream_arc) = audio_device.get_stream()
         {
-            let data = self.data.get_ref();
+            let stream = stream_arc.lock().unwrap();
 
             if data.sound_type == SoundType::Stereo
             {
-                let s = rodio::Sink::try_new(stream_handle).unwrap();
-                let decoder = sound_source.decoder();
-
-                if let Some(total_duration) = decoder.total_duration()
+                let s = rodio::Player::connect_new(stream.mixer());
+                if let Some(decoder) = sound_source.decoder()
                 {
-                    self.duration = (total_duration.as_millis() as f64 / 1000.0) as f32;
-                }
+                    if let Some(total_duration) = decoder.total_duration()
+                    {
+                        self.duration = total_duration.as_secs_f32();
+                    }
 
-                if data.looped
-                {
-                    s.append(decoder.repeat_infinite());
+                    if data.looped
+                    {
+                        s.append(decoder.repeat_infinite());
+                    }
+                    else
+                    {
+                        s.append(decoder);
+                    }
                 }
                 else
                 {
-                    s.append(decoder);
+                    console_error!("Sound: Unable to create decoder for sound source {}", sound_source.name);
                 }
-
                 s.pause();
-
                 sink = Some(s);
             }
             else
             {
-                let s = rodio::SpatialSink::try_new(stream_handle, [0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]).unwrap();
-                let decoder = sound_source.decoder();
-
-                if let Some(total_duration) = decoder.total_duration()
+                let [emitter, left, right] = self.spatial_positions.unwrap_or([[0.0, 0.0, 1.0e4], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]);
+                let s = rodio::SpatialPlayer::connect_new(stream.mixer(), emitter, left, right);
+                if let Some(decoder) = sound_source.decoder()
                 {
-                    self.duration = total_duration.as_secs_f32();
-                }
+                    if let Some(total_duration) = decoder.total_duration()
+                    {
+                        self.duration = total_duration.as_secs_f32();
+                    }
 
-                if data.looped
-                {
-                    s.append(decoder.repeat_infinite());
+                    if data.looped
+                    {
+                        s.append(decoder.repeat_infinite());
+                    }
+                    else
+                    {
+                        s.append(decoder);
+                    }
                 }
                 else
                 {
-                    s.append(decoder);
+                    console_error!("Sound: Unable to create decoder for sound source {}", sound_source.name);
                 }
-
                 s.pause();
-
                 sink_spatial = Some(s);
             }
         }
 
-        self.sink = sink;
-        self.sink_spatial = sink_spatial;
+        self.player = sink;
+        self.player_spatial = sink_spatial;
 
-        self._update(None, None, true);
+        self.update_state(None, None, true);
     }
 
     pub fn running(&self) -> bool
     {
-        if let Some(sink) = &self.sink
+        if let Some(player) = &self.player
         {
-            return !sink.is_paused() && !sink.empty();
+            return !player.is_paused() && !player.empty();
         }
 
-        if let Some(sink) = &self.sink_spatial
+        if let Some(player) = &self.player_spatial
         {
-            return !sink.is_paused() && !sink.empty();
+            return !player.is_paused() && !player.empty();
         }
 
         false
@@ -232,14 +300,14 @@ impl Sound
 
     pub fn stopped(&self) -> bool
     {
-        if let Some(sink) = &self.sink
+        if let Some(player) = &self.player
         {
-            return sink.empty();
+            return player.empty();
         }
 
-        if let Some(sink) = &self.sink_spatial
+        if let Some(player) = &self.player_spatial
         {
-            return sink.empty();
+            return player.empty();
         }
 
         false
@@ -247,59 +315,73 @@ impl Sound
 
     pub fn start(&mut self)
     {
-        if self.stopped()
+        if self.stopped() || self.stop_requested
         {
             self.set_sound_source(self.sound_source.clone().unwrap());
         }
 
-        if let Some(sink) = &mut self.sink
+        if let Some(player) = &mut self.player
         {
-            sink.play();
+            player.play();
         }
 
-        if let Some(sink) = &mut self.sink_spatial
+        if let Some(player) = &mut self.player_spatial
         {
-            sink.play();
+            player.play();
         }
     }
 
     pub fn stop(&mut self)
     {
-        if let Some(sink) = &mut self.sink
+        self.stop_requested = true;
+
+        if let Some(player) = &mut self.player
         {
-            sink.stop()
+            player.stop()
         }
 
-        if let Some(sink) = &mut self.sink_spatial
+        if let Some(player) = &mut self.player_spatial
         {
-            sink.stop();
+            player.stop();
         }
     }
 
     pub fn pause(&mut self)
     {
-        if let Some(sink) = &mut self.sink
+        if let Some(player) = &mut self.player
         {
-            sink.pause()
+            player.pause()
         }
 
-        if let Some(sink) = &mut self.sink_spatial
+        if let Some(player) = &mut self.player_spatial
         {
-            sink.pause();
+            player.pause();
         }
     }
 
     pub fn sound_time(&self) -> f32
     {
-        if let Some(sink) = &self.sink
+        if let Some(player) = &self.player
         {
-            let pos = sink.get_pos();
+            let pos = player.get_pos();
+
+            if self.get_data().looped && !approx_zero(self.duration) && pos >= Duration::from_secs_f32(self.duration)
+            {
+                return pos.as_secs_f32() % self.duration;
+            }
+
             return pos.as_secs_f32();
         }
 
-        if let Some(sink) = &self.sink_spatial
+        if let Some(player) = &self.player_spatial
         {
-            let pos = sink.get_pos();
+            let pos = player.get_pos();
+
+            if self.get_data().looped && !approx_zero(self.duration) && pos >= Duration::from_secs_f32(self.duration)
+            {
+                return pos.as_secs_f32() % self.duration;
+            }
+
             return pos.as_secs_f32();
         }
 
@@ -308,30 +390,30 @@ impl Sound
 
     pub fn set_current_time(&mut self, time: f32)
     {
-        if let Some(sink) = &mut self.sink
+        if let Some(player) = &mut self.player
         {
             let pos = Duration::from_secs_f32(time);
-            let res = sink.try_seek(pos);
+            let res = player.try_seek(pos);
             if res.is_err()
             {
-                println!("can not seek, because its not supported for this file");
-                println!("{:?}", res);
+                console_warning!("can not seek, because its not supported for this file");
+                console_warning!("{:?}", res);
             }
         }
 
-        if let Some(sink) = &mut self.sink_spatial
+        if let Some(player) = &mut self.player_spatial
         {
             let pos = Duration::from_secs_f32(time);
-            let res = sink.try_seek(pos);
+            let res = player.try_seek(pos);
             if res.is_err()
             {
-                println!("can not seek, because its not supported for this file");
-                println!("{:?}", res);
+                console_warning!("can not seek, because its not supported for this file");
+                console_warning!("{:?}", res);
             }
         }
     }
 
-    fn _update(&mut self, node: Option<NodeItem>, instance: Option<&InstanceItemArc>, force: bool)
+    pub fn update_state(&mut self, node: Option<NodeItem>, instance: Option<&InstanceItemArc>, force: bool)
     {
         if self.get_data().delete_after_playback && self.stopped()
         {
@@ -349,29 +431,31 @@ impl Sound
         let audio_device_change = audio_device.data.changed();
         let audio_device_data = audio_device.data.get_ref();
 
+        let runtime_change = std::mem::take(&mut self.runtime_changed);
         let (data, change) = self.data.consume_borrow();
 
-        let is_spatial = self.sink_spatial.is_some();
+        let is_spatial = self.player_spatial.is_some();
 
-        if !audio_device_change && !change && !force && !is_spatial
+        if !audio_device_change && !change && !runtime_change && !force && !is_spatial
         {
             return;
         }
 
-        let volume = audio_device.data.get_ref().volume * data.volume;
+        let volume = audio_device.data.get_ref().category_volume(data.category) * data.volume * self.runtime_gain;
+        let speed = data.speed * self.runtime_pitch;
 
-        // default sink
-        if let Some(sink) = &self.sink
+        // default player
+        if let Some(player) = &self.player
         {
-            sink.set_volume(volume);
-            sink.set_speed(data.speed);
+            player.set_volume(volume);
+            player.set_speed(speed);
         }
 
-        // spatial sink
-        if let Some(sink) = &self.sink_spatial
+        // spatial player
+        if let Some(player) = &self.player_spatial
         {
-            sink.set_volume(audio_device.data.get_ref().volume * data.volume);
-            sink.set_speed(data.speed);
+            player.set_volume(volume);
+            player.set_speed(speed);
 
             let mut position = None;
             if let Some(instance) = instance
@@ -388,11 +472,9 @@ impl Sound
                 position = Some(Point3::<f32>::new(transform.m14, transform.m24, transform.m34));
             }
 
-            if let Some(position) = position
+            // split screen: the camera nearest to the sound hears it
+            if let Some((position, (left_pos, right_pos))) = position.and_then(|position| Some((position, audio_device_data.nearest_listener(&position)?)))
             {
-                let left_pos = audio_device_data.left_ear_pos;
-                let right_pos = audio_device_data.right_ear_pos;
-
                 let dist_left = distance(&left_pos, &position);
                 let dist_right = distance(&right_pos, &position);
 
@@ -414,9 +496,10 @@ impl Sound
                 let left = [left_pos.x, left_pos.y, left_pos.z];
                 let right = [right_pos.x, right_pos.y, right_pos.z];
 
-                sink.set_emitter_position(pos);
-                sink.set_left_ear_position(left);
-                sink.set_right_ear_position(right);
+                self.spatial_positions = Some([pos, left, right]);
+                player.set_emitter_position(pos);
+                player.set_left_ear_position(left);
+                player.set_right_ear_position(right);
             }
         }
     }
@@ -430,10 +513,33 @@ impl Drop for Sound
     }
 }
 
+#[typetag::serde]
 impl Component for Sound
 {
     component_impl_default!();
     component_impl_no_cleanup_node!();
+
+    fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+        // not saved
+        self.base.component_name = "Sound".to_string();
+        self.base.icon = "🔊".to_string();
+
+        // a missing resource keeps its uuid, so saving does not lose the assignment
+        if let Some(uuid) = self.sound_source.id().map(str::to_string)
+        {
+            match find_sound_source(&context.sound_sources, &uuid)
+            {
+                Some(sound_source) => self.set_sound_source(sound_source),
+                None => { console_error!("Sound '{}': no sound resource with the uuid {}", self.base.name, uuid); },
+            }
+        }
+    }
+
+    fn saved_with_node(&self) -> bool
+    {
+        true
+    }
 
     fn instantiable() -> bool
     {
@@ -475,11 +581,17 @@ impl Component for Sound
 
             audio_device: None,
 
-            sink: None,
-            sink_spatial: None,
+            player: None,
+            player_spatial: None,
+
+            runtime_gain: 1.0,
+            runtime_pitch: 1.0,
+            runtime_changed: false,
+            spatial_positions: None,
+            stop_requested: false,
         };
 
-        if let Some(sound_source) = &source.sound_source
+        if let Some(sound_source) = source.sound_source.as_ref()
         {
             sound.set_sound_source(sound_source.clone());
         }
@@ -487,26 +599,31 @@ impl Component for Sound
         Some(Arc::new(RwLock::new(Box::new(sound))))
     }
 
-    fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
     {
-        self._update(Some(node), None, false);
+        self.update_state(Some(node), None, false);
     }
 
-    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
     {
-        self._update(Some(node), Some(instance), false);
+        self.update_state(node, Some(instance), false);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
-        if self.sound_source.is_none()
+        match &self.sound_source
         {
-            return;
-        }
-
-        if let Some(sound_source) = &self.sound_source
-        {
-            sound_source.read().unwrap().ui_info(ui);
+            OptionOrId::Some(sound_source) => sound_source.read().unwrap().ui_info(ui),
+            OptionOrId::Id(uuid) =>
+            {
+                ui.label(RichText::new(format!("⚠ no sound resource with the uuid {}", uuid)).color(egui::Color32::LIGHT_RED));
+                return;
+            },
+            OptionOrId::None =>
+            {
+                ui.label(RichText::new("no sound resource - pick one in the sound settings").color(egui::Color32::GRAY));
+                return;
+            },
         }
 
         if !approx_zero(self.duration)
@@ -551,6 +668,7 @@ impl Component for Sound
         let mut sound_type;
         let mut spatial_distance_scale;
         let mut delete_after_playback;
+        let mut category;
 
         {
             let data = self.data.get_ref();
@@ -561,6 +679,7 @@ impl Component for Sound
             sound_type = data.sound_type;
             spatial_distance_scale = data.spatial_distance_scale;
             delete_after_playback = data.delete_after_playback;
+            category = data.category;
         }
 
         changed = ui.checkbox(&mut looped, "Loop").changed() || changed;
@@ -577,6 +696,13 @@ impl Component for Sound
         });
 
         changed = ui.checkbox(&mut delete_after_playback, "Delete after playback").changed() || changed;
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Category:");
+            changed = ui.radio_value(&mut category, SoundCategory::Effects, "Effects").changed() || changed;
+            changed = ui.radio_value(&mut category, SoundCategory::Music, "Music").changed() || changed;
+        });
 
         ui.horizontal(|ui|
         {
@@ -604,6 +730,7 @@ impl Component for Sound
             data.sound_type = sound_type;
             data.spatial_distance_scale = spatial_distance_scale;
             data.delete_after_playback = delete_after_playback;
+            data.category = category;
 
             if major_change
             {

@@ -1,21 +1,27 @@
-use std::cell::RefCell;
 
-use nalgebra::{Point3, Vector2, Vector3};
-
-use crate::{component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread}, state::scene::{camera::Camera, components::animation::Animation, light::Light, node::Node, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
+use crate::input::keyboard::Key;
+use crate::resources::resources::load_binary;
+use crate::state::resources::sound_source::SoundSourceItem;
+use crate::state::scene::physics::contacts::ContactKind;
+use crate::{console_error, helper::concurrency::thread::spawn_thread, state::scene::{node::Node, utilities::scene_utils::execute_on_scene_mut_and_wait}};
 
 use super::{app::App, context::Context};
 
 pub struct AppDummy
 {
-
+    bump_sound: Option<SoundSourceItem>,
+    hit_sound: Option<SoundSourceItem>,
 }
 
 impl AppDummy
 {
     pub fn new() -> AppDummy
     {
-        AppDummy {}
+        AppDummy
+        {
+            bump_sound: None,
+            hit_sound: None,
+        }
     }
 }
 
@@ -23,17 +29,85 @@ impl App for AppDummy
 {
     fn init(&mut self, context: &mut Context)
     {
+        // ********** observer examples (context level) **********
+
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // THE CONTENT OF THIS FILE IS NOT FINAL OR STABLE, IT IS CURRENTLY JUST A PLACE FOR TESTING AND EXPERIMENTING WITH FEATURES
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+        // fires every frame right before rendering
+        /*
+        context.on_before_render.add(|ctx|
+        {
+            let frame = ctx.state.borrow().stats.frame;
+            if frame % 120 == 0
+            {
+                console_debug!("on_before_render @ frame {}", frame);
+            }
+        });
+
+        // fires once after the first render, then auto-removes
+        context.on_after_render.add_once(|_ctx|
+        {
+            console_debug!("first frame rendered");
+        });
+
+        // fires on window resize
+        context.on_resize.add(|ctx|
+        {
+            let state = ctx.state.borrow();
+            console_debug!("resized to {}x{}", state.width, state.height);
+        });
+
+        // fires on app exit
+        context.on_exit.add(|_ctx|
+        {
+            console_debug!("bye");
+        });
+         */
+
+
+
+
+        // ********** contact sound **********
+        match load_binary("resourcesLocal/sounds/bump.wav")
+        {
+            Ok(bytes) =>
+            {
+                let state = &mut *(context.state.borrow_mut());
+                self.bump_sound = Some(state.load_sound_source_byte_or_reuse(&bytes, "bump", Some("wav".to_string())));
+            },
+            Err(err) =>
+            {
+                console_error!("can not load the bump sound: {}", err);
+            },
+        }
+
+        match load_binary("resourcesLocal/sounds/hit.wav")
+        {
+            Ok(bytes) =>
+            {
+                let state = &mut *(context.state.borrow_mut());
+                self.hit_sound = Some(state.load_sound_source_byte_or_reuse(&bytes, "hit", Some("wav".to_string())));
+            },
+            Err(err) =>
+            {
+                console_error!("can not load the hit sound: {}", err);
+            },
+        }
+
         let scene_id = context.get_main_scene_id();
-
-        let state = &mut *(context.state.borrow_mut());
-
         if scene_id.is_none()
         {
             return;
         }
+
         let scene_id = scene_id.unwrap();
 
         //load default env texture
+        let state = &mut *(context.state.borrow_mut());
         state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
 
         // ********** cam **********
@@ -63,12 +137,12 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(-2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
         */
 
@@ -78,7 +152,7 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 100.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
 
         {
@@ -90,7 +164,7 @@ impl App for AppDummy
             cam.clipping_near = 0.1;
             cam.clipping_far = 1000.0;
 
-            scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            scene.cameras.push(std::cell::RefCell::new(ChangeTracker::new(Box::new(cam))));
         }
         */
 
@@ -102,7 +176,7 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 100.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
 
         {
@@ -115,7 +189,7 @@ impl App for AppDummy
             cam.clipping_near = 0.1;
             cam.clipping_far = 1000.0;
 
-            scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            scene.cameras.push(std::cell::RefCell::new(ChangeTracker::new(Box::new(cam))));
         }
             */
 
@@ -124,7 +198,7 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 200.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
 
         {
@@ -137,7 +211,7 @@ impl App for AppDummy
             cam.clipping_near = 0.1;
             cam.clipping_far = 1000.0;
 
-            scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            scene.cameras.push(std::cell::RefCell::new(ChangeTracker::new(Box::new(cam))));
         }
             */
 
@@ -247,7 +321,7 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
             */
 
@@ -323,7 +397,7 @@ impl App for AppDummy
 
 
         let main_queue_clone = main_queue.clone();
-        let audio_device = state.audio_device.clone();
+        let audio_device = state.io.audio_device.clone();
 
         spawn_thread(move ||
         {
@@ -364,12 +438,25 @@ impl App for AppDummy
 
             //let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
-            // let avatar_nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
-            // let avatar_root = avatar_nodes.as_ref().unwrap()[0].clone();
+            /*
+            let avatar_nodes = scene_utils::load_object("resourcesLocal/objects/temp/avatar3.glb", scene_id, None, main_queue_clone.clone(), false, false, true, false, 0);
+
+            if avatar_nodes.is_err()
+            {
+                console_error!("error loading avatar3.glb: {}", avatar_nodes.err().unwrap());
+                return;
+            }
+
+            let avatar_root = avatar_nodes.as_ref().unwrap()[0].clone();
 
             // //let _ = scene_utils::load_and_retarget_animation("objects/temp/Animation Only - Happy Idle.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(),);
-            // let _ = scene_utils::load_and_re_target_animation("objects/temp/dancing.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), Some("mixamorig:Hips"));
-
+            //let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/dancing.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), Some("mixamorig:Hips"));
+            //let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/shoot.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), None);
+            //let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/shoot stand.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), None);
+            let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle aim.glb", scene_id, avatar_root.clone(), main_queue_clone.clone(), None);
+            let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle prone.glb", scene_id, avatar_root.clone(), main_queue_clone.clone(), None);
+            let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle crouch.glb", scene_id, avatar_root.clone(), main_queue_clone.clone(), None);
+            */
 
             //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
             //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
@@ -380,7 +467,17 @@ impl App for AppDummy
             //let nodes = scene_utils::load_object("objects/temp/sofa.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
             //let nodes = scene_utils::load_object("objects/temp/test.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
-            //let nodes = scene_utils::load_object("objects/glass/glass.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+            //let nodes = scene_utils::load_object("resourcesLocal/objects/glass/glass.glb", scene_id, None, main_queue_clone.clone(), false, false, true, false, 0);
+            /*
+            {
+                let main_queue_clone = main_queue_clone.clone();
+                spawn_thread(move ||
+                {
+                    sleep_millis(4000);
+                    let _ = scene_utils::load_object("resourcesLocal/objects/glass/glass.glb", scene_id, None, main_queue_clone.clone(), false, false, true, false, 0);
+                });
+            }
+            */
 
             execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
             {
@@ -432,11 +529,15 @@ impl App for AppDummy
                 }
 
                 // add camera controller and run auto setup
+
+
                 /*
                 let mut controller = CharacterController::default();
                 controller.auto_setup(scene, "avatar3", "");
                 scene.pre_controller.push(Box::new(controller));
                 */
+
+
 
                 // set pos for fall test
                 /*
@@ -449,21 +550,86 @@ impl App for AppDummy
                     transform.set_rotation(Vector3::<f32>::new(0.0, -2.618, 0.0));
                 }
                     */
+
+                // add look up joint animation
+                // if let Some(avatar_root) = scene.find_node_by_id(avatar_root)
+                // {
+                //     let avatar_root = avatar_root.read().unwrap();
+
+                //     let spine = avatar_root.find_child_node_by_name("mixamorig:Spine1");
+                //     let armature = avatar_root.find_child_node_by_name("Armature");
+
+                //     if spine.is_some() && armature.is_some()
+                //     {
+                //         let armature = armature.unwrap();
+                //         // Target position in world space: 2 units in front of the avatar
+                //         let look_at = LookAt::new("Aim", spine.clone().unwrap(), Vector3::new(0.0, 1.5, -2.0));
+                //         armature.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(look_at))));
+
+                //         // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
+                //         /*
+                //         let parent_transform = Node::get_transform_between_root_joint_and_root_node(spine.clone().unwrap());
+                //         let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
+
+                //         console_debug!(parent_inv);
+                //         */
+
+                //         /*
+                //         // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
+                //         let parent_transform = Node::get_transform_between_root_joint_and_root_node(spine.clone().unwrap());
+                //         let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
+
+                //         let parent_axes = parent_inv.fixed_view::<3,3>(0,0);
+                //         let avatar_x = nalgebra::Unit::new_normalize(parent_axes * Vector3::x()); // Look Up/Down
+                //         let avatar_y = nalgebra::Unit::new_normalize(parent_axes * Vector3::y()); // Look Left/Right
+
+                //         let directions = vec!
+                //         [
+                //             ("look up", UnitQuaternion::from_axis_angle(&avatar_x, std::f32::consts::PI / 2.0)),
+                //             ("look down", UnitQuaternion::from_axis_angle(&avatar_x, -std::f32::consts::PI / 2.0)),
+                //             ("look left", UnitQuaternion::from_axis_angle(&avatar_y, std::f32::consts::PI / 2.0)),
+                //             ("look right", UnitQuaternion::from_axis_angle(&avatar_y, -std::f32::consts::PI / 2.0)),
+                //         ];
+
+                //         let armature = armature.unwrap();
+                //         let mut armature = armature.write().unwrap();
+
+                //         for (name, delta_rot) in directions
+                //         {
+                //             let mut animation = Animation::new_joint_transform_quat
+                //             (
+                //                 name,
+                //                 spine.clone().unwrap(),
+                //                 None,
+                //                 Some(delta_rot),
+                //                 None,
+                //             );
+
+                //             animation.layer_type = AnimationLayerType::AdditiveComponentAbsolute;
+                //             armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
+                //         }
+                //         */
+                //     }
+
+                //     avatar_root.start_animation("aim");
+                //     avatar_root.start_animation("idle aim");
+                //     //avatar_root.start_animation("look left");
+                // }
             }));
 
             /*
             execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
             {
                 let light = Light::new_point("Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+                scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
 
                 scene.add_light_hemisperical("hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
             }));
              */
 
             // sound
-            //attach_sound_to_node("sounds/m16.ogg", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
-            //attach_sound_to_node("sounds/PSY - Gangnam Style.mp3", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
+            //attach_sound_to_node("sounds/m16.ogg", "Cube", SoundType::Spatial, main_queue_clone.clone());
+            //attach_sound_to_node("sounds/PSY - Gangnam Style.mp3", "Cube", SoundType::Spatial, main_queue_clone.clone());
         });
 
         /*
@@ -569,6 +735,73 @@ impl App for AppDummy
 
     fn update(&mut self, context: &mut Context)
     {
+        let state = &mut *(context.state.borrow_mut());
+
+        /*
+        // ********** sound on collision **********
+        // the sound resources of the scene by name (exports), else the ones from resourcesLocal
+        let sound_by_name = |name: &str| state.resources.sound_sources.values().find(|source| source.read().unwrap().name == name).cloned();
+        let bump_sound = sound_by_name("bump").or_else(|| self.bump_sound.clone());
+        let hit_sound = sound_by_name("hit").or_else(|| self.hit_sound.clone());
+
+        if let (Some(bump_sound), Some(hit_sound)) = (bump_sound, hit_sound)
+        {
+            let mut sounds = vec![];
+
+            const MAX_IMPACT_SPEED: f32 = 10.0;
+
+            for scene in &state.scenes
+            {
+                for contact in scene.physics.contact_events()
+                {
+                    if contact.started()
+                    {
+                        let is_wall = contact.normal.y.abs() < 0.5;
+
+                        if is_wall && (contact.target.kind() == ContactKind::Vehicle || contact.other.kind() == ContactKind::Vehicle)
+                        {
+                            let volume = (contact.impact_speed / MAX_IMPACT_SPEED).min(1.0);
+                            sounds.push((hit_sound.clone(), volume));
+                        }
+                        else if !is_wall || contact.target.kind() == ContactKind::Character || contact.other.kind() == ContactKind::Character
+                        {
+                            let volume = (contact.impact_speed / MAX_IMPACT_SPEED).min(1.0);
+                            sounds.push((bump_sound.clone(), volume));
+                        }
+                    }
+                }
+            }
+
+            // only play the loudest few sounds
+            sounds.sort_by(|a, b| b.1.total_cmp(&a.1));
+            sounds.truncate(4);
+
+            for (source, volume) in sounds
+            {
+                state.play_one_shot_sound_source(source, volume);
+            }
+        }
+        */
+
+        // ********** scene cycling **********
+        if state.scenes.len() > 1
+        {
+            let keys = [Key::Key1, Key::Key2, Key::Key3, Key::Key4, Key::Key5, Key::Key6, Key::Key7, Key::Key8, Key::Key9, Key::Key0];
+
+            let mut new_scene_id = None;
+            for (i, key) in keys.iter().enumerate()
+            {
+                if state.scenes.len() >= i + 1 && state.io.input_manager.keyboard.is_pressed(*key) && !state.scenes.get(i).unwrap().is_engine_internal()
+                {
+                    new_scene_id = Some(state.scenes.get(i).unwrap().id);
+                }
+            }
+
+            if let Some(new_scene_id) = new_scene_id
+            {
+                state.set_active_scene(new_scene_id);
+            }
+        }
 
     }
 

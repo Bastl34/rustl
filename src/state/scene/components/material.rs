@@ -1,13 +1,19 @@
 #![allow(dead_code)]
 
-use nalgebra::{Vector3, Vector4};
-use strum_macros::{Display, EnumIter};
+use std::str::FromStr;
+
+use nalgebra::{Vector2, Vector3, Vector4};
+use serde::{Deserialize, Serialize};
+use strum_macros::{Display, EnumIter, FromRepr, EnumString};
 
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::approx_equal;
-use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled};
+use crate::helper::option_or_id::OptionOrId;
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled, console_error, console_log};
 use crate::state::scene::node::NodeItem;
-use crate::{state::scene::texture::TextureItem, helper};
+use crate::{state::resources::texture::TextureItem, helper};
+use crate::state::scene::exporter::serialization_helper;
+use crate::gui::helper::info_box::info_box;
 
 use super::component::{Component, ComponentItem, ComponentBase};
 
@@ -18,7 +24,7 @@ pub type MaterialItem = ComponentItem;
 //pub type MaterialBoxItem = Box<dyn Any + Send + Sync>;
 //pub type MaterialItem = Arc<RwLock<MaterialBoxItem>>;
 
-#[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter)]
+#[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter, FromRepr, EnumString, Serialize, Deserialize)]
 pub enum TextureType
 {
     AmbientEmissive,
@@ -38,7 +44,64 @@ pub enum TextureType
     Custom3
 }
 
-#[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter)]
+impl TextureType
+{
+    // color textures are sampled as sRGB, data textures (normal, roughness, ao, ...) must be sampled linearly
+    pub fn is_srgb(&self) -> bool
+    {
+        match self
+        {
+            TextureType::Base
+            | TextureType::AmbientEmissive
+            | TextureType::Specular
+            | TextureType::Environment
+            | TextureType::Custom0
+            | TextureType::Custom1
+            | TextureType::Custom2
+            | TextureType::Custom3 => true,
+
+            TextureType::Normal
+            | TextureType::Roughness
+            | TextureType::AmbientOcclusion
+            | TextureType::Reflectivity
+            | TextureType::Shininess
+            | TextureType::Alpha => false,
+        }
+    }
+}
+
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize, Default)]
+pub enum TextureMappingMode
+{
+    #[default]
+    Uv,
+    Triplanar,
+    Cube,
+    Planar,
+    Cylindrical,
+    Spherical
+}
+
+// projection space for all non-uv mapping modes
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize, Default)]
+pub enum MappingSpace
+{
+    #[default]
+    Object,
+    World
+}
+
+// projection axis for planar, cylindrical and spherical mapping
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize, Default)]
+pub enum MappingAxis
+{
+    X,
+    #[default]
+    Y,
+    Z
+}
+
+#[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter, Serialize, Deserialize)]
 pub enum BlendMode
 {
     Opaque,
@@ -66,11 +129,71 @@ pub const ALL_TEXTURE_TYPES: [TextureType; TEXTURE_AMOUNT] =
     TextureType::Custom3
 ];
 
-#[derive(Clone)]
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
+pub enum TextureAddressMode
+{
+    ClampToEdge,
+    Repeat,
+    MirrorRepeat,
+    ClampToBorder
+}
+
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
+pub enum TextureFilterMode
+{
+    Nearest,
+    Linear
+}
+
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub struct TextureTransform
+{
+    pub offset: Vector2::<f32>,
+    pub scale: Vector2::<f32>,
+    pub rotation: f32,
+
+    pub uv_index: u32,
+}
+
+impl TextureTransform
+{
+    pub fn default() -> TextureTransform
+    {
+        TextureTransform
+        {
+            offset: Vector2::<f32>::new(0.0, 0.0),
+            scale: Vector2::<f32>::new(1.0, 1.0),
+            rotation: 0.0,
+
+            uv_index: 0,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct TextureSampler
+{
+    pub address_mode_u: TextureAddressMode,
+    pub address_mode_v: TextureAddressMode,
+    pub address_mode_w: TextureAddressMode,
+    pub mag_filter: TextureFilterMode,
+    pub min_filter: TextureFilterMode,
+    pub mipmap_filter: TextureFilterMode,
+    // only the full size image is sampled (glTF minFilter NEAREST / LINEAR)
+    #[serde(default)]
+    pub no_mipmaps: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct TextureState
 {
-    pub item: TextureItem,
-    pub enabled: bool
+    #[serde(serialize_with = "serialization_helper::serialize_texture", deserialize_with = "serialization_helper::deserialize_texture")]
+    pub item: OptionOrId<TextureItem>,
+    pub enabled: bool,
+
+    pub sampler: TextureSampler,
+    pub transform: TextureTransform
 }
 
 impl TextureState
@@ -79,17 +202,36 @@ impl TextureState
     {
         TextureState
         {
-            item,
-            enabled: true
+            item: OptionOrId::Some(item),
+            enabled: true,
+
+            sampler: TextureSampler
+            {
+                address_mode_u: TextureAddressMode::ClampToEdge,
+                address_mode_v: TextureAddressMode::ClampToEdge,
+                address_mode_w: TextureAddressMode::ClampToEdge,
+                mag_filter: TextureFilterMode::Linear,
+                min_filter: TextureFilterMode::Linear,
+                mipmap_filter: TextureFilterMode::Linear,
+                no_mipmaps: false,
+            },
+
+            transform: TextureTransform::default(),
         }
     }
 
-    pub fn get(&self) -> &TextureItem
+    pub fn get(&self) -> Option<&TextureItem>
     {
-        &self.item
+        self.item.as_ref()
     }
 }
 
+// serde defaults so material files saved before texture mapping modes were added still load
+fn default_mapping_scale() -> f32 { 1.0 }
+fn default_mapping_sharpness() -> f32 { 4.0 }
+fn default_vertex_colors() -> bool { true }
+
+#[derive(Serialize, Deserialize)]
 pub struct MaterialData
 {
     pub ambient_color: Vector3<f32>,
@@ -99,29 +241,30 @@ pub struct MaterialData
     pub highlight_color: Vector3<f32>,
     pub locked_color: Vector3<f32>,
 
-    pub texture_ambient: Option<TextureState>,
-    pub texture_base: Option<TextureState>,
-    pub texture_specular: Option<TextureState>,
-    pub texture_normal: Option<TextureState>,
-    pub texture_alpha: Option<TextureState>,
-    pub texture_roughness: Option<TextureState>,
-    pub texture_ambient_occlusion: Option<TextureState>,
-    pub texture_reflectivity: Option<TextureState>,
-    pub texture_shininess: Option<TextureState>,
-    pub texture_environment: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_ambient: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_base: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_specular: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_normal: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_alpha: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_roughness: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_ambient_occlusion: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_reflectivity: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_shininess: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_environment: Option<TextureState>,
 
-    pub texture_custom0: Option<TextureState>,
-    pub texture_custom1: Option<TextureState>,
-    pub texture_custom2: Option<TextureState>,
-    pub texture_custom3: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_custom0: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_custom1: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_custom2: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_custom3: Option<TextureState>,
 
     pub blend_mode: BlendMode,
 
     pub alpha: f32,
-    pub alpha_cutoff: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub alpha_cutoff: Option<f32>,
     pub shininess: f32,
     pub reflectivity: f32,
     pub refraction_index: f32,
+    pub ibl_diffuse_intensity: f32,
 
     pub normal_map_strength: f32,
 
@@ -135,9 +278,24 @@ pub struct MaterialData
     pub smooth_shading: bool,
 
     pub reflection_only: bool,
-    pub backface_culling: bool
+    pub backface_culling: bool,
+
+    #[serde(default)] pub mapping_mode: TextureMappingMode,
+    #[serde(default)] pub mapping_space: MappingSpace,
+    #[serde(default)] pub mapping_axis: MappingAxis,
+    #[serde(default = "default_mapping_scale")] pub mapping_scale: f32,
+    #[serde(default = "default_mapping_sharpness")] pub mapping_sharpness: f32,
+
+    pub allow_xray: bool, // when false, this material is excluded from x-ray mode (gizmos, grid, etc.)
+
+    #[serde(default)]
+    pub no_fog: bool, // when true, this material is excluded from the distance fog (sky spheres, editor helpers, etc.)
+
+    #[serde(default = "default_vertex_colors")]
+    pub vertex_colors: bool, // multiply the base color with the mesh vertex colors (COLOR_0)
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Material
 {
     base: ComponentBase,
@@ -180,6 +338,7 @@ impl Material
             shininess: 150.0,
             reflectivity: 0.0,
             refraction_index: 1.0,
+            ibl_diffuse_intensity: 1.0,
 
             normal_map_strength: 1.0,
 
@@ -194,6 +353,17 @@ impl Material
 
             reflection_only: false,
             backface_culling: true,
+
+            mapping_mode: TextureMappingMode::Uv,
+            mapping_space: MappingSpace::Object,
+            mapping_axis: MappingAxis::Y,
+            mapping_scale: 1.0,
+            mapping_sharpness: 4.0,
+
+            allow_xray: true,
+            no_fog: false,
+
+            vertex_colors: true,
         };
 
         Material
@@ -262,6 +432,7 @@ impl Material
         if !helper::math::approx_equal(default_material_data.shininess, new_mat_data.shininess) { data.shininess = new_mat_data.shininess; }
         if !helper::math::approx_equal(default_material_data.reflectivity, new_mat_data.reflectivity) { data.reflectivity = new_mat_data.reflectivity; }
         if !helper::math::approx_equal(default_material_data.refraction_index, new_mat_data.refraction_index) { data.refraction_index = new_mat_data.refraction_index; }
+        if !helper::math::approx_equal(default_material_data.ibl_diffuse_intensity, new_mat_data.ibl_diffuse_intensity) { data.ibl_diffuse_intensity = new_mat_data.ibl_diffuse_intensity; }
 
         if !helper::math::approx_equal(default_material_data.normal_map_strength, new_mat_data.normal_map_strength) { data.normal_map_strength = new_mat_data.normal_map_strength; }
 
@@ -275,6 +446,12 @@ impl Material
 
         if default_material_data.reflection_only != new_mat_data.reflection_only { data.reflection_only = new_mat_data.reflection_only; }
         if default_material_data.backface_culling != new_mat_data.backface_culling { data.backface_culling = new_mat_data.backface_culling; }
+
+        if default_material_data.mapping_mode != new_mat_data.mapping_mode { data.mapping_mode = new_mat_data.mapping_mode; }
+        if default_material_data.mapping_space != new_mat_data.mapping_space { data.mapping_space = new_mat_data.mapping_space; }
+        if default_material_data.mapping_axis != new_mat_data.mapping_axis { data.mapping_axis = new_mat_data.mapping_axis; }
+        if !helper::math::approx_equal(default_material_data.mapping_scale, new_mat_data.mapping_scale) { data.mapping_scale = new_mat_data.mapping_scale; }
+        if !helper::math::approx_equal(default_material_data.mapping_sharpness, new_mat_data.mapping_sharpness) { data.mapping_sharpness = new_mat_data.mapping_sharpness; }
     }
 
     pub fn apply_diff(&mut self, new_mat: &Material)
@@ -295,9 +472,11 @@ impl Material
                 if $default_material_tex.is_some() != $new_mat_tex.is_some()
                     ||
                     (
-                        $default_material_tex.is_some() && $new_mat_tex.is_some()
+                        $default_material_tex.is_some() && $new_mat_tex.is_some() && $new_mat_tex.unwrap().get().is_some()
                         &&
-                        $default_material_tex.unwrap().get().read().unwrap().hash != $new_mat_tex.unwrap().get().read().unwrap().hash
+                        $default_material_tex.unwrap().get().is_some()
+                        &&
+                        $default_material_tex.unwrap().get().unwrap().read().unwrap().hash != $new_mat_tex.unwrap().get().unwrap().read().unwrap().hash
                     )
                 {
                     $self_tex = $new_mat_tex.clone();
@@ -328,42 +507,49 @@ impl Material
     {
         let data = self.data.get_ref();
 
-        println!("ambient_color: {:?}", data.ambient_color);
-        println!("base_color: {:?}", data.base_color);
-        println!("specular_color: {:?}", data.specular_color);
+        console_log!("ambient_color: {:?}", data.ambient_color);
+        console_log!("base_color: {:?}", data.base_color);
+        console_log!("specular_color: {:?}", data.specular_color);
 
-        println!("texture_base: {:?}", data.texture_base.is_some());
-        println!("texture_specular: {:?}", data.texture_specular.is_some());
-        println!("texture_normal: {:?}", data.texture_normal.is_some());
-        println!("texture_alpha: {:?}", data.texture_alpha.is_some());
-        println!("texture_roughness: {:?}", data.texture_roughness.is_some());
-        println!("texture_ambient_occlusion: {:?}", data.texture_ambient_occlusion.is_some());
-        println!("texture_reflectivity: {:?}", data.texture_reflectivity.is_some());
-        println!("texture_shininess: {:?}", data.texture_shininess.is_some());
-        println!("texture_environment: {:?}", data.texture_environment.is_some());
+        console_log!("texture_base: {:?}", data.texture_base.is_some());
+        console_log!("texture_specular: {:?}", data.texture_specular.is_some());
+        console_log!("texture_normal: {:?}", data.texture_normal.is_some());
+        console_log!("texture_alpha: {:?}", data.texture_alpha.is_some());
+        console_log!("texture_roughness: {:?}", data.texture_roughness.is_some());
+        console_log!("texture_ambient_occlusion: {:?}", data.texture_ambient_occlusion.is_some());
+        console_log!("texture_reflectivity: {:?}", data.texture_reflectivity.is_some());
+        console_log!("texture_shininess: {:?}", data.texture_shininess.is_some());
+        console_log!("texture_environment: {:?}", data.texture_environment.is_some());
 
-        println!("texture_custom0: {:?}", data.texture_custom0.is_some());
-        println!("texture_custom1: {:?}", data.texture_custom1.is_some());
-        println!("texture_custom2: {:?}", data.texture_custom2.is_some());
-        println!("texture_custom3: {:?}", data.texture_custom3.is_some());
+        console_log!("texture_custom0: {:?}", data.texture_custom0.is_some());
+        console_log!("texture_custom1: {:?}", data.texture_custom1.is_some());
+        console_log!("texture_custom2: {:?}", data.texture_custom2.is_some());
+        console_log!("texture_custom3: {:?}", data.texture_custom3.is_some());
 
-        println!("alpha: {:?}", data.alpha);
-        println!("shininess: {:?}", data.shininess);
-        println!("reflectivity: {:?}", data.reflectivity);
-        println!("refraction_index: {:?}", data.refraction_index);
+        console_log!("alpha: {:?}", data.alpha);
+        console_log!("shininess: {:?}", data.shininess);
+        console_log!("reflectivity: {:?}", data.reflectivity);
+        console_log!("refraction_index: {:?}", data.refraction_index);
+        console_log!("ibl_diffuse_intensity: {:?}", data.ibl_diffuse_intensity);
 
-        println!("normal_map_strength: {:?}", data.normal_map_strength);
+        console_log!("normal_map_strength: {:?}", data.normal_map_strength);
 
-        println!("cast_shadow: {:?}", data.cast_shadow);
-        println!("receive_shadow: {:?}", data.receive_shadow);
-        println!("shadow_softness: {:?}", data.shadow_softness);
+        console_log!("cast_shadow: {:?}", data.cast_shadow);
+        console_log!("receive_shadow: {:?}", data.receive_shadow);
+        console_log!("shadow_softness: {:?}", data.shadow_softness);
 
-        println!("roughness: {:?}", data.roughness);
+        console_log!("roughness: {:?}", data.roughness);
 
-        println!("smooth_shading: {:?}", data.smooth_shading);
+        console_log!("smooth_shading: {:?}", data.smooth_shading);
 
-        println!("reflection_only: {:?}", data.reflection_only);
-        println!("backface_culling: {:?}", data.backface_culling);
+        console_log!("reflection_only: {:?}", data.reflection_only);
+        console_log!("backface_culling: {:?}", data.backface_culling);
+
+        console_log!("mapping_mode: {:?}", data.mapping_mode);
+        console_log!("mapping_space: {:?}", data.mapping_space);
+        console_log!("mapping_axis: {:?}", data.mapping_axis);
+        console_log!("mapping_scale: {:?}", data.mapping_scale);
+        console_log!("mapping_sharpness: {:?}", data.mapping_sharpness);
     }
 
     pub fn remove_texture(&mut self, tex_type: TextureType)
@@ -400,6 +586,16 @@ impl Material
 
     pub fn set_texture(&mut self, tex: TextureItem, tex_type: TextureType)
     {
+        // mark the texture as linear (data) or sRGB (color) depending on the slot it is assigned to
+        {
+            let linear = !tex_type.is_srgb();
+            let mut texture = tex.write().unwrap();
+            if texture.get_data().linear != linear
+            {
+                texture.get_data_mut().get_mut().linear = linear;
+            }
+        }
+
         let data = self.data.get_mut();
 
         match tex_type
@@ -422,6 +618,20 @@ impl Material
         }
     }
 
+    pub fn set_texture_from_string_type(&mut self, tex: TextureItem, tex_type: &str)
+    {
+        let tex_type = TextureType::from_str(tex_type);
+
+        if tex_type.is_err()
+        {
+            dbg!("Invalid texture type: {}", tex_type.unwrap_err());
+            return;
+        }
+
+        let texture_type = tex_type.unwrap();
+        self.set_texture(tex, texture_type);
+    }
+
     pub fn set_texture_state(&mut self, tex_type: TextureType, state: bool)
     {
         if !self.has_texture(tex_type)
@@ -432,13 +642,13 @@ impl Material
         self.get_texture_by_type_mut(tex_type).unwrap().enabled = state;
     }
 
-    pub fn has_texture_id(&self, texture_id: u64) -> bool
+    pub fn has_texture_id(&self, texture_id: u32) -> bool
     {
         for texture_type in ALL_TEXTURE_TYPES
         {
             if let Some(texture) = self.get_texture_by_type(texture_type)
             {
-                if texture.get().read().unwrap().id == texture_id
+                if texture.get().is_some() && texture.get().unwrap().read().unwrap().id == texture_id
                 {
                     return true;
                 }
@@ -463,6 +673,30 @@ impl Material
 
     pub fn has_transparency(&self) -> bool
     {
+        // the shader forces alpha 1 for opaque and discards below the cutoff for mask - only blend is see-through
+        if self.get_data().blend_mode != BlendMode::Blend
+        {
+            return false;
+        }
+
+        if self.has_alpha_texture_transparency()
+        {
+            return true;
+        }
+
+        !approx_equal(self.get_data().alpha, 1.0)
+    }
+
+    // cut out by the alpha test (mask) - solid, but the depth pre-pass has no alpha test and would close its holes
+    pub fn is_alpha_tested(&self) -> bool
+    {
+        self.get_data().blend_mode == BlendMode::Mask && self.has_alpha_texture_transparency()
+    }
+
+    // transparency driven by a texture (alpha texture or base texture alpha channel)
+    // these materials cast cutout shadows - uniform alpha only materials cast none
+    pub fn has_alpha_texture_transparency(&self) -> bool
+    {
         let data = self.get_data();
 
         // alpha texture
@@ -474,15 +708,10 @@ impl Material
         // base texture alpha channel
         if let Some(texture_base) = &data.texture_base
         {
-            if texture_base.get().read().unwrap().get_data().has_transparency
+            if texture_base.get().is_some() && texture_base.get().unwrap().read().unwrap().get_data().has_transparency
             {
                 return true;
             }
-        }
-
-        if !approx_equal(data.alpha, 1.0)
-        {
-            return true;
         }
 
         false
@@ -551,7 +780,10 @@ impl Material
         {
             if let Some(texture) = self.get_texture_by_type(texture_type)
             {
-                textures.push(texture.item.clone());
+                if let Some(tex_item) = texture.get()
+                {
+                    textures.push(tex_item.clone());
+                }
             }
         }
 
@@ -572,14 +804,14 @@ impl Material
         tex.is_some() && tex.unwrap().enabled
     }
 
-    pub fn remove_texture_by_id(&mut self, id: u64) -> bool
+    pub fn remove_texture_by_id(&mut self, id: u32) -> bool
     {
         let mut removed = false;
         for texture_type in ALL_TEXTURE_TYPES
         {
             if let Some(texture) = self.get_texture_by_type(texture_type)
             {
-                if texture.get().read().unwrap().id == id
+                if texture.get().is_some() && texture.get().unwrap().read().unwrap().id == id
                 {
                     self.remove_texture(texture_type);
                     removed = true;
@@ -592,11 +824,12 @@ impl Material
 
     pub fn texture_dimension(&self, tex_type: TextureType) -> (u32, u32)
     {
-        let tex = self.get_texture_by_type(tex_type);
-
-        if tex.is_some()
+        if let Some(tex_state) = self.get_texture_by_type(tex_type).as_ref()
         {
-            return tex.unwrap().get().read().unwrap().dimensions()
+            if let Some(texture) = tex_state.get().as_ref()
+            {
+                return texture.read().unwrap().dimensions().clone();
+            }
         }
 
         (0,0)
@@ -609,11 +842,12 @@ impl Material
             return Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0);
         }
 
-        let tex = self.get_texture_by_type(tex_type);
-
-        if tex.is_some()
+        if let Some(tex_state) = self.get_texture_by_type(tex_type).as_ref()
         {
-            return tex.unwrap().get().read().unwrap().get_pixel_as_float_vec(x, y);
+            if let Some(texture) = tex_state.get().as_ref()
+            {
+                return texture.read().unwrap().get_pixel_as_float_vec(x, y).clone();
+            }
         }
 
         Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0)
@@ -627,10 +861,14 @@ impl Material
         }
 
         let tex = self.get_texture_by_type(tex_type);
+        if tex.is_none() || tex.clone().unwrap().get().is_none()
+        {
+            return Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0);
+        }
 
-        let tex_arc = tex.unwrap();
-        let tex_arc = tex_arc.get();
-        let tex = tex_arc.read().unwrap();
+        let tex = tex.as_ref().unwrap();
+        let tex = tex.get().unwrap();
+        let tex = tex.read().unwrap();
 
         let width = tex.width();
         let height = tex.height();
@@ -667,14 +905,225 @@ impl Material
 
         res
     }
+
+    pub fn ui_texture_state(&mut self, ui: &mut egui::Ui, tex_type: TextureType)
+    {
+        if self.get_texture_by_type(tex_type).is_none()
+        {
+            return;
+        }
+
+        let tex_id;
+
+        let mut address_mode_u;
+        let mut address_mode_v;
+        let mut address_mode_w;
+        let mut mag_filter;
+        let mut min_filter;
+        let mut mipmap_filter;
+
+        let mut uv_offset;
+        let mut uv_scale;
+        let mut uv_rotation_deg;
+        let mut uv_index;
+
+        {
+            let tex = self.get_texture_by_type(tex_type).unwrap();
+
+            {
+                let tex = tex.get().unwrap();
+                let tex = tex.read().unwrap();
+                tex_id = tex.id;
+            }
+
+            address_mode_u = tex.sampler.address_mode_u;
+            address_mode_v = tex.sampler.address_mode_v;
+            address_mode_w = tex.sampler.address_mode_w;
+            mag_filter = tex.sampler.mag_filter;
+            min_filter = tex.sampler.min_filter;
+            mipmap_filter = tex.sampler.mipmap_filter;
+
+            uv_offset = tex.transform.offset;
+            uv_scale = tex.transform.scale;
+            uv_rotation_deg = tex.transform.rotation.to_degrees();
+            uv_index = tex.transform.uv_index;
+        }
+
+        let mut changed = false;
+
+        // ********** sampler **********
+        let sampler_id = ui.make_persistent_id(format!("material_tex_sampler_{}",tex_id));
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), sampler_id, false).show_header(ui, |ui|
+        {
+            ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+            {
+                ui.label("Sampler")
+            });
+        }).body(|ui|
+        {
+            ui.horizontal(|ui|
+            {
+                ui.label("Address Mode U:");
+
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_u")).selected_text(format!("{address_mode_u:?}")).show_ui(ui, |ui|
+                {
+                    changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::Repeat, "Repeat").changed() || changed;
+                });
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Address Mode V:");
+
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_v")).selected_text(format!("{address_mode_v:?}")).show_ui(ui, |ui|
+                {
+                    changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::Repeat, "Repeat").changed() || changed;
+                });
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Address Mode W:");
+
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_w")).selected_text(format!("{address_mode_w:?}")).show_ui(ui, |ui|
+                {
+                    changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::Repeat, "Repeat").changed() || changed;
+                });
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Mag Filter: ");
+
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("mag_filter")).selected_text(format!("{mag_filter:?}")).show_ui(ui, |ui|
+                {
+                    changed = ui.selectable_value(& mut mag_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
+                    changed = ui.selectable_value(& mut mag_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
+                });
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Min Filter: ");
+
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("min_filter")).selected_text(format!("{min_filter:?}")).show_ui(ui, |ui|
+                {
+                    changed = ui.selectable_value(& mut min_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
+                    changed = ui.selectable_value(& mut min_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
+                });
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Mipmap Filter: ");
+
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("mipmap_filter")).selected_text(format!("{mipmap_filter:?}")).show_ui(ui, |ui|
+                {
+                    changed = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
+                    changed = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
+                });
+            });
+        });
+
+
+        // ********** transform **********
+        let transform_id = ui.make_persistent_id(format!("material_tex_transform_{}",tex_id));
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), transform_id, false).show_header(ui, |ui|
+        {
+            ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+            {
+                ui.label("Transform")
+            });
+        }).body(|ui|
+        {
+            ui.horizontal(|ui|
+            {
+                ui.label("UV Offset:");
+                changed = ui.add(egui::DragValue::new(&mut uv_offset.x).speed(0.001).prefix("u: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut uv_offset.y).speed(0.001).prefix("v: ")).changed() || changed;
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("UV Scale:");
+                changed = ui.add(egui::DragValue::new(&mut uv_scale.x).speed(0.001).prefix("u: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut uv_scale.y).speed(0.001).prefix("v: ")).changed() || changed;
+            });
+
+            changed = ui.add(egui::Slider::new(&mut uv_rotation_deg, 0.0..=359.9999).suffix(" °").text("UV Rotation (in deg)")).changed() || changed;
+
+            changed = ui.add(egui::Slider::new(&mut uv_index, 0..=3).text("UV Index")).changed() || changed;
+        });
+
+        if changed
+        {
+            let tex = self.get_texture_by_type_mut(tex_type).unwrap();
+
+            tex.sampler.address_mode_u = address_mode_u;
+            tex.sampler.address_mode_v = address_mode_v;
+            tex.sampler.address_mode_w = address_mode_w;
+            tex.sampler.mag_filter = mag_filter;
+            tex.sampler.min_filter = min_filter;
+            tex.sampler.mipmap_filter = mipmap_filter;
+
+            tex.transform.offset = uv_offset;
+            tex.transform.scale = uv_scale;
+            tex.transform.rotation = uv_rotation_deg.to_radians();
+            tex.transform.uv_index = uv_index;
+        }
+    }
 }
 
+#[typetag::serde]
 impl Component for Material
 {
     component_impl_default!();
     component_impl_no_update!();
     component_impl_set_enabled!();
     component_impl_no_cleanup_node!();
+
+    fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+        // textures
+        for texture_type in ALL_TEXTURE_TYPES
+        {
+            if let Some(texture) = self.get_texture_by_type_mut(texture_type)
+            {
+                if texture.item.is_ref()
+                {
+                    let texture_found = context.textures.iter().find(|tex| tex.read().unwrap().uuid == texture.item.id().unwrap());
+                    if let Some(tex) = texture_found
+                    {
+                        // ensure the correct color space for the slot (also fixes textures from saves made before the linear flag existed)
+                        let linear = !texture_type.is_srgb();
+                        {
+                            let mut t = tex.write().unwrap();
+                            if t.get_data().linear != linear
+                            {
+                                t.get_data_mut().get_mut().linear = linear;
+                            }
+                        }
+
+                        texture.item = OptionOrId::Some(tex.clone());
+                    }
+                    else
+                    {
+                        texture.item = OptionOrId::None;
+                        console_error!("Material: Texture with id {} not found", texture.item.id().unwrap());
+                    }
+                }
+            }
+        }
+    }
 
     fn instantiable() -> bool
     {
@@ -702,10 +1151,13 @@ impl Component for Material
         let mut reflectivity;
         let mut refraction_index;
         let mut normal_map_strength;
+        let mut ibl_diffuse_intensity;
 
         let mut unlit_shading;
         let mut cast_shadow;
         let mut receive_shadow;
+        let mut no_fog;
+        let mut vertex_colors;
 
         let mut shadow_softness;
         let mut roughness;
@@ -719,6 +1171,12 @@ impl Component for Material
         let mut highlight_color;
         let mut locked_color;
 
+        let mut mapping_mode;
+        let mut mapping_space;
+        let mut mapping_axis;
+        let mut mapping_scale;
+        let mut mapping_sharpness;
+
         {
             let data = self.data.get_ref();
 
@@ -730,10 +1188,13 @@ impl Component for Material
             reflectivity = data.reflectivity;
             refraction_index = data.refraction_index;
             normal_map_strength = data.normal_map_strength;
+            ibl_diffuse_intensity = data.ibl_diffuse_intensity;
 
             unlit_shading = data.unlit_shading;
             cast_shadow = data.cast_shadow;
             receive_shadow = data.receive_shadow;
+            no_fog = data.no_fog;
+            vertex_colors = data.vertex_colors;
 
             shadow_softness = data.shadow_softness;
             roughness = data.roughness;
@@ -765,6 +1226,12 @@ impl Component for Material
             let g = (data.locked_color.y * 255.0) as u8;
             let b = (data.locked_color.z * 255.0) as u8;
             locked_color = egui::Color32::from_rgb(r, g, b);
+
+            mapping_mode = data.mapping_mode;
+            mapping_space = data.mapping_space;
+            mapping_axis = data.mapping_axis;
+            mapping_scale = data.mapping_scale;
+            mapping_sharpness = data.mapping_sharpness;
         }
 
         let mut apply_settings = false;
@@ -789,10 +1256,13 @@ impl Component for Material
         apply_settings = ui.add(egui::Slider::new(&mut reflectivity, 0.0..=1.0).text("reflectivity")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut refraction_index, 1.0..=5.0).text("refraction index")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut normal_map_strength, 0.0..=100.0).text("normal map strength").step_by(0.1)).changed() || apply_settings;
+        apply_settings = ui.add(egui::Slider::new(&mut ibl_diffuse_intensity, 0.0..=10.0).text("ibl diffuse intensity").step_by(0.1)).changed() || apply_settings;
 
         apply_settings = ui.checkbox(&mut unlit_shading, "unlit shading (just base color and base texture)").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut cast_shadow, "cast shadow").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut receive_shadow, "receive shadow").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut no_fog, "no fog (excluded from distance fog)").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut vertex_colors, "use vertex colors").changed() || apply_settings;
 
         apply_settings = ui.add(egui::Slider::new(&mut shadow_softness, 0.0..=100.0).text("shadow softness")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut roughness, 0.0..=5.0).text("roughness")).changed() || apply_settings;
@@ -830,6 +1300,64 @@ impl Component for Material
             apply_settings = ui.color_edit_button_srgba(&mut locked_color).changed() || apply_settings;
         });
 
+        ui.separator();
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Mapping Mode:");
+
+            let mapping_mode_name = match mapping_mode
+            {
+                TextureMappingMode::Uv => "UV",
+                TextureMappingMode::Triplanar => "Triplanar",
+                TextureMappingMode::Cube => "Cube",
+                TextureMappingMode::Planar => "Planar",
+                TextureMappingMode::Cylindrical => "Cylindrical",
+                TextureMappingMode::Spherical => "Spherical",
+            };
+
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("mapping_mode")).selected_text(mapping_mode_name).show_ui(ui, |ui|
+            {
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Uv, "UV").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Triplanar, "Triplanar").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Cube, "Cube").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Planar, "Planar").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Cylindrical, "Cylindrical").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Spherical, "Spherical").changed() || apply_settings;
+            });
+        });
+
+        if mapping_mode != TextureMappingMode::Uv
+        {
+            ui.horizontal(|ui|
+            {
+                ui.label("Mapping Space:");
+                apply_settings = ui.selectable_value(& mut mapping_space, MappingSpace::Object, "Object").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_space, MappingSpace::World, "World").changed() || apply_settings;
+            });
+
+            // triplanar and cube project along all three axes - no axis needed
+            if mapping_mode == TextureMappingMode::Planar || mapping_mode == TextureMappingMode::Cylindrical || mapping_mode == TextureMappingMode::Spherical
+            {
+                ui.horizontal(|ui|
+                {
+                    ui.label("Mapping Axis:");
+                    apply_settings = ui.selectable_value(& mut mapping_axis, MappingAxis::X, "X").changed() || apply_settings;
+                    apply_settings = ui.selectable_value(& mut mapping_axis, MappingAxis::Y, "Y").changed() || apply_settings;
+                    apply_settings = ui.selectable_value(& mut mapping_axis, MappingAxis::Z, "Z").changed() || apply_settings;
+                });
+            }
+
+            apply_settings = ui.add(egui::Slider::new(&mut mapping_scale, 0.01..=100.0).logarithmic(true).text("Mapping Scale")).changed() || apply_settings;
+
+            if mapping_mode == TextureMappingMode::Triplanar
+            {
+                apply_settings = ui.add(egui::Slider::new(&mut mapping_sharpness, 1.0..=32.0).text("Triplanar Sharpness")).changed() || apply_settings;
+            }
+
+            info_box(ui, "Projected texture mapping is active: the Address Mode is automatically forced to 'Repeat' for all textures of this material.");
+        }
+
         if apply_settings
         {
             let data = self.get_data_mut().get_mut();
@@ -850,10 +1378,13 @@ impl Component for Material
             data.reflectivity = reflectivity;
             data.refraction_index = refraction_index;
             data.normal_map_strength = normal_map_strength;
+            data.ibl_diffuse_intensity = ibl_diffuse_intensity;
 
             data.unlit_shading = unlit_shading;
             data.cast_shadow = cast_shadow;
             data.receive_shadow = receive_shadow;
+            data.no_fog = no_fog;
+            data.vertex_colors = vertex_colors;
 
             data.shadow_softness = shadow_softness;
             data.roughness = roughness;
@@ -880,6 +1411,12 @@ impl Component for Material
             let g = ((highlight_color.g() as f32) / 255.0).clamp(0.0, 1.0);
             let b = ((highlight_color.b() as f32) / 255.0).clamp(0.0, 1.0);
             data.highlight_color = Vector3::<f32>::new(r, g, b);
+
+            data.mapping_mode = mapping_mode;
+            data.mapping_space = mapping_space;
+            data.mapping_axis = mapping_axis;
+            data.mapping_scale = mapping_scale;
+            data.mapping_sharpness = mapping_sharpness;
         }
     }
 }

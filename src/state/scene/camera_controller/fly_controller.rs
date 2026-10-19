@@ -2,10 +2,11 @@ use std::f32::consts::PI;
 
 use nalgebra::{Vector2, Vector3};
 use parry3d::query::Ray;
+use serde::{Deserialize, Serialize};
 
-use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero_vec2, approx_zero_vec3}}, input::{gamepad::{GamepadAxis, GamepadButton}, input_manager::InputManager, keyboard::{Key, Modifier}}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
+use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero_vec2, approx_zero_vec3}}, input::{gamepad::{GamepadAxis, GamepadButton}, keyboard::{Key, Modifier}}, state::{scene::{camera::{Camera, CameraData}, node::NodeItem, scene::Scene}, state::InputOutput}};
 
-use super::camera_controller::{CameraController, CameraControllerBase};
+use super::camera_controller::{gesture_owns_viewport, CameraController, CameraControllerBase};
 
 const ANGLE_OFFSET_UP: f32 = 0.01;
 const ANGLE_OFFSET_DOWN: f32 = 0.1;
@@ -14,9 +15,12 @@ const DEFAULT_COLLISION_DISTANCE: f32 = 0.5;
 const DEFAULT_MOUSE_SENSIVITY: f32 = 0.0015;
 const DEFAULT_GAMEPAD_SENSIVITY: f32 = 0.03;
 
+#[derive(Serialize, Deserialize)]
 pub struct FlyController
 {
     base: CameraControllerBase,
+
+    pub viewport_only: bool,
 
     pub mouse_movement: bool,
     pub keyboard_movement: bool,
@@ -33,11 +37,13 @@ pub struct FlyController
 
 impl FlyController
 {
-    pub fn new(collision: bool, mouse_sensitivity: Vector2::<f32>, move_speed: f32, move_speed_shift: f32) -> FlyController
+    pub fn new(collision: bool, mouse_sensitivity: Vector2::<f32>, move_speed: f32, move_speed_shift: f32, viewport_only: bool) -> FlyController
     {
         FlyController
         {
             base: CameraControllerBase::new("Fly Controller".to_string(), "✈".to_string()),
+
+            viewport_only,
 
             mouse_movement: true,
             keyboard_movement: true,
@@ -60,6 +66,8 @@ impl FlyController
         {
             base: CameraControllerBase::new("Fly Controller".to_string(), "✈".to_string()),
 
+            viewport_only: false,
+
             mouse_movement: true,
             keyboard_movement: true,
             gamepad_movement: true,
@@ -76,13 +84,23 @@ impl FlyController
     }
 }
 
+#[typetag::serde]
 impl CameraController for FlyController
 {
     camera_controller_impl_default!();
 
-    fn update(&mut self, _node: Option<NodeItem>, scene: &mut Scene, input_manager: &mut InputManager, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32) -> bool
+    fn run_after_deserialize(&mut self, _context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+    }
+
+    fn update(&mut self, _node: Option<NodeItem>, scene: &mut Scene, io: &mut InputOutput, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32) -> bool
     {
         let mut change = false;
+
+        if self.viewport_only && !gesture_owns_viewport(cam_data.get_ref(), &io.input_manager.mouse)
+        {
+            return false;
+        }
 
         // ******************** angle/rotation ********************
         let mut angle_velocity = Vector2::<f32>::zeros();
@@ -90,18 +108,28 @@ impl CameraController for FlyController
         // mouse
         if self.mouse_movement
         {
+            let mouse_pos = io.input_manager.mouse.point.pos;
+
             if
             (
-                input_manager.mouse.is_any_button_holding() && *input_manager.mouse.visible.get_ref()
+                io.input_manager.mouse.is_any_button_holding()
+                &&
+                *io.input_manager.mouse.visible.get_ref()
+                &&
+                (
+                    mouse_pos.is_some()
+                    &&
+                    Camera::is_point_in_viewport_data(cam_data.get_ref(), &mouse_pos.unwrap())
+                )
             )
             ||
-                !*input_manager.mouse.visible.get_ref()
+                !*io.input_manager.mouse.visible.get_ref()
             {
-                angle_velocity = input_manager.mouse.point.velocity;
+                angle_velocity = io.input_manager.mouse.point.velocity;
 
-                if !*input_manager.mouse.visible.get_ref()
+                if !*io.input_manager.mouse.visible.get_ref()
                 {
-                    angle_velocity = input_manager.mouse.raw_velocity.velocity;
+                    angle_velocity = io.input_manager.mouse.raw_velocity.velocity;
                 }
 
                 angle_velocity.x *= self.mouse_sensitivity.x;
@@ -112,7 +140,7 @@ impl CameraController for FlyController
         // gamepad
         if self.gamepad_movement
         {
-            for (_, gamepad) in &mut input_manager.gamepads
+            for (_, gamepad) in &mut io.input_manager.gamepads
             {
                 if gamepad.is_axis_active(GamepadAxis::RightStickX)
                 {
@@ -165,34 +193,34 @@ impl CameraController for FlyController
         if self.keyboard_movement
         {
             let keys = vec![Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C];
-            if input_manager.keyboard.is_holding_by_keys(&keys) || input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)
+            if io.input_manager.keyboard.is_holding_by_keys(&keys) || io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)
             {
-                if input_manager.keyboard.is_holding_and_not_consumed(Key::W)
+                if io.input_manager.keyboard.is_holding_and_not_consumed(Key::W)
                 {
                     movement.z = 1.0;
                 }
-                if input_manager.keyboard.is_holding_and_not_consumed(Key::S)
+                if io.input_manager.keyboard.is_holding_and_not_consumed(Key::S)
                 {
                     movement.z = -1.0;
                 }
-                if input_manager.keyboard.is_holding_and_not_consumed(Key::D)
+                if io.input_manager.keyboard.is_holding_and_not_consumed(Key::D)
                 {
                     movement.x = -1.0;
                 }
-                if input_manager.keyboard.is_holding_and_not_consumed(Key::A)
+                if io.input_manager.keyboard.is_holding_and_not_consumed(Key::A)
                 {
                     movement.x = 1.0;
                 }
-                if input_manager.keyboard.is_holding(Key::Space)
+                if io.input_manager.keyboard.is_holding(Key::Space)
                 {
                     movement.y = 1.0;
                 }
-                //if input_manager.keyboard.is_holding_and_not_consumed(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
-                if input_manager.keyboard.is_holding_and_not_consumed(Key::C)
+                //if io.input_manager.keyboard.is_holding_and_not_consumed(Key::C) || io.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+                if io.input_manager.keyboard.is_holding_and_not_consumed(Key::C)
                 {
                     movement.y = -1.0;
                 }
-                if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+                if io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                 {
                     fast_movement = true;
                 }
@@ -202,7 +230,7 @@ impl CameraController for FlyController
         // gamepad
         if self.gamepad_movement
         {
-            for (_, gamepad) in &mut input_manager.gamepads
+            for (_, gamepad) in &mut io.input_manager.gamepads
             {
                 if gamepad.is_holding(GamepadButton::DPadLeft)
                 {
@@ -275,7 +303,7 @@ impl CameraController for FlyController
             let origin = cam_data.eye_pos;
             let dir = movement_vec.normalize();
 
-            let ray = Ray::new(origin, dir);
+            let ray = Ray::new(origin.into(), dir.into());
 
             let hit = scene.pick(&ray, false, false, false, false, None);
 
@@ -307,6 +335,8 @@ impl CameraController for FlyController
 
     fn ui(&mut self, ui: &mut egui::Ui)
     {
+        ui.checkbox(&mut self.viewport_only, "Viewport only");
+
         ui.checkbox(&mut self.mouse_movement, "Mouse movement");
         ui.checkbox(&mut self.keyboard_movement, "Keyboard movement");
         ui.checkbox(&mut self.gamepad_movement, "Gamepad movement");

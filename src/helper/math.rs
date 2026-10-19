@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 
+use std::f32::consts::PI;
 
-use nalgebra::{Vector4, Vector3, Vector2, Matrix4, Point3};
+use nalgebra::{Matrix3, Matrix4, Point2, Point3, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use parry3d::query::Ray;
 
 pub fn approx_equal(a: f32, b: f32) -> bool
@@ -62,9 +63,29 @@ pub fn is_almost_integer(value: f32) -> bool
     (value - value.round()).abs() < tolerance
 }
 
+pub fn shortest_angle_dist(a: f32, b: f32) -> f32
+{
+    let mut diff = (b - a) % (2.0 * PI);
+    if diff < -PI
+    {
+        diff += 2.0 * PI;
+    }
+    else if diff > PI
+    {
+        diff -= 2.0 * PI;
+    }
+    diff
+}
+
 pub fn interpolate(a: f32, b: f32, f: f32) -> f32
 {
     return a + f * (b - a);
+}
+
+pub fn interpolate_angle(a: f32, b: f32, t: f32) -> f32
+{
+    let delta = shortest_angle_dist(a, b);
+    a + delta * t
 }
 
 pub fn interpolate_vec3(a: &Vector3<f32>, b: &Vector3<f32>, f: f32) -> Vector3<f32>
@@ -207,6 +228,19 @@ pub fn bezier_interpolate(t: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32
     3.0 * (1.0 - refined_t).powi(2) * refined_t * y1 + 3.0 * (1.0 - refined_t) * refined_t.powi(2) * y2 + refined_t.powi(3)
 }
 
+// up vector that is not parallel to the given direction (e.g. for look-at matrices)
+pub fn up_vector_for_direction(dir: &Vector3<f32>) -> Vector3<f32>
+{
+    if dir.y.abs() > 0.99
+    {
+        Vector3::new(0.0, 0.0, 1.0)
+    }
+    else
+    {
+        Vector3::new(0.0, 1.0, 0.0)
+    }
+}
+
 pub fn yaw_pitch_from_direction(dir: Vector3::<f32>) -> (f32, f32)
 {
     let pitch = dir.y.asin();
@@ -227,10 +261,18 @@ pub fn yaw_pitch_to_direction(yaw: f32, pitch: f32) -> Vector3::<f32>
 
 pub fn inverse_ray(ray: &Ray, trans_inverse: &Matrix4<f32>) -> Ray
 {
-    let ray_inverse_start = trans_inverse * ray.origin.to_homogeneous();
-    let ray_inverse_dir = trans_inverse * ray.dir.to_homogeneous();
+    let origin = Point3::new(ray.origin.x, ray.origin.y, ray.origin.z);
+    let dir = Vector3::new(ray.dir.x, ray.dir.y, ray.dir.z);
 
-    Ray::new(Point3::from_homogeneous(ray_inverse_start).unwrap(), Vector3::from_homogeneous(ray_inverse_dir).unwrap())
+    let ray_inverse_start = trans_inverse * origin.to_homogeneous();
+    let ray_inverse_dir = trans_inverse * dir.to_homogeneous();
+
+    // a degenerate or non finite transform has no usable inverse - a ray that hits nothing
+    // is the right answer there, panicking is not
+    let origin = Point3::from_homogeneous(ray_inverse_start).unwrap_or(Point3::origin());
+    let dir = Vector3::from_homogeneous(ray_inverse_dir).unwrap_or(Vector3::zeros());
+
+    Ray::new(origin.into(), dir.into())
 }
 
 /*
@@ -248,6 +290,11 @@ pub fn calculate_normal(v1: &Point3<f32>, v2: &Point3<f32>, v3: &Point3<f32>) ->
 
     let normal = vec_1.cross(&vec_2);
     normal.normalize()
+}
+
+pub fn clamp_point2(point: &Point2<f32>, min: &Point2<f32>, max: &Point2<f32>) -> Point2<f32>
+{
+    Point2::<f32>::new(point.x.clamp(min.x, max.x), point.y.clamp(min.y, max.y))
 }
 
 pub fn snap_to_grid(value: f32, grid_size: f32) -> f32
@@ -293,7 +340,7 @@ pub fn ray_plane_intersection(ray: &Ray, plane_normal: Vector3<f32>, plane_point
     let ray_origin = ray.origin;
 
     let d = plane_normal.dot(&plane_point.coords);
-    let denominator = plane_normal.dot(&ray_dir);
+    let denominator = plane_normal.dot(&ray_dir.into());
 
     // parallel
     if denominator.abs() < 1e-6
@@ -301,14 +348,14 @@ pub fn ray_plane_intersection(ray: &Ray, plane_normal: Vector3<f32>, plane_point
         return None;
     }
 
-    let t = (d - plane_normal.dot(&ray_origin.coords)) / denominator;
+    let t = (d - plane_normal.dot(&Vector3::<f32>::from(ray_origin))) / denominator;
 
     if !t.is_finite() || t < 0.0
     {
         return None;
     }
 
-    Some(ray_origin + ray_dir * t)
+    Some((ray_origin + ray_dir * t).into())
 }
 
 pub fn signed_angle_between_points(origin: &Point3<f32>, p1: &Point3<f32>, p2: &Point3<f32>, reference_axis: &Vector3<f32>) -> f32
@@ -370,7 +417,7 @@ pub fn extract_rotation_as_euler_vec(matrix: &Matrix4<f32>) -> Vector3<f32>
     let sy = -rotation[(2, 0)];
 
     // normal calculation
-    if sy.abs() < 1.0 - std::f32::EPSILON
+    if sy.abs() < 1.0 - f32::EPSILON
     {
         let pitch = sy.asin();
         let roll = rotation[(2, 1)].atan2(rotation[(2, 2)]);
@@ -385,4 +432,83 @@ pub fn extract_rotation_as_euler_vec(matrix: &Matrix4<f32>) -> Vector3<f32>
         let yaw = (-rotation[(0, 1)]).atan2(rotation[(1, 1)]);
         Vector3::new(roll, pitch, yaw)
     }
+}
+
+pub fn extract_rotation_quat_from_transform(transform: &Matrix4<f32>) -> UnitQuaternion<f32>
+{
+    let mut rot_mat = transform.fixed_view::<3, 3>(0, 0).clone_owned();
+
+    // Normalize each column to remove scaling
+    for i in 0..3
+    {
+        let col = rot_mat.column(i);
+        let normalized = col.normalize();
+        rot_mat.set_column(i, &normalized);
+    }
+
+    // Convert to quaternion
+    UnitQuaternion::from_rotation_matrix(&Rotation3::from_matrix_unchecked(rot_mat))
+}
+
+pub fn look_at_rotation(target_dir: Vector3<f32>, up: Vector3<f32>) -> UnitQuaternion<f32>
+{
+    // In OpenGL/glTF, -Z is forward in local space
+    // target_dir is the direction we want to look at (in world/parent space)
+    // We need to build a rotation matrix where the local -Z axis points towards target_dir
+
+    // The local -Z axis should point in the target_dir direction
+    // So the Z column of the matrix should be -target_dir
+    let forward = -target_dir.normalize();  // This will be the Z column
+    let up_n = up.normalize();
+
+    // Calculate right vector: right = up x forward
+    let mut right = up_n.cross(&forward);
+    if right.norm_squared() < 1e-6
+    {
+        // forward and up are ~ parallel -> use a "fallback"-axis
+        // Use +Z as fallback to keep the character facing in the original direction
+        let fallback = Vector3::new(0.0, 0.0, 1.0);
+        right = up_n.cross(&fallback);
+
+        // If that also fails (shouldn't happen), use X
+        if right.norm_squared() < 1e-6
+        {
+            right = Vector3::x();
+        }
+    }
+    let right = right.normalize();
+
+    // Recalculate up to ensure orthogonality: up = forward x right
+    let up_corrected = forward.cross(&right).normalize();
+
+    // Build rotation matrix with columns [right, up, forward]
+    // where forward = -target_dir (so the local -Z axis points towards target_dir)
+    let rot_mat = Matrix3::from_columns(&[right, up_corrected, forward]);
+    let rotation = Rotation3::from_matrix_unchecked(rot_mat);
+    UnitQuaternion::from_rotation_matrix(&rotation)
+}
+
+pub fn extract_translation_from_transform(transform: &Matrix4<f32>) -> Vector3<f32>
+{
+    Vector3::new
+    (
+        transform[(0, 3)],
+        transform[(1, 3)],
+        transform[(2, 3)]
+    )
+}
+
+pub fn extract_max_scale_from_transform(transform: &Matrix4<f32>) -> f32
+{
+    let scale = extract_scale_from_transform(transform);
+    scale.x.max(scale.y).max(scale.z)
+}
+
+pub fn extract_scale_from_transform(transform: &Matrix4<f32>) -> Vector3<f32>
+{
+    let scale_x = transform.fixed_view::<3, 1>(0, 0).norm();
+    let scale_y = transform.fixed_view::<3, 1>(0, 1).norm();
+    let scale_z = transform.fixed_view::<3, 1>(0, 2).norm();
+
+    Vector3::new(scale_x, scale_y, scale_z)
 }

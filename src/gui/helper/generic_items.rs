@@ -1,0 +1,299 @@
+use egui::{Color32, Frame, RichText, Ui};
+
+pub const TAB_CORNER_RADIUS: egui::CornerRadius = egui::CornerRadius { nw: 3, ne: 3, sw: 0, se: 0 };
+pub const TAB_V_PAD: f32 = 5.0;
+
+pub const TAB_BG_SELECTED: Color32 = Color32::from_rgba_premultiplied(60, 60, 60, 60);
+pub const TAB_BG_HOVER: Color32        = Color32::from_rgba_premultiplied(22, 22, 22, 22);
+pub const TAB_BG_INACTIVE: Color32     = Color32::from_rgba_premultiplied(8, 8, 8, 8);
+pub const TAB_BUTTON_BG: Color32       = Color32::from_rgba_premultiplied(35, 35, 35, 35);
+
+pub struct TabResponse
+{
+    pub response: egui::Response,
+    pub clicked: bool,
+    pub icon_clicked: bool, // close icon or the icon of tab_with_icon
+}
+
+// clickable icon inside a tab
+struct TabIcon<'a>
+{
+    text: &'a str,
+    hover_bg: Color32,
+    hover_text: Option<&'a str>,
+}
+
+pub fn tab_separator(ui: &mut Ui)
+{
+    let prev_spacing = ui.spacing().item_spacing.y;
+    ui.spacing_mut().item_spacing.y = 0.0;
+    ui.add(egui::Separator::default().spacing(2.0));
+    ui.spacing_mut().item_spacing.y = prev_spacing;
+}
+
+// visual vertical center of the letter body (median letter top to baseline), so emoji icons, i-dots and descenders don't shift the text
+fn text_center_y(galley: &egui::Galley) -> f32
+{
+    let mut tops: Vec<f32> = Vec::new();
+    let mut baseline = f32::NEG_INFINITY;
+
+    for row in &galley.rows
+    {
+        for glyph in row.glyphs.iter().filter(|glyph| glyph.chr.is_alphanumeric())
+        {
+            let glyph_baseline = row.pos.y + glyph.pos.y;
+            tops.push(glyph_baseline + glyph.uv_rect.offset.y);
+            baseline = baseline.max(glyph_baseline);
+        }
+    }
+
+    // symbols only (e.g. "+" or the close icon): center the drawn shape
+    if tops.is_empty()
+    {
+        return galley.mesh_bounds.center().y;
+    }
+
+    tops.sort_by(|a, b| a.total_cmp(b));
+    (tops[tops.len() / 2] + baseline) / 2.0
+}
+
+// tab shaped button (e.g. "+" next to the tabs): same shape as a tab, but always with a visible background
+pub fn tab_button(ui: &mut Ui, label: impl Into<egui::WidgetText>, size: egui::Vec2) -> egui::Response
+{
+    let galley = label.into().into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+
+    let bg_color = if response.hovered() { TAB_BG_SELECTED } else { TAB_BUTTON_BG };
+    ui.painter().rect_filled(rect, TAB_CORNER_RADIUS, bg_color);
+
+    let pos = egui::pos2(rect.center().x - galley.mesh_bounds.center().x, rect.center().y - text_center_y(&galley));
+    ui.painter().galley(pos, galley, ui.visuals().text_color());
+
+    response
+}
+
+pub fn tab(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, closable: bool) -> TabResponse
+{
+    tab_sized(ui, label, selected, closable, None, 10.0)
+}
+
+// tab with an action icon (e.g. open in a separate window) at the place of the close icon
+pub fn tab_with_icon(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, icon: &str, hover_text: &str) -> TabResponse
+{
+    let icon = TabIcon { text: icon, hover_bg: Color32::from_rgba_unmultiplied(0, 100, 210, 200), hover_text: Some(hover_text) };
+    tab_with_optional_icon(ui, label, selected, Some(icon), None, 10.0)
+}
+
+// tab with an optional fixed height (label stays vertically centered) and custom side padding
+pub fn tab_sized(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, closable: bool, height: Option<f32>, h_pad: f32) -> TabResponse
+{
+    let close_icon = TabIcon { text: "🗙", hover_bg: Color32::from_rgba_unmultiplied(180, 50, 50, 200), hover_text: None };
+    tab_with_optional_icon(ui, label, selected, closable.then_some(close_icon), height, h_pad)
+}
+
+fn tab_with_optional_icon(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, icon: Option<TabIcon<'_>>, height: Option<f32>, h_pad: f32) -> TabResponse
+{
+    let v_pad = TAB_V_PAD;
+    let gap = 6.0;
+
+    let label_galley = label.into().into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
+
+    let icon_galley = icon.as_ref().map(|icon| ui.painter().layout_no_wrap(icon.text.to_string(), egui::FontId::proportional(11.0), ui.visuals().text_color()));
+
+    let mut tab_w = h_pad + label_galley.size().x + h_pad;
+    if let Some(icon_galley) = &icon_galley
+    {
+        tab_w += gap + icon_galley.size().x;
+    }
+    let tab_h = height.unwrap_or(label_galley.size().y + v_pad * 2.0);
+
+    let (tab_rect, tab_response) = ui.allocate_exact_size(egui::vec2(tab_w, tab_h), egui::Sense::click());
+
+    let bg_color = if selected
+    {
+        TAB_BG_SELECTED
+    }
+    else if tab_response.hovered()
+    {
+        TAB_BG_HOVER
+    }
+    else
+    {
+        TAB_BG_INACTIVE
+    };
+    ui.painter().rect_filled(tab_rect, TAB_CORNER_RADIUS, bg_color);
+
+    // label, vertically centered
+    let label_pos = egui::pos2(tab_rect.left() + h_pad, tab_rect.center().y - text_center_y(&label_galley));
+    ui.painter().galley(label_pos, label_galley, ui.visuals().text_color());
+
+    // icon button (close or action)
+    let mut icon_clicked = false;
+    if let (Some(icon), Some(icon_galley)) = (icon, icon_galley)
+    {
+        let icon_x = tab_rect.right() - h_pad - icon_galley.size().x;
+        let icon_y = tab_rect.center().y - icon_galley.mesh_bounds.center().y;
+        let icon_rect = egui::Rect::from_min_size
+        (
+            egui::pos2(icon_x - 3.0, icon_y - 2.0),
+            egui::vec2(icon_galley.size().x + 6.0, icon_galley.size().y + 4.0),
+        );
+        let mut icon_response = ui.allocate_rect(icon_rect, egui::Sense::click());
+
+        let icon_color = if icon_response.hovered() { Color32::WHITE } else { ui.visuals().weak_text_color() };
+        if icon_response.hovered()
+        {
+            ui.painter().rect_filled(icon_rect, 3.0, icon.hover_bg);
+        }
+        ui.painter().galley(egui::pos2(icon_x, icon_y), icon_galley, icon_color);
+
+        if let Some(hover_text) = icon.hover_text
+        {
+            icon_response = icon_response.on_hover_text(hover_text);
+        }
+
+        icon_clicked = icon_response.clicked();
+    }
+
+    let clicked = tab_response.clicked() && !icon_clicked;
+
+    TabResponse { response: tab_response, clicked, icon_clicked }
+}
+
+pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32>, header: impl FnOnce(&mut Ui) -> R, body: impl FnOnce(&mut Ui) -> R)
+{
+    let background_color;
+    if let Some(color) = bg_color
+    {
+        background_color = color;
+    }
+    else
+    {
+        background_color = Color32::from_white_alpha(0);
+    }
+
+    let mut frame = egui::Frame::group(ui.style()).fill(background_color).stroke(egui::Stroke::NONE);
+    //let mut frame = egui::Frame::group(ui.style()).fill(background_color);
+    // horizontal margin keeps content off the edges; vertical margin is 0 so the
+    // header bg can sit flush with the frame's top/bottom (no transparent strip showing through)
+    frame.inner_margin = egui::Margin::symmetric(2, 0);
+    frame = frame.shadow(egui::Shadow
+    {
+        color: Color32::from_white_alpha(35),
+        offset: [0, 0],
+        blur: 5,
+        spread: 0,
+    });
+
+    frame.show(ui, |ui|
+    {
+        ui.scope(|ui|
+        {
+            ui.style_mut().visuals.indent_has_left_vline = false;
+
+            // reserve a shape slot to paint the header background underneath the header content
+            let header_bg_idx = ui.painter().add(egui::Shape::Noop);
+            let header_bg_color = TAB_BG_SELECTED;
+            let pading = 5.0;
+
+            let cursor_top = ui.cursor().min.y;
+            ui.add_space(pading);
+
+            let ui_id = ui.make_persistent_id(id.clone());
+            let (_toggle_resp, header_inner, body_resp) = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, open).show_header(ui, |ui|
+            {
+                ui.horizontal(|ui|
+                {
+                    header(ui);
+                });
+            }).body(|ui|
+            {
+                ui.add_space(pading * 2.0);
+
+                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), body);
+
+                ui.add_space(pading);
+            });
+
+            // expand the header bg to the full inner width and pad it vertically
+            let mut header_rect = header_inner.response.rect;
+            header_rect.min.x = ui.max_rect().left();
+            header_rect.max.x = ui.max_rect().right();
+            header_rect.min.y = cursor_top;
+            header_rect.max.y += pading;
+            ui.painter().set(header_bg_idx, egui::Shape::rect_filled(header_rect, TAB_CORNER_RADIUS, header_bg_color));
+
+            // when closed, push the cursor past the bg extension so siblings don't overlap
+            if body_resp.is_none()
+            {
+                ui.add_space(pading);
+            }
+        });
+    });
+}
+
+pub fn collapse_with_title<R>(ui: &mut Ui, id: &str, open: bool, title: &str, bg_color: Option<Color32>, body: impl FnOnce(&mut Ui) -> R)
+{
+    collapse(ui, id.to_string(), open, bg_color, |ui|
+    {
+        ui.label(RichText::new(title).heading().strong());
+
+        // this is just to use the full width
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+        {
+            ui.label("");
+        });
+    },
+    |ui|
+    {
+        body(ui);
+    });
+}
+
+pub fn modal_with_title<R>(ctx: &egui::Context, open: &mut bool, title: &str, movable: bool, resizable: bool, body: impl FnOnce(&mut Ui) -> R)
+{
+    egui::Window::new(title)
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(ctx.content_rect().center())
+        .collapsible(false)
+        .resizable(resizable)
+        .movable(movable)
+        .open(open)
+        .show(ctx, body);
+}
+
+pub fn separator_colored(ui: &mut Ui, color: Color32, height: f32)
+{
+    let available_width = ui.available_width();
+
+    let (rect, _response) = ui.allocate_exact_size(egui::vec2(available_width, height), egui::Sense::hover());
+
+    let painter = ui.painter();
+    painter.rect_filled(rect, 0.0, color);
+}
+
+pub fn label_with_background(ui: &mut Ui, text: &str, bg_color: Color32, text_color: Option<Color32>)
+{
+    Frame::new().fill(bg_color).corner_radius(2.0).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui|
+    {
+        if let Some(color) = text_color
+        {
+            ui.label(RichText::new(text).strong().color(color));
+            return;
+        }
+        ui.label(RichText::new(text).strong().color(Color32::WHITE));
+    });
+}
+
+pub fn button_with_background(ui: &mut Ui, text: &str, bg_color: Color32, text_color: Option<Color32>) -> egui::Response
+{
+    let rich_text = if let Some(color) = text_color
+    {
+        RichText::new(text).strong().color(color)
+    }
+    else
+    {
+        RichText::new(text).strong().color(Color32::WHITE)
+    };
+    ui.add(egui::Button::new(rich_text).fill(bg_color))
+}
