@@ -22,14 +22,9 @@ rustflags = [
     '-C', 'link-arg=--export=__tls_base',
 ]
 
-# ******************** profiles + patches ********************
+# ******************** profiles ********************
 # here and not in Cargo.toml: the editor copies this file into the code of a project (src/gui/editor/project_code.rs)
 # - the project is a workspace of its own and has to build the engine exactly like the editor did, or the engine shared library gets built again
-
-[patch.crates-io]
-# egui_plot from git still asks crates.io for egui/emath - same source as above, otherwise there are two eguis in the tree
-egui = { git = "https://github.com/emilk/egui", branch = "main" }
-emath = { git = "https://github.com/emilk/egui", branch = "main" }
 
 # the editor profiles (scripts/dev.mjs) - own names: other rustflags than cargo run and the exports, so own target dirs
 # the code of a project is built with the profile of the running editor

@@ -232,7 +232,7 @@ function projectCode(projectFile)
     return { dir, crate };
 }
 
-// the code of a project is a workspace of its own - the cargo args for the config of the engine (profiles, egui patch) and its lock (.cargo/Cargo.lock) - also for the shared library of the editor (--editor-library)
+// the code of a project is a workspace of its own - the cargo args for the config of the engine (profiles) and its lock (.cargo/Cargo.lock) - also for the shared library of the editor (--editor-library)
 function engineCargoArgs(dir)
 {
     const slashes = (file) => file.replaceAll("\\", "/");
