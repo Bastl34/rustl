@@ -952,7 +952,7 @@ impl Scene
         self.depth_pass_texture_changed = false;
     }
 
-    pub fn update_nodes(&mut self, wgpu: &mut WGpu, nodes: &mut Vec<Arc<RwLock<Box<Node>>>>)
+    pub fn update_nodes(&mut self, wgpu: &mut WGpu, nodes: &mut Vec<Arc<RwLock<Box<Node>>>>, occlusion_enabled: bool)
     {
         let mut instance_buffers_updated = false;
         let mut vertex_buffers_updated = false;
@@ -1263,7 +1263,8 @@ impl Scene
         }
 
         // ********** bounding box / draw slot buffers (occlusion culling) **********
-        if self.occlusion_supported
+        // only the occlusion check reads them - switched off they cost a full pass over all nodes per frame for nothing
+        if self.occlusion_supported && occlusion_enabled
         {
             // cheap per-frame hash over everything that is baked into the culling buffers but
             // has no own change tracker: node ids/count, culling-relevant settings, mesh counts
@@ -1383,6 +1384,11 @@ impl Scene
 
                 console_debug!("occlusion culling param buffer updated");
             }
+        }
+        else
+        {
+            // switched on again: the hash differs, everything is rebuilt
+            self.culling_state_hash = 0;
         }
 
         self.update_result.instances_updated = instance_buffers_updated;
@@ -1505,7 +1511,7 @@ impl Scene
             self.create_pipelines(wgpu, scene, true);
         }
 
-        self.update_nodes(wgpu, &mut all_nodes);
+        self.update_nodes(wgpu, &mut all_nodes, state.rendering.occlusion_culling);
         Self::consume_changed_joints(&all_nodes);
 
         // ********** debug volumes (bounding boxes / spheres, physics colliders) **********
