@@ -3121,7 +3121,7 @@ pub fn render_scene_offscreen_to_image(wgpu: &mut WGpu, state: &mut State, scene
     // ensure a render item exists
     if scene.render_item.is_none()
     {
-        let samples = *(state.rendering.msaa.get_ref());
+        let samples = state.msaa_samples();
         let render_item = Scene::new(wgpu, state, scene, samples);
         scene.render_item = Some(Box::new(render_item));
     }

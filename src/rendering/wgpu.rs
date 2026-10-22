@@ -181,15 +181,30 @@ impl WGpu
 
         surface.configure(&device, &surface_configuration(&surface_config, surface_format));
 
-        // msaa
-        let texture_features = adapter.get_texture_format_features(surface_caps.formats[0]);
+        // msaa - the count has to work for the color surface and for the depth attachment of the scenes.
+        // the formats differ: lavapipe reports 4x for the color format and no multisampling at all for the depth
+        // format, so the count is the lowest both support (and software rasterizers get none)
+        let highest = |features: wgpu::TextureFormatFeatures| [16, 8, 4, 2].into_iter().find(|count| features.flags.sample_count_supported(*count));
 
-        if texture_features.flags.sample_count_supported(2) { state.rendering_adapter.max_msaa_samples = 2; }
-        if texture_features.flags.sample_count_supported(4) { state.rendering_adapter.max_msaa_samples = 4; }
-        if texture_features.flags.sample_count_supported(8) { state.rendering_adapter.max_msaa_samples = 8; }
-        if texture_features.flags.sample_count_supported(16) { state.rendering_adapter.max_msaa_samples = 16; }
+        let color_features = adapter.get_texture_format_features(surface_format);
+        let depth_features = adapter.get_texture_format_features(crate::rendering::texture::Texture::DEPTH_FORMAT);
+        let color_max = highest(color_features).unwrap_or(1);
 
-        let msaa_samples = *state.rendering.msaa.get_ref();
+        state.rendering_adapter.max_msaa_samples = if adapter_info.device_type == wgpu::DeviceType::Cpu
+        {
+            1
+        }
+        // the web reports no multisample support for depth formats - the browsers multisample the depth attachment anyway
+        else if cfg!(target_arch = "wasm32")
+        {
+            color_max
+        }
+        else
+        {
+            color_max.min(highest(depth_features).unwrap_or(1))
+        };
+
+        let msaa_samples = state.msaa_samples();
 
         state.rendering_adapter.max_texture_resolution = device.limits().max_texture_dimension_2d;
         state.rendering_adapter.max_supported_texture_resolution = device.limits().max_texture_dimension_2d;
