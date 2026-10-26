@@ -272,7 +272,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
             {
                 ui.label("settle damping: ");
                 ui.add(egui::Slider::new(&mut physics.settle_damping, 0.0..=20.0).fixed_decimals(1));
-                ui.label("ℹ").on_hover_text("extra linear and angular damping, on top of the object's own, for a body that has stayed in place for a moment (0.3 s within 10 cm and about 11°) - rocking and jitter in a pile die out quickly instead of going on. Anything actually on its way is not affected. 0 turns it off");
+                ui.label("ℹ").on_hover_text("extra linear and angular damping, on top of the object's own, for a body that has stayed in place for a moment (0.3 s within 10 cm and about 11°) and stands on its own - rocking and jitter in a pile die out quickly instead of going on. Anything actually on its way is not affected. 0 turns it off");
             });
 
             ui.horizontal(|ui|
@@ -300,7 +300,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
                 {
                     ui.label("calm down within: ");
                     ui.add(egui::Slider::new(&mut physics.settle_time, 0.0..=20.0).fixed_decimals(1).suffix(" s"));
-                    ui.label("ℹ").on_hover_text("how long a body may keep moving after it was set moving - by the start of the run, a hit or a thaw. After that it is frozen as soon as it gets less than 20 cm in half a second while touching something, however much it rocks or spins, and it no longer wakes its frozen neighbours. Anything actually sliding, rolling or flying keeps going. 0 turns it off");
+                    ui.label("ℹ").on_hover_text("how long a body may keep moving after it was set moving - by the start of the run, a hit or a thaw. After that it is frozen as soon as it gets less than 20 cm in half a second while touching something, however much it rocks or spins, and it no longer wakes its frozen neighbours. Anything actually sliding, rolling or flying keeps going. Nothing is frozen without a footing - its center of mass over what it rests or leans on and what carries it holding still - so a crate halfway over or a toppling tower keeps falling; at twice this time it is frozen anyway, so it always ends. 0 turns it off");
                 });
             });
 

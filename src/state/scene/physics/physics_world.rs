@@ -92,6 +92,15 @@ const SETTLE_WINDOW: f32 = 0.5;
 const SUPPORT_DRIFT: f32 = 0.01;
 const SUPPORT_ANGLE: f32 = 0.02;
 
+// a contact counts for the footing when it pushes at least this much upward - a wall leaned on does, something lying on top does not
+const FOOTING_NORMAL_UP: f32 = -0.1;
+
+// a contact pushing up this much carries weight, and a body is only frozen once what carries it holds still
+const CARRY_NORMAL_UP: f32 = 0.5;
+
+// how far the center of mass may lie outside its contacts, seen from above, and still count as standing
+const FOOTING_MARGIN: f32 = 0.01;
+
 // how many loads deep on a vehicle are still kept from freezing, e.g. carrier - truck - pickup
 const CARRY_DEPTH: usize = 4;
 
@@ -2594,15 +2603,150 @@ impl PhysicsWorld
 
             // not in mid air, a thrown object keeps flying
             let calmed = overdue && rest_time >= SETTLE_WINDOW && self.touches_anything(index);
+            let freeze = self.settings.freeze_resting && (resting || rest_time >= WOBBLE_TIME || calmed);
+            let settle = damp && rest_time >= SETTLE_DELAY;
 
-            if self.settings.freeze_resting && (resting || rest_time >= WOBBLE_TIME || calmed)
+            // a crate halfway over or a toppling tower keeps going, overdue twice over it stops anyway
+            let footing = (freeze || settle) && (self.is_long_overdue(&self.entries[index]) || self.has_footing(index));
+
+            if freeze && footing
             {
                 self.set_frozen(index, true);
                 continue;
             }
 
-            self.set_settling(index, damp && rest_time >= SETTLE_DELAY);
+            self.set_settling(index, settle && footing);
         }
+    }
+
+    // Whether a body may be frozen where it is: seen from above its center of mass lies over what it rests or leans on, and what carries its weight holds still.
+    fn has_footing(&self, index: usize) -> bool
+    {
+        let gravity = Vector::new(self.settings.gravity.x, self.settings.gravity.y, self.settings.gravity.z);
+
+        if gravity.length() <= f32::EPSILON
+        {
+            return true;
+        }
+
+        let up = -gravity.normalize();
+        let (side, forward) = up.any_orthonormal_pair();
+
+        let entry = &self.entries[index];
+        let Some(body) = entry.body.and_then(|handle| self.bodies.get(handle)) else { return true; };
+        let center = body.center_of_mass();
+
+        // the contact points seen from above, relative to the center of mass
+        let mut points: Vec<(f32, f32)> = vec![];
+
+        for part in &entry.parts
+        {
+            for pair in self.narrow_phase.contact_pairs_with(part.handle)
+            {
+                if !pair.has_any_active_contact()
+                {
+                    continue;
+                }
+
+                let Some(collider1) = self.colliders.get(pair.collider1) else { continue; };
+                let first = pair.collider1 == part.handle;
+                let other = if first { pair.collider2 } else { pair.collider1 };
+
+                // static geometry, a frozen or waiting body, or a sleeping one
+                let holds_still = match self.colliders.get(other).and_then(|collider| collider.parent()).and_then(|handle| self.bodies.get(handle))
+                {
+                    Some(other_body) => other_body.is_fixed() || (other_body.is_dynamic() && other_body.is_sleeping()),
+                    None => true,
+                };
+
+                for manifold in pair.manifolds()
+                {
+                    // the points of a trimesh contact are relative to the triangle
+                    let frame = match manifold.subshape_pos1()
+                    {
+                        Some(subshape) => *collider1.position() * *subshape,
+                        None => *collider1.position(),
+                    };
+
+                    let normal = frame.rotation * manifold.local_n1;
+                    let lift = (if first { -normal } else { normal }).dot(up);
+
+                    if lift <= FOOTING_NORMAL_UP
+                    {
+                        continue;
+                    }
+
+                    let count = points.len();
+
+                    for contact in manifold.points.iter().filter(|contact| contact.dist <= RELEASE_TOUCH_DISTANCE)
+                    {
+                        let offset = frame.transform_point(contact.local_p1) - center;
+                        points.push((offset.dot(side), offset.dot(forward)));
+                    }
+
+                    if points.len() > count && lift >= CARRY_NORMAL_UP && !holds_still
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        Self::distance_to_hull(&points) <= FOOTING_MARGIN
+    }
+
+    // distance from the origin to the convex hull of the points, 0 inside, infinite without any
+    fn distance_to_hull(points: &[(f32, f32)]) -> f32
+    {
+        let mut sorted = points.to_vec();
+        sorted.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+        sorted.dedup();
+
+        let length = |p: (f32, f32)| (p.0 * p.0 + p.1 * p.1).sqrt();
+        let cross = |o: (f32, f32), a: (f32, f32), b: (f32, f32)| (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0);
+
+        match sorted.len()
+        {
+            0 => return f32::INFINITY,
+            1 => return length(sorted[0]),
+            _ => {}
+        }
+
+        // monotone chain, counter clockwise
+        let mut hull: Vec<(f32, f32)> = vec![];
+
+        for pass in [sorted.clone(), sorted.iter().rev().copied().collect()]
+        {
+            let start = hull.len();
+
+            for point in pass
+            {
+                while hull.len() >= start + 2 && cross(hull[hull.len() - 2], hull[hull.len() - 1], point) <= 0.0
+                {
+                    hull.pop();
+                }
+
+                hull.push(point);
+            }
+
+            hull.pop();
+        }
+
+        let edges = (0..hull.len()).map(|i| (hull[i], hull[(i + 1) % hull.len()]));
+
+        if hull.len() >= 3 && edges.clone().all(|(a, b)| cross(a, b, (0.0, 0.0)) >= 0.0)
+        {
+            return 0.0;
+        }
+
+        edges.map(|(a, b)|
+        {
+            let direction = (b.0 - a.0, b.1 - a.1);
+            let squared = direction.0 * direction.0 + direction.1 * direction.1;
+            let t = if squared > 0.0 { (-(a.0 * direction.0 + a.1 * direction.1) / squared).clamp(0.0, 1.0) } else { 0.0 };
+
+            length((a.0 + t * direction.0, a.1 + t * direction.1))
+        }).fold(f32::INFINITY, f32::min)
     }
 
     // the settle damping comes on top of the object's own, which is read back when it ends
@@ -2639,6 +2783,12 @@ impl PhysicsWorld
     fn is_overdue(&self, entry: &BodyEntry) -> bool
     {
         self.settings.settle_time > 0.0 && entry.active_time >= self.settings.settle_time
+    }
+
+    // overdue twice over: frozen even without a footing, so it always ends
+    fn is_long_overdue(&self, entry: &BodyEntry) -> bool
+    {
+        self.settings.settle_time > 0.0 && entry.active_time >= 2.0 * self.settings.settle_time
     }
 
     // the entries lying on a vehicle, directly or on another load (a car on a truck on a car carrier)
@@ -2887,8 +3037,10 @@ impl PhysicsWorld
 
             let Some(body) = support.body.and_then(|handle| self.bodies.get(handle)) else { continue; };
 
-            // the distance is only measured once the support has moved at all
-            if Self::stays_put(&watch.start, body.position(), SUPPORT_DRIFT, SUPPORT_ANGLE) || self.colliders_touch(&self.entry_bounds(watch.held), &self.entry_bounds(watch.support))
+            // the distance is only measured once the support has moved at all, and a support tipping away beyond a wobble lets go even while its edge still touches
+            let in_place = Self::stays_put(&watch.start, body.position(), WOBBLE_DRIFT, WOBBLE_ANGLE);
+
+            if Self::stays_put(&watch.start, body.position(), SUPPORT_DRIFT, SUPPORT_ANGLE) || (in_place && self.colliders_touch(&self.entry_bounds(watch.held), &self.entry_bounds(watch.support)))
             {
                 self.supports.push(watch);
             }
