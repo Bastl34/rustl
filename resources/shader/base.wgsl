@@ -511,7 +511,7 @@ struct MaterialUniform
 @group(0) @binding(21) var tex_custom0: texture_2d<f32>;
 @group(0) @binding(22) var tex_custom0_sampler: sampler;
 
-@group(0) @binding(24) var tex_custom1: texture_2d<f32>;
+@group(0) @binding(23) var tex_custom1: texture_2d<f32>;
 @group(0) @binding(24) var tex_custom1_sampler: sampler;
 
 @group(0) @binding(25) var tex_custom2: texture_2d<f32>;
