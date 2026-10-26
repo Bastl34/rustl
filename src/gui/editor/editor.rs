@@ -866,7 +866,14 @@ impl Editor
                 let pos = state.io.input_manager.mouse.point.pos.unwrap_or(Point2::<f32>::new(state.width as f32 / 2.0, state.height as f32 / 2.0));
 
                 let copy_node_id = self.editor_state.copy_node_id.clone();
-                let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
+                let mut copy_asset_transform = None;
+                let copy_node_settings = node.settings.clone();
+
+                if let Some(transform) = node.find_component::<Transformation>()
+                {
+                    component_downcast!(transform, Transformation);
+                    copy_asset_transform = Some(transform.get_data().clone());
+                }
 
                 self.load_asset(state, source.origin_path.clone(), AssetType::Object, Point2::<f32>::new(pos.x, pos.y), true, None, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
                 {
@@ -885,6 +892,9 @@ impl Editor
                             }
                         }
                     }
+
+                    // apply settings
+                    root_node.write().unwrap().settings = copy_node_settings.clone();
 
                     *copy_node_id.write().unwrap() = Some(root_node.read().unwrap().id);
                 })));
