@@ -4,7 +4,7 @@ use egui::{Ui, RichText, Color32};
 
 use crate::{component_downcast_mut, gui::{editor::{editor::EDITOR_INTERNAL_TAG, editor_state::PickType, ui::{dialogs::load_texture_dialog, helper::ui_helper::{fit_hierarchy_heading, rename_hierarchy_item_or_toggle_selection}}}, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{scene::{components::material::{ALL_TEXTURE_TYPES, Material, MaterialItem}, scene::Scene, utilities::scene_utils::execute_on_scene_mut}, state::{ENGINE_INTERNAL_TAG, State}}};
 
-use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
+use super::super::editor_state::{EditorState, FilterKind, SelectionType, SettingsPanel};
 
 pub fn build_material_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, materials: &HashMap<u32, MaterialItem>, ui: &mut Ui, scene_id: u32)
 {
@@ -17,8 +17,7 @@ pub fn build_material_list(editor_state: &mut EditorState, exec_queue: Execution
             let is_internal = material.get_base().tags.contains(ENGINE_INTERNAL_TAG) || material.get_base().tags.contains(EDITOR_INTERNAL_TAG);
             let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
 
-            let filter = editor_state.hierarchy_filter.to_lowercase();
-            if !show_from_tags || !filter.is_empty() && material.get_base().name.to_lowercase().find(filter.as_str()).is_none()
+            if !show_from_tags || editor_state.hierarchy_filter_hides(FilterKind::Material, &material.get_base().name)
             {
                 continue;
             }

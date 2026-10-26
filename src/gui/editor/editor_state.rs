@@ -7,7 +7,7 @@ use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
 use crate::{gui::editor::gizmo::hide_gizmos, state::{project::{loader::apply_project_settings, project::{ProjectData, ProjectLocalData, ProjectSettings}}, scene::node::NodeSettings}};
-use crate::{console_log, gui::editor::{helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::{RunMode, State}}};
+use crate::{console_log, gui::editor::{helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::{Node, NodeItem}, scene::Scene}, state::{RunMode, State}}};
 use crate::gui::editor::ui::export::ExportDialog;
 use crate::state::{scene::camera::CameraProjectionType, state::ENGINE_INTERNAL_TAG_PREFX};
 use crate::gui::editor::project_code::ProjectCode;
@@ -73,6 +73,21 @@ pub enum SettingsPanel
     Resources,
     MeshResource,
     Project
+}
+
+// what the hierarchy filter searches, picked by a prefix like "node:test"
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum FilterKind
+{
+    Scene,
+    Node,
+    Instance,
+    Camera,
+    Light,
+    Material,
+    Texture,
+    Mesh,
+    Sound,
 }
 
 #[derive(PartialEq, Eq)]
@@ -777,6 +792,63 @@ impl EditorState
         }
 
         (item_id, subitem_id)
+    }
+
+    // the prefix kind (None = search all kinds) and the lowercase search term of the hierarchy filter
+    pub fn hierarchy_filter_parts(&self) -> (Option<FilterKind>, String)
+    {
+        if let Some((prefix, term)) = self.hierarchy_filter.split_once(':')
+        {
+            let kind = match prefix.trim().to_lowercase().as_str()
+            {
+                "scene" => Some(FilterKind::Scene),
+                "node" | "object" => Some(FilterKind::Node),
+                "instance" => Some(FilterKind::Instance),
+                "camera" => Some(FilterKind::Camera),
+                "light" => Some(FilterKind::Light),
+                "material" => Some(FilterKind::Material),
+                "texture" => Some(FilterKind::Texture),
+                "mesh" => Some(FilterKind::Mesh),
+                "sound" => Some(FilterKind::Sound),
+                _ => None,
+            };
+
+            if kind.is_some()
+            {
+                return (kind, term.trim_start().to_lowercase());
+            }
+        }
+
+        (None, self.hierarchy_filter.to_lowercase())
+    }
+
+    // true if the hierarchy filter hides an entry of this kind with this name
+    pub fn hierarchy_filter_hides(&self, kind: FilterKind, name: &str) -> bool
+    {
+        if self.hierarchy_filter.is_empty()
+        {
+            return false;
+        }
+
+        let (filter_kind, term) = self.hierarchy_filter_parts();
+        if filter_kind.is_some_and(|filter_kind| filter_kind != kind)
+        {
+            return true;
+        }
+
+        !name.to_lowercase().contains(&term)
+    }
+
+    // true if the node itself matches the hierarchy filter: by its name, or by an instance name with "instance:"
+    pub fn hierarchy_filter_matches_node(&self, node: &Node) -> bool
+    {
+        let (filter_kind, term) = self.hierarchy_filter_parts();
+        match filter_kind
+        {
+            None | Some(FilterKind::Node) => node.name.to_lowercase().contains(&term),
+            Some(FilterKind::Instance) => node.instances.get_ref().iter().any(|instance| instance.read().unwrap().name.to_lowercase().contains(&term)),
+            _ => false,
+        }
     }
 
     pub fn get_selected_node_id(&self) -> Option<u32>

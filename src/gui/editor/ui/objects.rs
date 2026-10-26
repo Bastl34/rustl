@@ -9,7 +9,7 @@ use crate::helper::math::{approx_equal, extract_scale_from_transform};
 use crate::state::scene::components::transformation::Transformation;
 use crate::{component_downcast, gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{extras_list, fit_hierarchy_heading, property_row, hierarchy_button_reserve, hierarchy_eye_button, hierarchy_lock_button, hierarchy_row_spacer, layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::{sleep_millis, spawn_thread}}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem, PhysicsBodyType, PhysicsShape}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
 
-use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
+use super::super::editor_state::{EditorState, FilterKind, PickType, SelectionType, SettingsPanel};
 
 const MAX_COMPONENT_NAME_LENGTH: usize = 14;
 
@@ -32,16 +32,15 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
         let is_internal_node = node.has_tag(ENGINE_INTERNAL_TAG) || node.has_tag(EDITOR_INTERNAL_TAG);
         let show_from_tags = !is_internal_node || (is_internal_node && editor_state.show_internal_entries);
 
-        let filter = editor_state.hierarchy_filter.to_lowercase();
+        let filtering = !editor_state.hierarchy_filter.is_empty();
 
         let mut child_node_match = false;
-        if !filter.is_empty()
+        if filtering
         {
             let all_child_nodes = Scene::list_all_child_nodes(&node.nodes);
             for child_node in all_child_nodes
             {
-                let child_node_name = child_node.read().unwrap().name.clone().to_lowercase();
-                if child_node_name.find(filter.as_str()).is_some()
+                if editor_state.hierarchy_filter_matches_node(&child_node.read().unwrap())
                 {
                     child_node_match = true;
                     break;
@@ -49,7 +48,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
             }
         }
 
-        if !show_from_tags || !filter.is_empty() && !child_node_match && name.to_lowercase().find(filter.as_str()).is_none()
+        if !show_from_tags || filtering && !child_node_match && !editor_state.hierarchy_filter_matches_node(&node)
         {
             continue;
         }
@@ -657,8 +656,15 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
 
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
     {
+        let (filter_kind, filter) = editor_state.hierarchy_filter_parts();
         for instance in node.instances.get_ref()
         {
+            // without the prefix instances are not filtered
+            if filter_kind == Some(FilterKind::Instance) && !instance.read().unwrap().name.to_lowercase().contains(&filter)
+            {
+                continue;
+            }
+
             let toggle;
             let visible;
             let locked;

@@ -4,7 +4,7 @@ use egui::{RichText, Ui};
 
 use crate::{component_downcast, gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{fit_hierarchy_heading, rename_hierarchy_item_or_toggle_selection}}, helper::{generic_items::collapse_with_title, info_box::info_box}}, state::{resources::mesh_resource::MeshResourceItem, scene::{components::{component::Component, mesh::Mesh}, scene::Scene}, state::{State, ENGINE_INTERNAL_TAG}}};
 
-use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
+use super::super::editor_state::{EditorState, FilterKind, SelectionType, SettingsPanel};
 
 pub fn build_mesh_resources_list(editor_state: &mut EditorState, mesh_resources: &HashMap<std::string::String, MeshResourceItem>, ui: &mut Ui)
 {
@@ -31,8 +31,7 @@ pub fn build_mesh_resources_list(editor_state: &mut EditorState, mesh_resources:
             }
 
             let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
-            let filter = editor_state.hierarchy_filter.to_lowercase();
-            if !show_from_tags || !filter.is_empty() && mesh_name.to_lowercase().find(filter.as_str()).is_none()
+            if !show_from_tags || editor_state.hierarchy_filter_hides(FilterKind::Mesh, &mesh_name)
             {
                 continue;
             }

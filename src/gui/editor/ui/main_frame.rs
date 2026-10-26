@@ -20,7 +20,8 @@ use crate::gui::helper::generic_items::{collapse_with_title, tab, tab_separator,
 use crate::state::scene::components::component::ComponentItem;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::state::State;
-use crate::gui::editor::editor_state::{EditorState, SettingsPanel};
+use crate::gui::editor::editor_state::{EditorState, FilterKind, SettingsPanel};
+use crate::state::scene::node::NodeItem;
 use crate::state::scene::scene::{Scene, SceneLoadState};
 use egui::{Visuals, Style, ScrollArea, Ui, RichText, Color32};
 use web_time::Instant;
@@ -1089,6 +1090,14 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             continue;
         }
 
+        // scene name matches the filter: show all of its content unfiltered, no match at all: hide the scene
+        let filtering = !editor_state.hierarchy_filter.is_empty();
+        let scene_match = filtering && !editor_state.hierarchy_filter_hides(FilterKind::Scene, &scene.name);
+        if filtering && !scene_match && !scene_content_matches(editor_state, scene)
+        {
+            continue;
+        }
+
         let scene_id = scene.id;
         let amounts = SceneAmounts::new(scene, editor_state.show_internal_entries);
         let id = format!("scene_{}", scene_id);
@@ -1243,11 +1252,18 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             });
         });
 
+        let saved_filter = if scene_match { Some(std::mem::take(&mut editor_state.hierarchy_filter)) } else { None };
+
         collapsing.show_body_indented(&header.response, ui, |ui|
         {
             //self.build_node_list(ui, &scene.nodes, scene_id, true);
             create_hierarchy_type_entries(state, editor_state, exec_queue.clone(), scene, &amounts, ui);
         });
+
+        if let Some(saved_filter) = saved_filter
+        {
+            editor_state.hierarchy_filter = saved_filter;
+        }
     }
 
     swap(&mut scenes, &mut state.scenes);
@@ -1297,6 +1313,20 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         ui.separator();
         create_code_hierarchy(editor_state, ui);
     }
+}
+
+// any object, instance, camera, light or material of the scene matches the hierarchy filter
+fn scene_content_matches(editor_state: &EditorState, scene: &Scene) -> bool
+{
+    fn nodes_match(editor_state: &EditorState, nodes: &Vec<NodeItem>) -> bool
+    {
+        nodes.iter().any(|node| { let node = node.read().unwrap(); editor_state.hierarchy_filter_matches_node(&node) || nodes_match(editor_state, &node.nodes) })
+    }
+
+    nodes_match(editor_state, &scene.nodes)
+        || scene.cameras.iter().any(|camera| !editor_state.hierarchy_filter_hides(FilterKind::Camera, &camera.name))
+        || scene.lights.get_ref().iter().any(|light| !editor_state.hierarchy_filter_hides(FilterKind::Light, &light.borrow().get_ref().name))
+        || scene.materials.iter().any(|(_, material)| !editor_state.hierarchy_filter_hides(FilterKind::Material, &material.read().unwrap().get_base().name))
 }
 
 // the amounts of the scene tree (internal entries only if they are shown) - for the scene row and its type rows

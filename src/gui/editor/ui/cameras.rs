@@ -2,7 +2,7 @@ use egui::{Ui, RichText, Color32};
 
 use crate::{gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{fit_hierarchy_heading, hierarchy_button_reserve, hierarchy_eye_button, hierarchy_row_spacer, layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title}}, helper::concurrency::execution_queue::ExecutionQueueItem, state::{scene::{camera::CameraItem, utilities::scene_utils::execute_on_scene_mut}, state::{ENGINE_INTERNAL_TAG, State}}};
 
-use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
+use super::super::editor_state::{EditorState, FilterKind, PickType, SelectionType, SettingsPanel};
 
 pub fn build_camera_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, cameras: &Vec<CameraItem>, ui: &mut Ui, scene_id: u32)
 {
@@ -15,8 +15,7 @@ pub fn build_camera_list(editor_state: &mut EditorState, exec_queue: ExecutionQu
             let is_internal = camera.tags.contains(ENGINE_INTERNAL_TAG) || camera.tags.contains(EDITOR_INTERNAL_TAG);
             let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
 
-            let filter = editor_state.hierarchy_filter.to_lowercase();
-            if !show_from_tags || !filter.is_empty() && camera.name.to_lowercase().find(filter.as_str()).is_none()
+            if !show_from_tags || editor_state.hierarchy_filter_hides(FilterKind::Camera, &camera.name)
             {
                 continue;
             }
