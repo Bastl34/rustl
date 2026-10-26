@@ -723,11 +723,6 @@ function packageProject(projectPath, bundleDir, resources, outputDir)
         sceneCount++;
     }
 
-    // the export folders are paths of the developer's machine - an editor setting, not part of the game
-    if (projectJson.project)
-    {
-        delete projectJson.project.export_dirs;
-    }
     fs.writeFileSync(path.join(bundleDir, BUNDLE_PROJECT), JSON.stringify(projectJson, null, 2) + "\n");
 
     console.log(`packaged ${path.basename(projectFile)} (${sceneCount} scenes, ${bundle.copied.size} files${ownFolder ? ", the whole project folder" : ""}${linkedCount > 0 ? `, ${linkedCount} scenes only linked (${EXPORT_IGNORE})` : ""})`);

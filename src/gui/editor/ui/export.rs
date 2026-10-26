@@ -597,6 +597,7 @@ pub fn create_modal_export(editor_state: &mut EditorState, state: &mut State, ct
 
     let project_path = editor_state.project_path.clone();
     let dialog = &mut editor_state.export;
+    let export_dirs = &mut editor_state.project_local.export_dirs;
     let status = dialog.status();
     let running = status == ExportStatus::Running;
 
@@ -639,7 +640,7 @@ pub fn create_modal_export(editor_state: &mut EditorState, state: &mut State, ct
                 // buttons first from the right, the text field takes exactly the rest (otherwise the window grows every frame)
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                 {
-                    let out_dir = dialog.platform.export_dir(&mut state.project.export_dirs);
+                    let out_dir = dialog.platform.export_dir(export_dirs);
 
                     if ui.add_enabled(!out_dir.is_empty(), egui::Button::new("✖")).on_hover_text("use dist/").clicked()
                     {
@@ -840,8 +841,35 @@ fn run_export(editor_state: &mut EditorState, state: &mut State)
 {
     if let Some(path) = editor_state.project_path.clone()
     {
-        let out_dir = editor_state.export.platform.export_dir(&mut state.project.export_dirs).clone();
+        if let Some(build) = bump_build_number(&path)
+        {
+            state.project.build = build;
+        }
+        crate::gui::editor::editor_project::save_project_local(editor_state, &path);
+
+        let out_dir = editor_state.export.platform.export_dir(&mut editor_state.project_local.export_dirs).clone();
         let zip_name = editor_state.export.zip.then(|| zip_file_name(&state.project.name, &state.project.version, editor_state.export.platform, &path));
         editor_state.export.start(&path, &out_dir, zip_name);
     }
+}
+
+// counts on the build number of the saved project file and changes only that - unsaved and external edits stay as they are
+fn bump_build_number(project_file: &str) -> Option<u32>
+{
+    let mut project = crate::state::project::loader::load_editor_project(project_file)?;
+    project.project.build += 1;
+
+    let json = match serde_json::to_string_pretty(&project)
+    {
+        Ok(json) => json,
+        Err(e) => { crate::console_warning!("build number not written, failed to serialize {}: {}", project_file, e); return None; },
+    };
+
+    if let Err(e) = std::fs::write(project_file, json)
+    {
+        crate::console_warning!("build number not written to {}: {}", project_file, e);
+        return None;
+    }
+
+    Some(project.project.build)
 }

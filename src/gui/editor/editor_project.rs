@@ -18,11 +18,13 @@ use crate::gui::editor::project_code;
 use crate::resources::resources::{self, RESOURCE_SCHEME};
 use crate::state::project::loader::{apply_editor_project, apply_editor_scene, load_editor_project};
 use crate::state::scene::utilities::origin::Origin;
-use crate::state::project::project::{AudioSettings, SceneObject, SceneObjectOptions, ProjectFile, ProjectFileFormat, ProjectSceneRef, SceneFile, SceneSettings, SceneSound, ProjectSettings, RESUSE_MATERIALS_TAG};
+use crate::state::project::project::{AudioSettings, SceneObject, SceneObjectOptions, ProjectFile, ProjectFileFormat, ProjectLocalData,ProjectSceneRef, SceneFile, SceneSettings, SceneSound, ProjectSettings, RESUSE_MATERIALS_TAG};
 use crate::state::resources::sound_source::SoundSourceItem;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::scene_controller::scene_controller::SceneControllerBox;
 use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, RunMode, State};
+
+const PROJECT_LOCAL_DIR: &str = ".rustl";
 
 // ******************** extraction (Runtime --> ProjectFile) ********************
 
@@ -264,8 +266,7 @@ fn extract_transform(node: &crate::state::scene::node::Node) -> ([f32; 3], [f32;
 
 pub fn save_editor_project(state: &mut State, editor_state: &mut EditorState, path: &str) -> bool
 {
-    state.project.build += 1;
-    editor_state.accumulate_editing_time(state);
+    editor_state.accumulate_editing_time();
 
     let project_name = state.project.name.clone();
     let base_dir = get_dirname(path);
@@ -378,6 +379,8 @@ pub fn save_editor_project(state: &mut State, editor_state: &mut EditorState, pa
     };
 
     let full_path = format!("{}.project", path);
+    save_project_local(editor_state, &full_path);
+
     match write_string_to_tile(full_path.as_str(), json)
     {
         Ok(_) =>
@@ -390,6 +393,55 @@ pub fn save_editor_project(state: &mut State, editor_state: &mut EditorState, pa
             console_error!("failed to save project: {}", e);
             false
         },
+    }
+}
+
+fn project_local_path(project_file: &str) -> std::path::PathBuf
+{
+    let file = std::path::Path::new(project_file);
+    let dir = file.parent().unwrap_or(std::path::Path::new(""));
+    dir.join(PROJECT_LOCAL_DIR).join(format!("{}.json", get_stem(project_file)))
+}
+
+fn load_project_local(editor_state: &mut EditorState, project_file: &str)
+{
+    editor_state.project_local = ProjectLocalData::default();
+
+    let path = project_local_path(project_file);
+    let Ok(json) = std::fs::read_to_string(&path) else { return; };
+
+    match serde_json::from_str::<ProjectLocalData>(&json)
+    {
+        Ok(local) => editor_state.project_local = local,
+        Err(e) => { console_warning!("failed to parse {}: {}", path.display(), e); },
+    }
+}
+
+pub fn save_project_local(editor_state: &EditorState, project_file: &str)
+{
+    let path = project_local_path(project_file);
+    let Some(dir) = path.parent() else { return; };
+
+    if let Err(e) = std::fs::create_dir_all(dir)
+    {
+        console_warning!("failed to create {}: {}", dir.display(), e);
+        return;
+    }
+
+    // the folder ignores itself, so no project needs a .gitignore entry
+    let ignore = dir.join(".gitignore");
+    if !ignore.exists()
+    {
+        let _ = std::fs::write(&ignore, "*\n");
+    }
+
+    match serde_json::to_string_pretty(&editor_state.project_local)
+    {
+        Ok(json) => if let Err(e) = std::fs::write(&path, json)
+        {
+            console_warning!("failed to save {}: {}", path.display(), e);
+        },
+        Err(e) => { console_warning!("failed to serialize {}: {}", path.display(), e); },
     }
 }
 
@@ -489,6 +541,7 @@ pub fn load_editor_project_from_path(editor_state: &mut EditorState, state: &mut
         editor_state.project_session_start = web_time::Instant::now();
         editor_state.recent_projects.add_and_save(path.clone());
         apply_editor_project(state, project, &path, loading_state, loading_progress_state, None);
+        load_project_local(editor_state, &path);
     }
     else
     {

@@ -6,7 +6,7 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::{gui::editor::gizmo::hide_gizmos, state::{project::{loader::apply_project_settings, project::{ProjectData, ProjectSettings}}, scene::node::NodeSettings}};
+use crate::{gui::editor::gizmo::hide_gizmos, state::{project::{loader::apply_project_settings, project::{ProjectData, ProjectLocalData, ProjectSettings}}, scene::node::NodeSettings}};
 use crate::{console_log, gui::editor::{helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::{RunMode, State}}};
 use crate::gui::editor::ui::export::ExportDialog;
 use crate::state::{scene::camera::CameraProjectionType, state::ENGINE_INTERNAL_TAG_PREFX};
@@ -233,6 +233,7 @@ pub struct EditorState
     pub settings: EditorSettings,
 
     pub project_path: Option<String>,
+    pub project_local: ProjectLocalData,
     pub project_session_start: Instant,
     pub project_code: ProjectCode,
     pub code_editor: CodeEditor,
@@ -397,6 +398,7 @@ impl EditorState
             settings: EditorSettings::new(),
 
             project_path: None,
+            project_local: ProjectLocalData::default(),
             project_session_start: Instant::now(),
             project_code: ProjectCode::new(),
             code_editor: CodeEditor::default(),
@@ -540,6 +542,7 @@ impl EditorState
         state.project = ProjectData::default();
         apply_project_settings(state, &ProjectSettings::default());
         self.project_path = None;
+        self.project_local = ProjectLocalData::default();
         self.project_session_start = Instant::now();
     }
 
@@ -613,10 +616,10 @@ impl EditorState
         self.dialog_alert_message = message.to_string();
     }
 
-    pub fn accumulate_editing_time(&mut self, state: &mut State)
+    pub fn accumulate_editing_time(&mut self)
     {
         let elapsed = self.project_session_start.elapsed().as_secs();
-        state.project.editing_time_secs += elapsed;
+        self.project_local.editing_time_secs += elapsed;
         self.project_session_start = Instant::now();
     }
 

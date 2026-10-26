@@ -50,7 +50,12 @@ pub struct ProjectData
     pub url: String,
 
     pub build: u32,
+}
 
+// the editor data of one developer next to the project: <project folder>/.rustl/<project>.json, ignored by git and the export
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct ProjectLocalData
+{
     #[serde(default)]
     pub editing_time_secs: u64,
 
@@ -97,9 +102,6 @@ impl Default for ProjectData
             url: "".to_string(),
 
             build: 1,
-            editing_time_secs: 0,
-
-            export_dirs: ProjectExportDirs::default(),
         }
     }
 }

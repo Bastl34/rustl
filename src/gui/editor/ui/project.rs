@@ -76,7 +76,7 @@ pub fn create_project_settings(editor_state: &mut EditorState, state: &mut State
 
             ui.label(RichText::new("Editing Time:").strong());
             {
-                let total_time = state.project.editing_time_secs + editor_state.project_session_start.elapsed().as_secs();
+                let total_time = editor_state.project_local.editing_time_secs + editor_state.project_session_start.elapsed().as_secs();
                 ui.label(format_duration_secs(total_time));
             }
             ui.end_row();
