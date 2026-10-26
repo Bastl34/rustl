@@ -1445,6 +1445,12 @@ impl State
         }
     }
 
+    // the msaa count the adapter supports - a project or the game may ask for more (saved video settings, another gpu)
+    pub fn msaa_samples(&self) -> u32
+    {
+        (*self.rendering.msaa.get_ref()).min(self.rendering_adapter.max_msaa_samples.max(1))
+    }
+
     pub fn update(&mut self, time: u128, time_delta: f32, frame: u64) -> f32
     {
         // scenes can be loaded or switched at any time, so this is re-applied every frame

@@ -6,7 +6,7 @@ use std::mem::swap;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use web_time::{Instant, SystemTime, UNIX_EPOCH};
-use std::{cmp, vec};
+use std::vec;
 
 use gilrs::Gilrs;
 use nalgebra::{Vector2, Point2};
@@ -101,8 +101,8 @@ impl MainInterface
 
             wgpu = WGpu::new(window.clone(), state).await;
 
-            state.rendering.msaa.set(cmp::min(state.rendering.msaa.get_ref().clone(), state.rendering_adapter.max_msaa_samples));
-            samlpes = *(state.rendering.msaa.get_ref());
+            state.rendering.msaa.set(state.msaa_samples());
+            samlpes = state.msaa_samples();
             console_log!("msaa: {}x (adapter max {}x)", samlpes, state.rendering_adapter.max_msaa_samples);
 
             wgpu.create_msaa_texture(samlpes);
@@ -470,7 +470,7 @@ impl MainInterface
         // ******************** create render items if needed ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
-            let samlpes = *(state.rendering.msaa.get_ref());
+            let samlpes = state.msaa_samples();
 
             // move out scenes from state to prevent using multiple mut borrows
             let mut scenes = vec![];
@@ -563,8 +563,9 @@ impl MainInterface
 
             let state = &mut *(self.context.state.borrow_mut());
 
-            // msaa
-            let (msaa_samples, msaa_changed) = state.rendering.msaa.consume_clone();
+            // msaa - clamped to what the adapter supports: the game sets its own count (8x by default)
+            let (_, msaa_changed) = state.rendering.msaa.consume_clone();
+            let msaa_samples = state.msaa_samples();
 
             if msaa_changed
             {
