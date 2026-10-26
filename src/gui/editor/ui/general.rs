@@ -513,6 +513,15 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             ui.add(egui::DragValue::new(&mut state.rendering.fog_density).speed(0.001).range(0.0..=1.0));
             ui.label("ℹ").on_hover_text("exponential density - at density d the visibility drops to ~37% at distance 1/d");
         });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Fog Start:");
+            ui.add(egui::DragValue::new(&mut state.rendering.fog_start).speed(0.1).range(0.0..=100000.0));
+            ui.label("End:");
+            ui.add(egui::DragValue::new(&mut state.rendering.fog_end).speed(0.1).range(0.0..=100000.0));
+            ui.label("ℹ").on_hover_text("linear fog from start to end (world distance) when end > start - the density is not used then");
+        });
     });
 }
 

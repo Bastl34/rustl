@@ -79,6 +79,9 @@ pub struct Sound
     // stop() only flags the rodio player (it empties on the mixer thread) - a start() after it needs a new player
     #[serde(skip, default)]
     stop_requested: bool,
+    // where a spatial sound without a node plays (one shots at a world position)
+    #[serde(skip, default)]
+    fixed_position: Option<Point3<f32>>,
 }
 
 fn default_one() -> f32 { 1.0 }
@@ -117,6 +120,7 @@ impl Sound
             runtime_changed: false,
             spatial_positions: None,
             stop_requested: false,
+            fixed_position: None,
         };
 
         sound.set_sound_source(sound_source.clone());
@@ -156,9 +160,16 @@ impl Sound
             runtime_changed: false,
             spatial_positions: None,
             stop_requested: false,
+            fixed_position: None,
         };
 
         sound
+    }
+
+    // a spatial sound without a node plays here - the node or instance of update_state wins
+    pub fn set_fixed_position(&mut self, position: Option<Point3<f32>>)
+    {
+        self.fixed_position = position;
     }
 
     pub fn get_data(&self) -> &SoundData
@@ -285,6 +296,11 @@ impl Sound
 
     pub fn running(&self) -> bool
     {
+        if self.stop_requested
+        {
+            return false;
+        }
+
         if let Some(player) = &self.player
         {
             return !player.is_paused() && !player.empty();
@@ -457,20 +473,22 @@ impl Sound
             player.set_volume(volume);
             player.set_speed(speed);
 
-            let mut position = None;
-            if let Some(instance) = instance
+            let position = if let Some(instance) = instance
             {
                 let instance = instance.read().unwrap();
                 let transform = instance.get_cached_world_transform();
-                position = Some(Point3::<f32>::new(transform.m14, transform.m24, transform.m34));
-
+                Some(Point3::<f32>::new(transform.m14, transform.m24, transform.m34))
             }
             else if let Some(node) = &node
             {
                 let node = node.read().unwrap();
                 let transform = node.get_full_transform();
-                position = Some(Point3::<f32>::new(transform.m14, transform.m24, transform.m34));
+                Some(Point3::<f32>::new(transform.m14, transform.m24, transform.m34))
             }
+            else
+            {
+                self.fixed_position
+            };
 
             // split screen: the camera nearest to the sound hears it
             if let Some((position, (left_pos, right_pos))) = position.and_then(|position| Some((position, audio_device_data.nearest_listener(&position)?)))
@@ -589,6 +607,7 @@ impl Component for Sound
             runtime_changed: false,
             spatial_positions: None,
             stop_requested: false,
+            fixed_position: source.fixed_position,
         };
 
         if let Some(sound_source) = source.sound_source.as_ref()

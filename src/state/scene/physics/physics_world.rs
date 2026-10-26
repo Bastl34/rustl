@@ -468,6 +468,7 @@ pub struct BodyEntry
     // the shapes again, so it only happens when one of these actually changed
     applied_density: f32,
     applied_center_of_mass: Option<Vector3<f32>>, // None = left to the shapes
+    one_sided_meshes: bool, // fixed triangle meshes push it only from their front side
 }
 
 impl BodyEntry
@@ -564,6 +565,72 @@ pub struct VehicleWheelDesc
     pub tuning: WheelTuning,
 }
 
+// Hits between two vehicles with center hits on: each body is pushed along the contact normal through its center of mass, without friction - no spin.
+// A body with one sided meshes: a fixed triangle mesh pushes it only when it is in front of the triangle.
+struct ContactHooks
+{
+    center: HashSet<RigidBodyHandle>,
+    one_sided: HashSet<RigidBodyHandle>,
+}
+
+impl ContactHooks
+{
+    // the body touches the triangle from behind - its contacts go
+    fn behind_triangle(&self, context: &mut ContactModificationContext) -> bool
+    {
+        let (body1, body2) = (context.rigid_body1, context.rigid_body2);
+        let (Some(collider1), Some(collider2)) = (context.colliders.get(context.collider1), context.colliders.get(context.collider2)) else { return false; };
+        let Some(rigid) = context.rigid() else { return false; };
+
+        // the mesh side and the direction from it to the body
+        let (mesh, subshape, towards) = if body2.is_some_and(|body| self.one_sided.contains(&body)) && collider1.shape().as_trimesh().is_some()
+        {
+            (collider1, rigid.manifold.subshape1, *rigid.normal)
+        }
+        else if body1.is_some_and(|body| self.one_sided.contains(&body)) && collider2.shape().as_trimesh().is_some()
+        {
+            (collider2, rigid.manifold.subshape2, -*rigid.normal)
+        }
+        else
+        {
+            return false;
+        };
+
+        let Some(face) = mesh.shape().as_trimesh().and_then(|trimesh| trimesh.triangle(subshape).normal()) else { return false; };
+        (mesh.rotation() * face).dot(towards) < 0.0
+    }
+}
+
+impl PhysicsHooks for ContactHooks
+{
+    fn modify_solver_contacts(&self, context: &mut ContactModificationContext)
+    {
+        if !self.one_sided.is_empty() && self.behind_triangle(context)
+        {
+            if let Some(rigid) = context.rigid_mut() { rigid.solver_contacts.clear(); }
+            return;
+        }
+
+        let (Some(handle1), Some(handle2)) = (context.rigid_body1, context.rigid_body2) else { return; };
+        if handle1 == handle2 || !self.center.contains(&handle1) || !self.center.contains(&handle2) { return; }
+
+        let bodies = context.bodies;
+        let (Some(body1), Some(body2)) = (bodies.get(handle1), bodies.get(handle2)) else { return; };
+        let (com1, com2) = (body1.center_of_mass(), body2.center_of_mass());
+
+        let Some(rigid) = context.rigid_mut() else { return; };
+        let normal = *rigid.normal;
+        *rigid.friction = 0.0;
+
+        // the points move sideways onto the line along the normal through each center - their gap along the normal stays
+        for contact in rigid.solver_contacts.iter_mut()
+        {
+            contact.anchor1 = com1 + normal * (contact.anchor1 - com1).dot(normal);
+            contact.anchor2 = com2 + normal * (contact.anchor2 - com2).dot(normal);
+        }
+    }
+}
+
 // A vehicle: its own body, driven by rapier's ray cast vehicle. The node and everything below stay out of the entries.
 pub struct VehicleEntry
 {
@@ -584,6 +651,8 @@ pub struct VehicleEntry
     frame: (Vector, Vector), // forward and up, chassis space
 
     pre_velocity: Vector, // before the last step - what changed it besides the wheels came through the hitch
+
+    pub center_hits: bool, // hits with another vehicle that has it too push through the centers of mass, set by the controller
 }
 
 impl VehicleEntry
@@ -1050,7 +1119,7 @@ impl PhysicsWorld
 
             let lowest = self.entries[index].parts.iter()
                 .filter_map(|part| self.colliders.get(part.handle))
-                .map(|collider| collider.compute_aabb().mins.y)
+                .map(|collider| Self::lowest_point(collider.shape(), collider.position()))
                 .fold(f32::INFINITY, f32::min);
 
             if !lowest.is_finite()
@@ -1072,6 +1141,18 @@ impl PhysicsWorld
 
                 Self::teleport(body, pose);
             }
+        }
+    }
+
+    // a compound aabb is its local box turned with the body - a rolling ball would read up to 0.73 r too low
+    fn lowest_point(shape: &dyn Shape, pose: &Pose) -> f32
+    {
+        match shape.as_typed_shape()
+        {
+            TypedShape::Compound(compound) => compound.shapes().iter()
+                .map(|(sub_pose, sub_shape)| Self::lowest_point(&**sub_shape, &(*pose * *sub_pose)))
+                .fold(f32::INFINITY, f32::min),
+            _ => shape.compute_aabb(pose).mins.y
         }
     }
 
@@ -1598,6 +1679,7 @@ impl PhysicsWorld
             .restitution(physics.restitution.clamp(0.0, 1.0))
             .active_collision_types(collision_types)
             .active_events(Self::contact_events_flag(report_contacts))
+            .active_hooks(if physics.one_sided_meshes { ActiveHooks::MODIFY_SOLVER_CONTACTS } else { ActiveHooks::empty() })
             .position(position);
 
         match mass_properties
@@ -1748,6 +1830,7 @@ impl PhysicsWorld
             scale: anchor_scale,
             applied_density: physics.density.max(0.001),
             applied_center_of_mass: if physics.center_of_mass_auto { None } else { Some(physics.center_of_mass) },
+            one_sided_meshes: physics.one_sided_meshes,
         });
 
         true
@@ -3198,6 +3281,12 @@ impl PhysicsWorld
             self.thaw_ahead_of_movers(pending_steps * self.settings.fixed_timestep);
         }
 
+        let hooks = ContactHooks
+        {
+            center: self.vehicles.values().filter(|vehicle| vehicle.center_hits).map(|vehicle| vehicle.body).collect(),
+            one_sided: self.entries.iter().filter(|entry| entry.one_sided_meshes).filter_map(|entry| entry.body).collect(),
+        };
+
         while self.time_accumulator >= self.settings.fixed_timestep
         {
             self.time_accumulator -= self.settings.fixed_timestep;
@@ -3228,7 +3317,7 @@ impl PhysicsWorld
                 &mut self.multibody_joints,
                 &mut self.soft_bodies,
                 &mut self.ccd_solver,
-                &(),
+                &hooks,
                 &self.contacts.collector
             );
 
@@ -3701,6 +3790,40 @@ impl PhysicsWorld
     }
 
     // A moving surface for the vehicle wheels (conveyor, escalator), m/s in world space - None removes it. Survives a rebuild.
+    // the node under each wheel of a vehicle after the last step, None for a wheel in the air
+    pub fn vehicle_wheel_grounds(&self, node_id: u32) -> Vec<Option<u32>>
+    {
+        let Some(vehicle) = self.vehicles.get(&node_id) else { return vec![]; };
+
+        vehicle.controller.wheels().iter().map(|wheel|
+        {
+            let info = wheel.raycast_info();
+            if !info.is_in_contact { return None; }
+            info.ground_object.and_then(|handle| self.colliders.get(handle)).map(|collider| collider.user_data as u32)
+        }).collect()
+    }
+
+    // contact events for the objects of a node from now on, without a rebuild - the node setting report_contacts covers the next build
+    pub fn set_report_contacts(&mut self, node_id: u32, report: bool) -> usize
+    {
+        let colliders = &mut self.colliders;
+        let mut changed = 0;
+
+        for entry in self.entries.iter().filter(|entry| entry.has_node(node_id))
+        {
+            for part in &entry.parts
+            {
+                if let Some(collider) = colliders.get_mut(part.handle)
+                {
+                    collider.set_active_events(Self::contact_events_flag(report));
+                    changed += 1;
+                }
+            }
+        }
+
+        changed
+    }
+
     pub fn set_surface_velocity(&mut self, node_id: u32, velocity: Option<Vector3<f32>>)
     {
         match velocity
@@ -4086,6 +4209,7 @@ impl PhysicsWorld
             .restitution(chassis.restitution.clamp(0.0, 1.0))
             .active_collision_types(ActiveCollisionTypes::default() | ActiveCollisionTypes::KINEMATIC_FIXED)
             .active_events(ActiveEvents::COLLISION_EVENTS) // a vehicle always reports, running into something is its main event
+            .active_hooks(ActiveHooks::MODIFY_SOLVER_CONTACTS)
             .mass_properties(MassProperties::new(com, chassis.mass.max(1.0), inertia))
             .build();
 
@@ -4102,6 +4226,7 @@ impl PhysicsWorld
                 .restitution(0.0)
                 .active_collision_types(ActiveCollisionTypes::default() | ActiveCollisionTypes::KINEMATIC_FIXED)
                 .active_events(ActiveEvents::COLLISION_EVENTS)
+                .active_hooks(ActiveHooks::MODIFY_SOLVER_CONTACTS)
                 .build();
 
             self.colliders.insert_with_parent(bumper, body, &mut self.bodies);
@@ -4152,7 +4277,7 @@ impl PhysicsWorld
         }
 
         let controller = DynamicRayCastVehicleController::new(body);
-        self.vehicles.insert(node_id, VehicleEntry { node: Arc::downgrade(node), body, collider: ColliderHandle::invalid(), controller, previous: pose, shown: world, start: None, riders: vec![], rider_starts: vec![], frame: (Vector::Z, Vector::Y), pre_velocity: Vector::ZERO });
+        self.vehicles.insert(node_id, VehicleEntry { node: Arc::downgrade(node), body, collider: ColliderHandle::invalid(), controller, previous: pose, shown: world, start: None, riders: vec![], rider_starts: vec![], frame: (Vector::Z, Vector::Y), pre_velocity: Vector::ZERO, center_hits: false });
     }
 
     // Moves the vehicles from the replaced sets into the new ones - a rebuild of the scene colliders must not reset them.

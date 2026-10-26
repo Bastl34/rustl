@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BOUNDING_BOX_FLAG_OCCLUSION_TEST, BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, debug_volumes::{BOUNDING_BOX_COLOR, BOUNDING_SPHERE_COLOR, DebugVolume, DebugVolumeList, DebugVolumesBuffer}, draw_slots::{DRAW_INDEXED_ARGS_SIZE, DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX, RunMode, State}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BOUNDING_BOX_FLAG_OCCLUSION_TEST, BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, debug_volumes::{BOUNDING_BOX_COLOR, BOUNDING_SPHERE_COLOR, DebugVolume, DebugVolumeList, DebugVolumesBuffer}, draw_slots::{DRAW_INDEXED_ARGS_SIZE, DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::{BlendMode, TextureType}, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX, RunMode, State}}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -92,13 +92,34 @@ pub struct SceneUniform
     pub ssao_strength: f32, // 0.0 = ssao disabled
 
     pub fog_density: f32, // 0.0 = fog disabled
-    pub _padding: f32, // fog_color must sit on a 16 byte boundary (wgsl vec4 alignment)
+    pub fog_start: f32, // linear fog when fog_end > fog_start
     pub fog_color: [f32; 4],
+    pub fog_end: f32,
+    pub _padding: [f32; 3], // the wgsl struct size is a multiple of 16 bytes (vec4 alignment)
+}
+
+// the fog part of the scene uniform
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct FogUniform
+{
+    pub color: nalgebra::Vector3<f32>,
+    pub density: f32,
+    pub start: f32,
+    pub end: f32,
+}
+
+impl FogUniform
+{
+    pub fn from_rendering(rendering: &crate::state::state::Rendering) -> Self
+    {
+        let (density, start, end) = if rendering.fog { (rendering.fog_density, rendering.fog_start, rendering.fog_end) } else { (0.0, 0.0, 0.0) };
+        Self { color: rendering.fog_color, density, start, end }
+    }
 }
 
 impl SceneUniform
 {
-    pub fn new(scene_data: &SceneData, xray_alpha: f32, shadow_max_distance: f32, ssao_strength: f32, fog_color: nalgebra::Vector3<f32>, fog_density: f32) -> Self
+    pub fn new(scene_data: &SceneData, xray_alpha: f32, shadow_max_distance: f32, ssao_strength: f32, fog: &FogUniform) -> Self
     {
         let gamma = if let Some(gamma) = scene_data.gamma { gamma } else { 0.0 };
         let exposure = if let Some(exposure) = scene_data.exposure { exposure } else { 0.0 };
@@ -112,9 +133,11 @@ impl SceneUniform
             xray_alpha: xray_alpha,
             shadow_max_distance: shadow_max_distance,
             ssao_strength: ssao_strength,
-            fog_density: fog_density,
-            _padding: 0.0,
-            fog_color: [fog_color.x, fog_color.y, fog_color.z, 1.0],
+            fog_density: fog.density,
+            fog_start: fog.start,
+            fog_color: [fog.color.x, fog.color.y, fog.color.z, 1.0],
+            fog_end: fog.end,
+            _padding: [0.0; 3],
         }
     }
 }
@@ -130,6 +153,8 @@ pub enum RenderPipelineType
     ColorNoCompare,
     ColorNoWrite,
     ColorNoWriteNoCompare,
+    ColorAdditive,
+    ColorAdditiveNoCompare,
 
     // hzb,
     DepthExport,
@@ -247,10 +272,8 @@ pub struct Scene
     pub ssao_bias: f32,
     pub ssao_strength: f32,
 
-    // distance based fog (part of the scene uniform, 0.0 density = disabled)
-    pub fog_enabled: bool,
-    pub fog_color: nalgebra::Vector3<f32>,
-    pub fog_density: f32,
+    // distance based fog (part of the scene uniform)
+    pub fog: FogUniform,
 
     bounding_boxes_buffer: BoundingBoxesBuffer,
 
@@ -387,9 +410,7 @@ impl Scene
             ssao_bias: state.rendering.ssao_bias,
             ssao_strength: state.rendering.ssao_strength,
 
-            fog_enabled: state.rendering.fog,
-            fog_color: state.rendering.fog_color,
-            fog_density: state.rendering.fog_density,
+            fog: FogUniform::from_rendering(&state.rendering),
 
             bounding_boxes_buffer: BoundingBoxesBuffer::new(wgpu),
 
@@ -426,8 +447,7 @@ impl Scene
 
         let effective_xray_alpha = if self.xray_mode { self.xray_alpha } else { 1.0 };
         let effective_ssao_strength = if self.ssao_supported && self.ssao_enabled { self.ssao_strength } else { 0.0 };
-        let effective_fog_density = if self.fog_enabled { self.fog_density } else { 0.0 };
-        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance, effective_ssao_strength, self.fog_color, effective_fog_density);
+        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance, effective_ssao_strength, &self.fog);
 
         self.buffer = wgpu.device().create_buffer_init
         (
@@ -446,8 +466,7 @@ impl Scene
 
         let effective_xray_alpha = if self.xray_mode { self.xray_alpha } else { 1.0 };
         let effective_ssao_strength = if self.ssao_supported && self.ssao_enabled { self.ssao_strength } else { 0.0 };
-        let effective_fog_density = if self.fog_enabled { self.fog_density } else { 0.0 };
-        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance, effective_ssao_strength, self.fog_color, effective_fog_density);
+        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance, effective_ssao_strength, &self.fog);
 
         wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[scene_uniform]));
     }
@@ -517,6 +536,8 @@ impl Scene
             self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, self.reverse_z, true, self.samples, polygon_mode));
             self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, self.reverse_z, true, self.samples, polygon_mode));
             self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, self.reverse_z, true, self.samples, polygon_mode));
+            self.render_pipelines.push(Pipeline::new_std_additive(wgpu, "color pipe additive", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, self.reverse_z, self.samples, polygon_mode));
+            self.render_pipelines.push(Pipeline::new_std_additive(wgpu, "color pipe additive no compare", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, false, self.reverse_z, self.samples, polygon_mode));
         }
         else
         {
@@ -525,6 +546,8 @@ impl Scene
             self.render_pipelines.get_mut(RenderPipelineType::ColorNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, self.reverse_z, true, self.samples, polygon_mode);
             self.render_pipelines.get_mut(RenderPipelineType::ColorNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, self.reverse_z, true, self.samples, polygon_mode);
             self.render_pipelines.get_mut(RenderPipelineType::ColorNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, self.reverse_z, true, self.samples, polygon_mode);
+            self.render_pipelines.get_mut(RenderPipelineType::ColorAdditive as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, self.reverse_z, true, self.samples, polygon_mode);
+            self.render_pipelines.get_mut(RenderPipelineType::ColorAdditiveNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, self.reverse_z, true, self.samples, polygon_mode);
         }
 
         // ********** depth export pass (for occlusion culling - hzb) **********
@@ -851,9 +874,11 @@ impl Scene
             }
 
             // create/recreate hzb texture
-            if cam_buffer_created || cam.hzb_texture_render_item.is_none() || cam.get_viewport_width_in_px() != get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap()).width || cam.get_viewport_height_in_px() != get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap()).height
+            // at least 1 px - a camera without a resolution yet (0) must not end in a zero sized texture
+            let (hzb_width, hzb_height) = (cam.get_viewport_width_in_px().max(1), cam.get_viewport_height_in_px().max(1));
+            if cam_buffer_created || cam.hzb_texture_render_item.is_none() || hzb_width != get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap()).width || hzb_height != get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap()).height
             {
-                let hzb_texture = Texture::new_hzb_texture(wgpu, cam.get_viewport_width_in_px(), cam.get_viewport_height_in_px());
+                let hzb_texture = Texture::new_hzb_texture(wgpu, hzb_width, hzb_height);
                 let hzb_downsample_bind_group = HZBDownsampleBindGroup::new(wgpu, "hzb downsample", &hzb_texture);
 
                 cam.hzb_texture_render_item = Some(Box::new(hzb_texture));
@@ -1211,7 +1236,14 @@ impl Scene
             }
 
             // ********** instances check each **********
-            if !all_instances_changed
+            // an owner written node (skip_instance_update) is only looked at when it says it changed something
+            let (scan_all, touched) =
+            {
+                let mut node = nodes.get(node_id).unwrap().write().unwrap();
+                let (all, touched) = node.take_touched_instances();
+                (all || !node.skips_instance_update(), touched)
+            };
+            if !all_instances_changed && (scan_all || !touched.is_empty())
             {
                 let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
                 {
@@ -1226,8 +1258,9 @@ impl Scene
                     let node = node.read().unwrap();
                     let instances_ref = node.instances.get_ref();
                     let mut changed = vec![];
+                    let indices: Vec<usize> = if scan_all { (0..instances_ref.len()).collect() } else { touched };
 
-                    for (i, instance) in instances_ref.iter().enumerate()
+                    for (i, instance) in indices.into_iter().filter_map(|i| instances_ref.get(i).map(|instance| (i, instance)))
                     {
                         let mut instance = instance.write().unwrap();
                         //let (instance_data, mut instance_changed) = instance.get_data_mut().consume_borrow();
@@ -1617,12 +1650,11 @@ impl Scene
             self.update_buffer(wgpu, scene);
         }
 
-        // fog settings are part of the scene uniform (0.0 density = disabled)
-        if state.rendering.fog != self.fog_enabled || state.rendering.fog_color != self.fog_color || state.rendering.fog_density != self.fog_density
+        // fog settings are part of the scene uniform
+        let fog = FogUniform::from_rendering(&state.rendering);
+        if fog != self.fog
         {
-            self.fog_enabled = state.rendering.fog;
-            self.fog_color = state.rendering.fog_color;
-            self.fog_density = state.rendering.fog_density;
+            self.fog = fog;
             self.update_buffer(wgpu, scene);
         }
 
@@ -2927,7 +2959,7 @@ impl Scene
             {
                 if let Some(material) = material_component
                 {
-                    if !material.get_data().cast_shadow
+                    if !material.get_data().cast_shadow || material.get_data().blend_mode == BlendMode::Additive
                     {
                         continue;
                     }
@@ -2956,6 +2988,7 @@ impl Scene
             let material_bind_group = material_render_item.bind_group.as_ref().unwrap();
 
             let material_allow_xray = material_component.map(|m| m.get_data().allow_xray).unwrap_or(true);
+            let material_additive = material_component.map(|m| m.get_data().blend_mode == BlendMode::Additive).unwrap_or(false);
 
             // the mesh index maps to the draw slot of the (node, mesh) pair - it has to count
             // all meshes of the node (including skipped ones) to stay aligned with the slot table
@@ -3009,7 +3042,13 @@ impl Scene
                                 // materials with allow_xray=false (gizmos, grid, etc.) keep their normal pipeline so they stay on top
                                 let xray_color = color_pipeline && self.xray_mode && material_allow_xray;
 
-                                if node.settings.depth_test && node.settings.depth_write
+                                // additive never writes depth
+                                if color_pipeline && material_additive
+                                {
+                                    let pipe = if node.settings.depth_test { RenderPipelineType::ColorAdditive } else { RenderPipelineType::ColorAdditiveNoCompare };
+                                    pass.set_pipeline(&self.render_pipelines[pipe as usize].get());
+                                }
+                                else if node.settings.depth_test && node.settings.depth_write
                                 {
                                     if color_pipeline
                                     {

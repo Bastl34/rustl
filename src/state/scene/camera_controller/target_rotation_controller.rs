@@ -6,7 +6,7 @@ use nalgebra::{Point3, Vector2, Vector3};
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize};
 
-use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, generic::get_millis, math::{self, approx_zero, approx_zero_vec2, interpolate}}, input::mouse::MouseButton, state::{scene::{camera::CameraData, node::NodeItem, scene::Scene}, state::{get_delta_t, InputOutput}}};
+use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, generic::get_millis, math::{self, approx_zero, approx_zero_vec2, interpolate}}, input::mouse::MouseButton, state::{scene::{camera::CameraData, node::NodeItem, scene::{Scene, ScenePickRes}}, state::{get_delta_t, InputOutput}}};
 
 use crate::state::scene::exporter::serialization_helper::default_true;
 
@@ -19,6 +19,8 @@ const DEFAULT_ZOOM_SPEED: f32 = 0.05;
 const LATERAL_OFFSET_FADE_RADIUS: f32 = 2.0;
 // the smoothed pivot trails below its target at most this far - fast up a ramp it went under the ground, and the collision ray with it
 const MAX_LAG_BELOW: f32 = 0.2;
+// and at most this share of the camera distance - a camera pulled in close (a ceiling) went under the ground with it at a hard landing
+const MAX_LAG_BELOW_PER_RADIUS: f32 = 0.1;
 // a grazing hit: the offset is kept away from the surface, not along the ray - this is the flattest angle counted (sine)
 const MIN_HIT_ANGLE_SIN: f32 = 0.15;
 const DEFAULT_MOUSE_SENSITIVITY: Vector2::<f32> = Vector2::<f32>::new(0.0015, 0.0015);
@@ -86,6 +88,9 @@ pub struct TargetRotationController
 
     #[serde(skip, default)]
     smoothed_target: Option<Point3::<f32>>,
+
+    #[serde(skip, default)]
+    pivot_pulled: bool, // the pivot was pulled in front of an obstacle last frame
 }
 
 impl TargetRotationController
@@ -131,6 +136,7 @@ impl TargetRotationController
             last_radius: None,
 
             smoothed_target: None,
+            pivot_pulled: false,
         }
     }
 
@@ -175,6 +181,7 @@ impl TargetRotationController
             last_radius: None,
 
             smoothed_target: None,
+            pivot_pulled: false,
         }
     }
 
@@ -281,7 +288,8 @@ impl TargetRotationController
             interpolate(smoothed.z, target_pos.z, horizontal)
         );
 
-        pivot.y = pivot.y.max(target_pos.y - MAX_LAG_BELOW);
+        let radius = self.data.get_ref().radius;
+        pivot.y = pivot.y.max(target_pos.y - MAX_LAG_BELOW.min(radius * MAX_LAG_BELOW_PER_RADIUS));
 
         let trailing = (pivot - target_pos).norm() > 0.0005;
         if !trailing
@@ -292,6 +300,37 @@ impl TargetRotationController
         self.smoothed_target = Some(pivot);
 
         (pivot, trailing)
+    }
+
+    // the first surface along the ray with camera collision - the target and its children are no obstacle
+    fn pick_obstacle(scene: &Scene, target_node: NodeItem, ray: &Ray) -> Option<ScenePickRes>
+    {
+        scene.pick(ray, false, false, false, false, Some(Arc::new(move |node, _instance|
+        {
+            let node = node.read().unwrap();
+            let has_currect_parent = node.has_parent_or_is_equal(target_node.clone());
+            let camera_collision_allowed = node.has_camera_collision();
+
+            !has_currect_parent && camera_collision_allowed
+        })))
+    }
+
+    // the pivot pulled back towards the target when something lies between them, None when it is free
+    fn free_pivot(&self, scene: &Scene, node: &NodeItem, anchor: Point3::<f32>, pivot: Point3::<f32>) -> Option<Point3::<f32>>
+    {
+        let to_pivot = pivot - anchor;
+        let length = to_pivot.norm();
+        if length < 0.001 { return None; }
+
+        let dir = to_pivot / length;
+        let ray = Ray::new(anchor.into(), dir.into());
+        let hit = Self::pick_obstacle(scene, node.clone(), &ray).filter(|hit| hit.time_of_impact < length)?;
+
+        // kept away from the surface like the camera, not along the ray
+        let facing = hit.normal.map_or(1.0, |normal| normal.normalize().dot(&dir).abs());
+        let distance = (hit.time_of_impact - self.collision_check_offset / facing.max(MIN_HIT_ANGLE_SIN)).max(0.0);
+
+        Some(anchor + dir * distance)
     }
 
 }
@@ -401,9 +440,18 @@ impl CameraController for TargetRotationController
         let raw_target_pos = self.get_target_pos(node.clone());
         let (target_pos, trailing) = self.step_smoothing(raw_target_pos, frame_scale);
 
+        // the offset or the trailing can put the pivot under the ground (a flipped vehicle) - the collision ray would start there
+        // it starts at the target lifted by the upward part of the offset: a hard landing sinks the target node itself into the ground for a moment
+        let offset = self.data.get_ref().offset;
+        let anchor = raw_target_pos - offset + Vector3::y() * offset.y.max(0.0);
+        let free_pivot = if self.collision_check { node.as_ref().and_then(|node| self.free_pivot(scene, node, anchor, target_pos)) } else { None };
+        let pivot_pulled = free_pivot.is_some() || self.pivot_pulled;
+        self.pivot_pulled = free_pivot.is_some();
+        let target_pos = free_pivot.unwrap_or(target_pos);
+
         // apply
         let controller_data_change = self.data.consume_change();
-        if self.run_initial_update || update_needed || controller_data_change || trailing
+        if self.run_initial_update || update_needed || controller_data_change || trailing || pivot_pulled
         {
             self.place(target_pos, cam_data);
 
@@ -423,15 +471,7 @@ impl CameraController for TargetRotationController
             let dir = -cam_data.get_ref().dir.normalize();
             let ray = Ray::new(ray_origin.into(), dir.into());
 
-            let target_node = node.clone().unwrap();
-            let pick_res = scene.pick(&ray, false, false, false, false, Some(Arc::new(move |node, _instance|
-            {
-                let node = node.read().unwrap();
-                let has_currect_parent = node.has_parent_or_is_equal(target_node.clone());
-                let camera_collision_allowed = node.has_camera_collision();
-
-                !has_currect_parent && camera_collision_allowed
-            })));
+            let pick_res = Self::pick_obstacle(scene, node.clone().unwrap(), &ray);
 
             // only what lies between the target and the wanted camera position is in the way
             // the offset counts away from the surface - along a grazing ray it is longer, or the near plane dips under the ground

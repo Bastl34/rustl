@@ -60,8 +60,10 @@ struct SceneUniform
 
     // 0.0 = fog disabled
     fog_density: f32,
-    _padding: f32,
+    // linear fog from start to end when end > start (else exponential by density)
+    fog_start: f32,
     fog_color: vec4<f32>,
+    fog_end: f32,
 };
 
 struct SkeletonUniform
@@ -1154,7 +1156,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     // (blend mode 2) are excluded: the ssao texture holds the occlusion of the
     // opaque geometry behind them
     var ssao_factor = 1.0;
-    if (scene.ssao_strength > 0.0001 && material.unlit_shading == 0u && material.blend_mode != 2u)
+    if (scene.ssao_strength > 0.0001 && material.unlit_shading == 0u && material.blend_mode < 2u)
     {
         let ssao_value = textureLoad(t_ssao, vec2<i32>(in.clip_position.xy), 0).r;
         ssao_factor = 1.0 - (1.0 - ssao_value) * scene.ssao_strength;
@@ -1374,11 +1376,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     // distance based fog (world space distance -> independent of the depth convention),
     // applied in linear hdr space so tone mapping/gamma treat the fog color consistently.
     // materials with no_fog (sky spheres, editor helpers like grid/gizmos, ...) are excluded
-    if (scene.fog_density > 0.0001 && material.no_fog == 0u)
+    let linear_fog = scene.fog_end > scene.fog_start + 0.0001;
+    if ((scene.fog_density > 0.0001 || linear_fog) && material.no_fog == 0u)
     {
         let fog_distance = length(in.view_dir);
-        let fog_factor = 1.0 - exp(-scene.fog_density * fog_distance);
-        color = mix(color, scene.fog_color.rgb, fog_factor);
+        var fog_factor = 1.0 - exp(-scene.fog_density * fog_distance);
+        if (linear_fog)
+        {
+            fog_factor = clamp((fog_distance - scene.fog_start) / (scene.fog_end - scene.fog_start), 0.0, 1.0);
+        }
+        // additive fades out instead of adding the fog color
+        if (material.blend_mode == 3u)
+        {
+            color = color * (1.0 - fog_factor);
+        }
+        else
+        {
+            color = mix(color, scene.fog_color.rgb, fog_factor);
+        }
     }
 
     // TODO: tone mapping and gamma can be done in post

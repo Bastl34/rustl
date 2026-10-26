@@ -10,6 +10,7 @@ pub struct Pipeline
 {
     pub name: String,
     pub fragment_attachment: bool, // TODO: currently not implemented
+    pub additive: bool, // color pipelines: adds the color (scaled by alpha) instead of blending over
 
     shader: ShaderModule,
     pipeline: Option<wgpu::RenderPipeline>,
@@ -44,12 +45,37 @@ impl Pipeline
         {
             name: name.to_string(),
             fragment_attachment,
+            additive: false,
 
             shader,
             pipeline: None,
         };
 
         pipe.create_std(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, reverse_z, fragment_attachment, samples, polygon_mode);
+
+        pipe
+    }
+
+    pub fn new_std_additive(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], max_lights: u32, depth_compare: bool, reverse_z: bool, samples: u32, polygon_mode: wgpu::PolygonMode) -> Pipeline
+    {
+        let prepared_shader = Self::prepare_shader(shader_source, max_lights);
+        let shader = wgpu.device().create_shader_module(wgpu::ShaderModuleDescriptor
+        {
+            label: Some(name),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&prepared_shader)).into(),
+        });
+
+        let mut pipe = Self
+        {
+            name: name.to_string(),
+            fragment_attachment: true,
+            additive: true,
+
+            shader,
+            pipeline: None,
+        };
+
+        pipe.create_std(wgpu, bind_group_layouts, true, depth_compare, false, reverse_z, true, samples, polygon_mode);
 
         pipe
     }
@@ -74,6 +100,7 @@ impl Pipeline
         {
             name: name.to_string(),
             fragment_attachment: false,
+            additive: false,
 
             shader,
             pipeline: None,
@@ -193,6 +220,7 @@ impl Pipeline
         {
             name: name.to_string(),
             fragment_attachment: false,
+            additive: false,
 
             shader,
             pipeline: None,
@@ -271,13 +299,14 @@ impl Pipeline
                 {
                     operation: wgpu::BlendOperation::Add,
                     src_factor: wgpu::BlendFactor::SrcAlpha,
-                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    dst_factor: if self.additive { wgpu::BlendFactor::One } else { wgpu::BlendFactor::OneMinusSrcAlpha },
                 },
+                // additive keeps the alpha below
                 alpha: wgpu::BlendComponent
                 {
                     operation: wgpu::BlendOperation::Add,
-                    src_factor: wgpu::BlendFactor::SrcAlpha,
-                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    src_factor: if self.additive { wgpu::BlendFactor::Zero } else { wgpu::BlendFactor::SrcAlpha },
+                    dst_factor: if self.additive { wgpu::BlendFactor::One } else { wgpu::BlendFactor::OneMinusSrcAlpha },
                 },
                 //alpha: wgpu::BlendComponent::REPLACE,
             }),
@@ -432,6 +461,7 @@ impl Pipeline
         {
             name: name.to_string(),
             fragment_attachment: true,
+            additive: false,
 
             shader,
             pipeline: None,

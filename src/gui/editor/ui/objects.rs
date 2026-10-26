@@ -1231,6 +1231,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                 ui.horizontal(|ui|
                 {
                     changed = ui.checkbox(&mut physics.react_on_first_hit, "react on first hit").changed() || changed;
+                    changed = ui.checkbox(&mut physics.one_sided_meshes, "one sided meshes").on_hover_text("triangle meshes of fixed objects push it only from their front side - from behind it passes").changed() || changed;
                     ui.label("ℹ").on_hover_text("the object holds still when the run starts, whatever it rests on, and only comes alive once something dynamic hits it faster than the scene's hit speed, the character walks into it, or a touching object that waits with it is released. Set it on the object root, the meshes below inherit it.");
                 });
             });

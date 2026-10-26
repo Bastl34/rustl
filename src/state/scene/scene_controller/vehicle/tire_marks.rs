@@ -53,6 +53,7 @@ pub struct TireMarkInput
     pub ground: Option<(Vector3<f32>, Vector3<f32>)>, // contact point and normal, world space - None in the air
     pub strength: f32, // 0..1, how hard the tire slides
     pub width: f32, // m
+    pub min_alpha: f32, // 0..1, at least this opaque whatever the slide and the opacity setting (oily tires)
 }
 
 // Rubber left on the ground where the tires slide - pieces of one quad mesh as instances of an internal node, made in blocks, reused in a ring.
@@ -81,7 +82,7 @@ impl TireMarks
 
         for (index, wheel) in wheels.iter().enumerate()
         {
-            let Some((point, normal)) = wheel.ground.filter(|_| wheel.strength >= MIN_STRENGTH) else
+            let Some((point, normal)) = wheel.ground.filter(|_| wheel.strength >= MIN_STRENGTH || wheel.min_alpha >= MIN_STRENGTH) else
             {
                 self.last_points[index] = None;
                 continue;
@@ -101,7 +102,7 @@ impl TireMarks
             else if distance >= settings.segment_length
             {
                 let transform = piece_transform(last, point, normal, wheel.width);
-                let color = Vector4::new(1.0, 1.0, 1.0, (wheel.strength * settings.opacity).clamp(0.0, 1.0));
+                let color = Vector4::new(1.0, 1.0, 1.0, (wheel.strength * settings.opacity).max(wheel.min_alpha).clamp(0.0, 1.0));
                 self.add_piece(scene, settings, transform, color);
                 self.last_points[index] = Some(point);
             }
@@ -130,6 +131,9 @@ impl TireMarks
             self.next += 1;
             self.next - 1
         };
+
+        // the renderer looks only at the pieces it is told about
+        node.write().unwrap().touch_instance(index);
 
         let mut piece = self.pieces[index].write().unwrap();
 

@@ -106,7 +106,8 @@ pub enum BlendMode
 {
     Opaque,
     Mask,
-    Blend
+    Blend,
+    Additive // adds its color (scaled by alpha) - glows, sparks; no shadow, fog fades it out
 }
 
 pub const TEXTURE_AMOUNT: usize = 14; // without additional textures
@@ -673,7 +674,12 @@ impl Material
 
     pub fn has_transparency(&self) -> bool
     {
-        // the shader forces alpha 1 for opaque and discards below the cutoff for mask - only blend is see-through
+        // the shader forces alpha 1 for opaque and discards below the cutoff for mask - only blend (and additive) is see-through
+        if self.get_data().blend_mode == BlendMode::Additive
+        {
+            return true;
+        }
+
         if self.get_data().blend_mode != BlendMode::Blend
         {
             return false;
@@ -1244,6 +1250,7 @@ impl Component for Material
             apply_settings = ui.selectable_value(& mut blend_mode, BlendMode::Blend, "Blend").changed() || apply_settings;
             apply_settings = ui.selectable_value(& mut blend_mode, BlendMode::Mask, "Mask").changed() || apply_settings;
             apply_settings = ui.selectable_value(& mut blend_mode, BlendMode::Opaque, "Opaque").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut blend_mode, BlendMode::Additive, "Additive").changed() || apply_settings;
         });
 
         apply_settings = ui.add(egui::Slider::new(&mut alpha, 0.0..=1.0).text("alpha")).changed() || apply_settings;

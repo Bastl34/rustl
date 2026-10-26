@@ -292,13 +292,18 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
                 node_write.color = options.color.map(|c| Vector3::new(c[0], c[1], c[2]));
             }
 
-            let transform = Transformation::new
+            let mut transform = Transformation::new
             (
                 "Transform",
                 Vector3::new(position[0], position[1], position[2]),
                 Vector3::new(rotation[0], rotation[1], rotation[2]),
                 Vector3::new(scale[0], scale[1], scale[2]),
             );
+            // like an object with a model - an empty node lost its rotation
+            if let Some(quat) = rotation_quat
+            {
+                transform.apply_rotation_quaternion(Vector4::new(quat[0], quat[1], quat[2], quat[3]), true);
+            }
             node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
             Some(node)
         }

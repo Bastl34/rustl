@@ -3,7 +3,7 @@
 use std::{cell::RefCell, collections::{HashMap, VecDeque}, fmt, rc::Rc, sync::{Arc, RwLock}};
 use web_time::Instant;
 
-use nalgebra::Vector3;
+use nalgebra::{Point3, Vector3};
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{project::project::{ProjectData, SceneLoadingStatus, SceneLoadingStatusItem}, resources::{utilities::resource_utils::play_and_forget_sound, mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem, canonical_sound_path}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::{Scene, SceneLoadState}}}};
@@ -89,6 +89,9 @@ pub struct Rendering
     pub fog: bool,
     pub fog_color: Vector3<f32>,
     pub fog_density: f32,
+    // linear from start to end (world distance) when end > start - else exponential by the density
+    pub fog_start: f32,
+    pub fog_end: f32,
 
     pub distance_sorting: bool,
     pub frustum_culling: bool,
@@ -170,6 +173,8 @@ impl Default for Rendering
             fog: false,
             fog_color: DEFAULT_FOG_COLOR,
             fog_density: DEFAULT_FOG_DENSITY,
+            fog_start: 0.0,
+            fog_end: 0.0,
 
             distance_sorting: true,
             frustum_culling: true,
@@ -213,6 +218,8 @@ impl Rendering
         self.fog = settings.fog;
         self.fog_color = settings.fog_color;
         self.fog_density = settings.fog_density;
+        self.fog_start = settings.fog_start;
+        self.fog_end = settings.fog_end;
 
         self.distance_sorting = settings.distance_sorting;
         self.frustum_culling = settings.frustum_culling;
@@ -799,6 +806,23 @@ impl State
         sound.get_data_mut().get_mut().volume = volume;
         sound.start();
         sound.update_state(None, None, true);
+
+        self.oneshot_sounds.push(sound);
+    }
+
+    // a spatial one shot at a world position - distance_scale: up to this distance it plays at full volume
+    pub fn play_one_shot_sound_source_at(&mut self, sound_source: SoundSourceItem, position: Point3<f32>, volume: f32, speed: f32, distance_scale: f32)
+    {
+        let mut sound = Sound::new(&sound_source.read().unwrap().name, sound_source.clone(), super::scene::components::sound::SoundType::Spatial, false);
+        {
+            let data = sound.get_data_mut().get_mut();
+            data.volume = volume;
+            data.speed = speed;
+            data.spatial_distance_scale = distance_scale;
+        }
+        sound.set_fixed_position(Some(position));
+        sound.update_state(None, None, true);
+        sound.start();
 
         self.oneshot_sounds.push(sound);
     }
@@ -1499,6 +1523,11 @@ impl State
 
         // ********** fire-and-forget sounds **********
         let mut finished_sound_sources: HashMap<u32, SoundSourceItem> = HashMap::new();
+        // the spatial ones follow the listener
+        for sound in self.oneshot_sounds.iter_mut()
+        {
+            sound.update_state(None, None, false);
+        }
         self.oneshot_sounds.retain(|sound|
         {
             if sound.stopped()

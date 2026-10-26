@@ -83,6 +83,9 @@ pub struct PhysicsSettings
 
     // its contacts show up in the physics contact events, for this node and everything below it
     pub report_contacts: bool,
+
+    // the triangle meshes of fixed objects push it only from their front side - from behind it passes (old games: level walls)
+    pub one_sided_meshes: bool,
 }
 
 impl Default for PhysicsSettings
@@ -112,6 +115,8 @@ impl Default for PhysicsSettings
             react_on_first_hit: false,
 
             report_contacts: false,
+
+            one_sided_meshes: false,
         }
     }
 }
@@ -217,6 +222,8 @@ pub struct Node
 
     delete_later_request: bool,
     skip_instance_update: bool, // the owner writes the computed instance data itself, only forced updates run
+    instances_touched: bool, // skip_instance_update: the owner changed instances since the last render - else nobody looks at them (thousands of tire marks)
+    touched_instances: Vec<usize>, // skip_instance_update: only these changed (by index) - all of them with instances_touched
 }
 
 impl Serialize for Node
@@ -399,7 +406,9 @@ impl Node
             on_after_render: Observable::new(),
 
             delete_later_request: false,
-            skip_instance_update: false
+            skip_instance_update: false,
+            instances_touched: false,
+            touched_instances: vec![]
         }
     }
 
@@ -455,6 +464,29 @@ impl Node
     pub fn set_skip_instance_update(&mut self, skip: bool)
     {
         self.skip_instance_update = skip;
+    }
+
+    pub fn skips_instance_update(&self) -> bool
+    {
+        self.skip_instance_update
+    }
+
+    // with skip_instance_update: the owner changed instances this frame - any of them
+    pub fn touch_instances(&mut self)
+    {
+        self.instances_touched = true;
+    }
+
+    // with skip_instance_update: the owner changed this instance (index in instances)
+    pub fn touch_instance(&mut self, index: usize)
+    {
+        self.touched_instances.push(index);
+    }
+
+    // the renderer takes the changes: all instances to look at, or only these
+    pub fn take_touched_instances(&mut self) -> (bool, Vec<usize>)
+    {
+        (std::mem::take(&mut self.instances_touched), std::mem::take(&mut self.touched_instances))
     }
 
     pub fn add_node(node: NodeItem, child_node: NodeItem)
@@ -2222,6 +2254,7 @@ impl Node
     {
         let instance = Arc::new(RwLock::new(instance));
         self.instances.get_mut().push(instance.clone());
+        self.instances_touched = true;
 
         instance
     }
@@ -2313,8 +2346,10 @@ impl Node
             {
                 let node_read = node.read().unwrap();
                 let skip = node_read.skip_instance_update;
+                // nothing new from the owner: no instance needs a forced update either
+                let instances: &[_] = if skip && !node_read.instances_touched { &[] } else { node_read.instances.get_ref() };
 
-                for instance in node_read.instances.get_ref()
+                for instance in instances
                 {
                     if skip && !instance.read().unwrap().needs_force_update()
                     {

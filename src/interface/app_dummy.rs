@@ -1,8 +1,5 @@
-
-use crate::input::keyboard::Key;
 use crate::resources::resources::load_binary;
 use crate::state::resources::sound_source::SoundSourceItem;
-use crate::state::scene::physics::contacts::ContactKind;
 use crate::{console_error, helper::concurrency::thread::spawn_thread, state::scene::{node::Node, utilities::scene_utils::execute_on_scene_mut_and_wait}};
 
 use super::{app::App, context::Context};
@@ -784,6 +781,7 @@ impl App for AppDummy
         */
 
         // ********** scene cycling **********
+        /*
         if state.scenes.len() > 1
         {
             let keys = [Key::Key1, Key::Key2, Key::Key3, Key::Key4, Key::Key5, Key::Key6, Key::Key7, Key::Key8, Key::Key9, Key::Key0];
@@ -802,6 +800,7 @@ impl App for AppDummy
                 state.set_active_scene(new_scene_id);
             }
         }
+        */
 
     }
 

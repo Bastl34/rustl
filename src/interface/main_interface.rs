@@ -67,6 +67,9 @@ pub struct MainInterface
     #[cfg(not(feature = "editor"))]
     mouse_released: bool,
 
+    // the cursor is hidden and grabbed - only while the window has the focus
+    mouse_captured: bool,
+
     // the browser releases the pointer lock on Esc itself
     #[cfg(all(not(feature = "editor"), target_arch = "wasm32"))]
     pointer_lock_seen: bool,
@@ -151,6 +154,8 @@ impl MainInterface
             // the browser only grants the pointer lock on a click
             #[cfg(not(feature = "editor"))]
             mouse_released: cfg!(target_arch = "wasm32"),
+
+            mouse_captured: false,
 
             #[cfg(all(not(feature = "editor"), target_arch = "wasm32"))]
             pointer_lock_seen: false,
@@ -909,12 +914,15 @@ impl MainInterface
         // ******************** mouse visibility ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
-            let (visible, changed) = state.io.input_manager.mouse.visible.consume_borrow();
-            if changed
-            {
-                self.context.window.set_cursor_visible(*visible);
+            let (visible, _) = state.io.input_manager.mouse.visible.consume_borrow();
 
-                if *visible
+            let captured = !*visible && state.in_focus;
+            if captured != self.mouse_captured
+            {
+                self.mouse_captured = captured;
+                self.context.window.set_cursor_visible(!captured);
+
+                if !captured
                 {
                     _ = self.context.window.set_cursor_grab(CursorGrabMode::None);
                 }
@@ -1478,10 +1486,8 @@ impl MainInterface
 
     pub fn update_done(&mut self)
     {
-        let global_state = &mut *(self.context.state.borrow_mut());
-
         // center mouse (needed on windows) - the web has the pointer lock and can not set the position
-        if !*global_state.io.input_manager.mouse.visible.get_ref() && !is_mac() && !cfg!(target_arch = "wasm32")
+        if self.mouse_captured && !is_mac() && !cfg!(target_arch = "wasm32")
         {
             let window_size = self.context.window.inner_size();
             let center = PhysicalPosition::new(window_size.width as f64 / 2.0, window_size.height as f64 / 2.0);

@@ -88,6 +88,8 @@ const COCKPIT_PITCH: f32 = 0.05;
 
 // zooming in stops here, closer the chase camera would sit inside the vehicle
 const CHASE_MIN_DISTANCE: f32 = 2.0;
+// share per frame the chase camera moves back out after something pulled it in (a ceiling over a jump) - slower it stays in the car for a while
+const CHASE_COLLISION_ZOOM_SPEED: f32 = 0.15;
 
 // m/s - below it the travel direction is too shaky for the camera, twice as fast it counts fully
 const SLIDE_FOLLOW_MIN_SPEED: f32 = 2.0;
@@ -334,6 +336,10 @@ pub struct VehicleChassisSettings
     // 0..1 while the body touches a wall: no roll or pitch, the heading turns along the wall - it scrapes along instead of tipping over
     #[serde(default)]
     pub wall_slide: f32,
+
+    // hits between two vehicles that both have it push through their centers of mass - no spin, like the ball hits of arcade racers
+    #[serde(default)]
+    pub center_hits: bool,
 }
 
 fn default_min_clearance() -> f32 { 1.0 }
@@ -365,6 +371,7 @@ impl Default for VehicleChassisSettings
             sloped_ends: true,
             rounding: default_rounding(),
             wall_slide: 0.0,
+            center_hits: false,
         }
     }
 }
@@ -1029,7 +1036,9 @@ pub struct VehicleController
     #[serde(skip, default)]
     engine_state: EngineState,
     #[serde(skip, default)]
-    steer: f32,
+    steer: f32, // what the wheels steer: the driver's steering with the steer assist on top
+    #[serde(skip, default)]
+    driver_steer: f32, // the driver's steering, following the input at the steering rates
     #[serde(skip, default)]
     drift_amount: f32, // 1 = handbrake just pulled, falls back to 0 as the grip recovers
     #[serde(skip, default)]
@@ -1072,10 +1081,26 @@ pub struct VehicleController
     #[serde(skip, default)]
     pub input_override: Option<VehicleDriveInput>,
 
-    // Some((steer, weight)): steering from code mixed into the driver's (assists like keeping on the road) - weight 0..1, the rest stays with the driver
+    // Some((steer, weight)): steering from code mixed into the driver's (assists like keeping on the road) - weight 0..1, the rest stays with the driver; at once, not slowed by the steering rate
     #[serde(skip, default)]
     pub steer_assist: Option<(f32, f32)>,
+
+    // runtime effects set by code every frame (power ups, hazards) - 1 = normal, never saved
+    #[serde(skip, default = "default_one")]
+    pub throttle_limit: f32, // the throttle (and reverse) is scaled by it, 0 = no drive
+    #[serde(skip, default = "default_one")]
+    pub power_scale: f32, // engine torque and top speed
+    #[serde(skip, default = "default_one")]
+    pub grip_scale: f32, // grip and side grip of every tire
+    #[serde(skip, default = "default_one")]
+    pub steer_rate_scale: f32, // how fast the steering follows the input, below 1 also slows analog input down
+    #[serde(skip, default)]
+    pub wheel_grip_scale: Vec<f32>, // per wheel on top of grip_scale, a missing one = 1
+    #[serde(skip, default)]
+    pub wheel_mark_force: Vec<f32>, // per wheel: marks at least this opaque while on the ground, past the opacity setting (oily tires), a missing one = 0
 }
+
+fn default_one() -> f32 { 1.0 }
 
 fn default_base() -> SceneControllerBase
 {
@@ -1140,6 +1165,7 @@ impl VehicleController
 
             engine_state: EngineState::default(),
             steer: 0.0,
+            driver_steer: 0.0,
             drift_amount: 0.0,
             wheelspin: 0.0,
             lean_goal: 0.0,
@@ -1163,6 +1189,12 @@ impl VehicleController
             telemetry: VehicleTelemetry::default(),
             input_override: None,
             steer_assist: None,
+            throttle_limit: 1.0,
+            power_scale: 1.0,
+            grip_scale: 1.0,
+            steer_rate_scale: 1.0,
+            wheel_grip_scale: vec![],
+            wheel_mark_force: vec![],
         };
 
         controller.apply_preset();
@@ -1389,6 +1421,7 @@ impl VehicleController
         controller.follow_smoothing = 0.03;
         controller.follow_smoothing_vertical = 0.08;
         controller.collision_check = true;
+        controller.collision_zoom_speed = CHASE_COLLISION_ZOOM_SPEED;
         controller.use_bbox_center = false;
         controller.min_radius = 0.0;
 
@@ -2706,7 +2739,8 @@ impl VehicleController
             // scenes set up before the width was measured: a share of the radius
             let width = if !self.tire_marks.width_auto { self.tire_marks.width } else if wheel.width > 0.0 { wheel.width } else { wheel.radius * UNMEASURED_TIRE_WIDTH };
 
-            marks.push(TireMarkInput { ground, strength: slide.max(locked).max(spinning), width });
+            let forced = self.wheel_mark_force.get(index).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+            marks.push(TireMarkInput { ground, strength: slide.max(locked).max(spinning), width, min_alpha: forced });
         }
 
         self.tire_mark_pieces.apply_color(self.tire_marks.color);
@@ -2825,6 +2859,7 @@ impl SceneController for VehicleController
 
             self.engine_state.reset(&self.engine);
             self.steer = 0.0;
+            self.driver_steer = 0.0;
             self.drift_amount = 0.0;
             self.wheelspin = 0.0;
             self.lean_goal = 0.0;
@@ -3012,11 +3047,6 @@ impl SceneController for VehicleController
             input.handbrake = drive.handbrake;
             input.recover = drive.recover;
         }
-        if let Some((steer, weight)) = self.steer_assist.filter(|_| !self.vehicle_type.is_trailer())
-        {
-            input.steer += (steer.clamp(-1.0, 1.0) - input.steer) * weight.clamp(0.0, 1.0);
-        }
-
         let Some(state) = self.drive(&mut scene.physics, node_id, &frame, &input, dt) else { return false; };
         self.pending = Some(PendingFrame { input, state });
 
@@ -3187,18 +3217,26 @@ impl VehicleController
             max_angle = max_angle.min((wheelbase * gravity * self.balance.max_lean.to_radians().tan() / (speed * speed)).atan());
         }
 
-        if input.steer_analog
+        let steer_rate_scale = self.steer_rate_scale.max(0.0);
+        if input.steer_analog && steer_rate_scale >= 1.0
         {
-            self.steer = input.steer;
+            self.driver_steer = input.steer;
         }
         else
         {
-            let returning = approx_zero(input.steer) || input.steer.signum() != self.steer.signum();
-            let rate = if returning { self.steering.return_speed } else { self.steering.speed };
-            let diff = input.steer - self.steer;
+            let returning = approx_zero(input.steer) || input.steer.signum() != self.driver_steer.signum();
+            let rate = if returning { self.steering.return_speed } else { self.steering.speed } * steer_rate_scale.min(1.0);
+            let diff = input.steer - self.driver_steer;
 
-            self.steer += diff.signum() * (rate * dt).min(diff.abs());
+            self.driver_steer += diff.signum() * (rate * dt).min(diff.abs());
         }
+
+        // the assist steers on top at once - through the steering rate it came late at speed
+        self.steer = match self.steer_assist.filter(|_| !self.vehicle_type.is_trailer())
+        {
+            Some((assist, weight)) => self.driver_steer + (assist.clamp(-1.0, 1.0) - self.driver_steer) * weight.clamp(0.0, 1.0),
+            None => self.driver_steer,
+        };
 
         let steer_angle = self.steer * max_angle;
 
@@ -3248,13 +3286,17 @@ impl VehicleController
         // the trailer behind brakes along - a trailer passes it on down the train
         physics.set_hitch_brake(node_id, if self.hitch.trailer_brakes { brake } else { 0.0 });
 
+        throttle *= self.throttle_limit.clamp(0.0, 1.0);
+
         // ********** engine **********
         let driven: Vec<usize> = (0..self.wheels.len()).filter(|index| self.wheels[*index].driven).collect();
         let driven_radius = if driven.is_empty() { 0.35 } else { driven.iter().map(|index| self.wheels[*index].radius).sum::<f32>() / driven.len() as f32 };
 
         // no driven wheel on the ground: the engine revs freely
         let airborne = !driven.is_empty() && driven.iter().all(|index| !contacts.get(*index).is_some_and(|contact| contact.contact));
-        let torque = if trailer { 0.0 } else { self.engine_state.update(&self.engine, throttle, reverse, speed, driven_radius, airborne, dt) };
+        let boosted = (self.power_scale != 1.0).then(|| EngineSettings { max_torque: self.engine.max_torque * self.power_scale, top_speed: self.engine.top_speed * self.power_scale, ..self.engine.clone() });
+        let engine = boosted.as_ref().unwrap_or(&self.engine);
+        let torque = if trailer { 0.0 } else { self.engine_state.update(engine, throttle, reverse, speed, driven_radius, airborne, dt) };
         let direction = if self.engine_state.gear < 0 { -1.0 } else { 1.0 };
         let mut drive_force = torque / driven_radius * direction;
 
@@ -3357,8 +3399,9 @@ impl VehicleController
                 engine_force = 0.0;
             }
 
-            let mut grip = self.tires.grip * surface;
-            let mut side_grip = self.tires.side_grip;
+            let effect = self.grip_scale * self.wheel_grip_scale.get(index).copied().unwrap_or(1.0);
+            let mut grip = self.tires.grip * surface * effect;
+            let mut side_grip = self.tires.side_grip * effect;
 
             if wheel.handbrake && !tracked
             {
@@ -3460,6 +3503,8 @@ impl VehicleController
 
             if let Some((vehicle, body)) = physics.vehicle_mut(node_id)
             {
+                vehicle.center_hits = self.chassis.center_hits;
+
                 for (wheel, command) in vehicle.controller.wheels_mut().iter_mut().zip(commands.iter())
                 {
                     wheel.engine_force = command.engine_force;
@@ -3507,10 +3552,15 @@ impl VehicleController
     // The body touches a wall: the roll and pitch it got from the hit are taken away, the heading turns along the wall, nothing goes into it.
     fn slide_along_walls(&mut self, physics: &mut PhysicsWorld, node_id: u32, forward_world: &Vector3<f32>, dt: f32)
     {
-        // the walls of the last step, from the body towards the wall, flat - other vehicles and characters are rammed, not slid along
+        // the walls of the last step, from the body towards the wall, flat - other vehicles, characters and loose objects are rammed, not slid along
+        let loose = |target: &ContactTarget| match target
+        {
+            ContactTarget::Object { node_id, .. } => physics.body_of(*node_id).and_then(|handle| physics.bodies.get(handle)).is_some_and(|body| body.is_dynamic()),
+            _ => false,
+        };
         let normals: Vec<Vector3<f32>> = physics.contacts_of(node_id)
             .filter(|contact| (contact.started() || contact.touching()) && contact.normal.y.abs() < WALL_NORMAL_MAX_Y)
-            .filter(|contact| !matches!(contact.other, ContactTarget::Vehicle { .. } | ContactTarget::Character { .. }))
+            .filter(|contact| !matches!(contact.other, ContactTarget::Vehicle { .. } | ContactTarget::Character { .. }) && !loose(&contact.other))
             .filter_map(|contact| Vector3::new(contact.normal.x, 0.0, contact.normal.z).try_normalize(0.001))
             .collect();
         let touching = normals.iter().sum::<Vector3<f32>>().try_normalize(0.001);
@@ -3857,6 +3907,7 @@ impl VehicleController
             dirty |= slider(ui, "Edge Rounding", "m the edges of the collision body are rounded by - they slide up a ramp start or a loop entry instead of catching on it. The body keeps its outer size", &mut self.chassis.rounding, 0.0..=1.0, 2);
             dirty |= ui.checkbox(&mut self.chassis.sloped_ends, "Sloped Ends").on_hover_text("the collision bottom rises above the axles in front of the front and behind the rear axle - the approach and departure angle of a real car, so the nose does not catch on ramps and loop entries").changed();
             slider(ui, "Wall Slide", "while the body touches a wall: 0 = only physics, 1 = no roll or pitch, the heading turns along the wall - it scrapes along instead of tipping over", &mut self.chassis.wall_slide, 0.0..=1.0, 2);
+            ui.checkbox(&mut self.chassis.center_hits, "Center Hits").on_hover_text("hits against another vehicle with this on push both through their centers of mass, without friction - a bump does not spin them around (arcade racers)");
             dirty |= ui.checkbox(&mut self.chassis.wheel_bumpers, "Wheel Bumpers").on_hover_text("frictionless balls at the wheels - the wheel rays only see an edge once the wheel is above it, the balls slide the vehicle up over curbs and ramps").changed();
         });
 
