@@ -148,6 +148,19 @@ impl WGpu
             }
         };
 
+        // a lost device fails everything silently afterwards (no rendering, every map_async errors) -> say why
+        device.set_device_lost_callback(|reason, msg|
+        {
+            console_error!("gpu device lost ({:?}): {}", reason, msg);
+        });
+
+        // web: the default handler panics - inside a js callback that only traps the callback and the message gets lost -> log it
+        #[cfg(target_arch = "wasm32")]
+        device.on_uncaptured_error(Arc::new(|err: wgpu::Error|
+        {
+            console_error!("wgpu error: {}", err);
+        }));
+
         console_log!(" ********** features used **********");
         console_log!(device.features());
 

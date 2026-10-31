@@ -2276,7 +2276,12 @@ impl Scene
                 // ********** hzb + occlusion check (from the pass 1 depth) **********
                 // the hzb block spans multiple passes: the depth export pass writes the begin
                 // timestamp and the occlusion check pass writes the end timestamp
+                // web: not timed - chrome (dawn/metal) loses the device when a compute pass with timestamp writes
+                // follows another compute pass with dispatches in the same command buffer (hzb downsample -> occlusion check)
+                #[cfg(not(target_arch = "wasm32"))]
                 let hzb_timer_segment = gpu_timer.as_mut().and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Hzb));
+                #[cfg(target_arch = "wasm32")]
+                let hzb_timer_segment = None;
 
                 render_result.draw_calls += self.create_hzb(wgpu, encoder, cam, hzb_timer_segment);
                 self.hzb_occlusion_culling(wgpu, encoder, cam, hzb_timer_segment);
