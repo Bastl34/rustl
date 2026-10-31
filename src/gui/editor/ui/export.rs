@@ -214,6 +214,7 @@ pub struct ExportDialog
     pub platform: ExportPlatform,
     pub dev: bool,
     pub zip: bool,
+    pub dmg: bool,
     pub problems_only: bool,
 
     status_bar_height: f32,
@@ -235,6 +236,7 @@ impl ExportDialog
             platform: ExportPlatform::Web,
             dev: false,
             zip: false,
+            dmg: false,
             problems_only: false,
             status_bar_height: 30.0,
             run: Arc::new(Mutex::new(ExportRun::new())),
@@ -259,7 +261,7 @@ impl ExportDialog
         self.open = true;
     }
 
-    fn start(&mut self, project_path: &str, out_dir: &str, zip_name: Option<String>)
+    fn start(&mut self, project_path: &str, out_dir: &str, zip_name: Option<String>, dmg_name: Option<String>)
     {
         let root = repo_root();
         let target_dir = match out_dir.trim()
@@ -270,6 +272,7 @@ impl ExportDialog
 
         // next to the build folder, not inside it
         let zip_path = zip_name.map(|name| target_dir.parent().unwrap_or(&target_dir).join(name));
+        let dmg_path = dmg_name.map(|name| target_dir.parent().unwrap_or(&target_dir).join(name));
 
         let mut args = vec![BUILD_SCRIPT.to_string(), format!("--platform={}", self.platform.arg())];
         if self.dev
@@ -349,15 +352,22 @@ impl ExportDialog
             let result = child.wait();
 
             let built = matches!(&result, Ok(status) if status.success()) && !run.lock().unwrap().cancel_requested;
-            let zipped = match (&zip_path, built)
+
+            // (kind, file, result) of the packages built from the target folder
+            let mut packages = vec![];
+            if built
             {
-                (Some(zip_path), true) =>
+                if let Some(zip_path) = &zip_path
                 {
                     run.lock().unwrap().push(LineKind::Info, format!("zipping to {}", zip_path.display()));
-                    Some(write_zip(&target_dir, zip_path, &run))
-                },
-                _ => None,
-            };
+                    packages.push(("zip", zip_path.clone(), write_zip(&target_dir, zip_path, &run)));
+                }
+                if let Some(dmg_path) = &dmg_path
+                {
+                    run.lock().unwrap().push(LineKind::Info, format!("creating disk image {}", dmg_path.display()));
+                    packages.push(("dmg", dmg_path.clone(), write_dmg(&target_dir, dmg_path, &run)));
+                }
+            }
 
             let mut run = run.lock().unwrap();
             run.duration = Some(started.elapsed());
@@ -370,19 +380,22 @@ impl ExportDialog
             {
                 match result
                 {
-                    Ok(status) if status.success() => match zipped
+                    Ok(status) if status.success() =>
                     {
-                        Some(Err(err)) =>
+                        let mut failed = false;
+                        for (kind, path, result) in packages
                         {
-                            run.push(LineKind::Error, format!("zip failed: {}", err));
-                            ExportStatus::Failed
-                        },
-                        Some(Ok(())) =>
-                        {
-                            run.push(LineKind::Success, format!("zip ready: {}", zip_path.as_ref().map(|path| path.display().to_string()).unwrap_or_default()));
-                            ExportStatus::Success
-                        },
-                        None => ExportStatus::Success,
+                            match result
+                            {
+                                Ok(()) => run.push(LineKind::Success, format!("{} ready: {}", kind, path.display())),
+                                Err(err) =>
+                                {
+                                    run.push(LineKind::Error, format!("{} failed: {}", kind, err));
+                                    failed = true;
+                                }
+                            }
+                        }
+                        if failed { ExportStatus::Failed } else { ExportStatus::Success }
                     },
                     Ok(status) =>
                     {
@@ -447,8 +460,8 @@ fn read_lines<R: Read + Send + 'static>(reader: R, run: Arc<Mutex<ExportRun>>) -
     })
 }
 
-// <name>_<version>_<platform>.zip - the name like the build script (project name, else the file name)
-fn zip_file_name(name: &str, version: &str, platform: ExportPlatform, project_path: &str) -> String
+// <name>_<version>_<platform>.<extension> - the name like the build script (project name, else the file name)
+fn package_file_name(name: &str, version: &str, platform: ExportPlatform, project_path: &str, extension: &str) -> String
 {
     let name = match name.trim()
     {
@@ -457,7 +470,7 @@ fn zip_file_name(name: &str, version: &str, platform: ExportPlatform, project_pa
     };
     let file = format!("{}_{}_{}", name, version.trim(), platform.arg());
     let file: String = file.chars().map(|c| if c.is_control() || "<>:\"/\\|?*".contains(c) { '_' } else { c }).collect();
-    format!("{}.zip", file)
+    format!("{}.{}", file, extension)
 }
 
 // the files of the build folder below a folder named like the zip, a partial zip is removed again
@@ -488,7 +501,7 @@ fn pack_zip(dir: &Path, zip_path: &Path, run: &Arc<Mutex<ExportRun>>) -> anyhow:
             anyhow::bail!("cancelled");
         }
 
-        if file == zip_path
+        if file == zip_path || is_system_file(&file)
         {
             continue;
         }
@@ -505,6 +518,67 @@ fn pack_zip(dir: &Path, zip_path: &Path, run: &Arc<Mutex<ExportRun>>) -> anyhow:
 
     writer.finish()?;
     Ok(())
+}
+
+// mac: a compressed disk image with the build folder (the .app) and a link to /Applications to drag it there - hdiutil comes with macOS
+fn write_dmg(dir: &Path, dmg_path: &Path, run: &Arc<Mutex<ExportRun>>) -> anyhow::Result<()>
+{
+    // staged outside the build folder, the link to /Applications would end up in the next zip otherwise
+    let staging = std::env::temp_dir().join(format!("rustl_dmg_{}", std::process::id()));
+    let result = pack_dmg(dir, &staging, dmg_path, run);
+    let _ = std::fs::remove_dir_all(&staging);
+    if result.is_err()
+    {
+        let _ = std::fs::remove_file(dmg_path);
+    }
+    result
+}
+
+fn pack_dmg(dir: &Path, staging: &Path, dmg_path: &Path, run: &Arc<Mutex<ExportRun>>) -> anyhow::Result<()>
+{
+    let volume = dmg_path.file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
+
+    let _ = std::fs::remove_dir_all(staging);
+    std::fs::create_dir_all(staging)?;
+
+    // ditto keeps the bundle as it is (permissions, symlinks, extended attributes)
+    run_tool(Command::new("ditto").arg(dir).arg(staging))?;
+
+    let mut files = vec![];
+    collect_files(staging, &mut files)?;
+    for file in files.iter().filter(|file| is_system_file(file))
+    {
+        std::fs::remove_file(file)?;
+    }
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("/Applications", staging.join("Applications"))?;
+
+    if run.lock().unwrap().cancel_requested
+    {
+        anyhow::bail!("cancelled");
+    }
+
+    run_tool(Command::new("hdiutil").args(["create", "-volname", &volume, "-fs", "HFS+", "-format", "UDZO", "-ov", "-srcfolder"]).arg(staging).arg(dmg_path))
+}
+
+fn run_tool(command: &mut Command) -> anyhow::Result<()>
+{
+    let name = command.get_program().to_string_lossy().to_string();
+    let output = command.stdin(Stdio::null()).output().map_err(|err| anyhow::anyhow!("failed to start {}: {}", name, err))?;
+    if !output.status.success()
+    {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("{} ({}): {}", name, output.status, stderr.trim());
+    }
+    Ok(())
+}
+
+// written by the file browser into the build folder (Finder, Explorer) - nothing of the build
+fn is_system_file(file: &Path) -> bool
+{
+    let name = file.file_name().map(|name| name.to_string_lossy().to_lowercase()).unwrap_or_default();
+    name == ".ds_store" || name.starts_with("._") || name == "thumbs.db" || name == "desktop.ini"
 }
 
 fn collect_files(dir: &Path, files: &mut Vec<PathBuf>) -> std::io::Result<()>
@@ -665,8 +739,14 @@ pub fn create_modal_export(editor_state: &mut EditorState, state: &mut State, ct
                 ui.horizontal(|ui|
                 {
                     ui.checkbox(&mut dialog.dev, "Dev build").on_hover_text("faster build, slower app");
-                    let zip_name = zip_file_name(&state.project.name, &state.project.version, dialog.platform, project_path.as_deref().unwrap_or(""));
+                    let project_file = project_path.as_deref().unwrap_or("");
+                    let zip_name = package_file_name(&state.project.name, &state.project.version, dialog.platform, project_file, "zip");
                     ui.checkbox(&mut dialog.zip, "Create zip").on_hover_text(format!("packs the build into {} next to the target folder", zip_name));
+                    if dialog.platform == ExportPlatform::Mac
+                    {
+                        let dmg_name = package_file_name(&state.project.name, &state.project.version, dialog.platform, project_file, "dmg");
+                        ui.checkbox(&mut dialog.dmg, "Create dmg").on_hover_text(format!("disk image {} with the app and a link to Applications, next to the target folder", dmg_name));
+                    }
                 });
                 ui.end_row();
 
@@ -848,8 +928,10 @@ fn run_export(editor_state: &mut EditorState, state: &mut State)
         crate::gui::editor::editor_project::save_project_local(editor_state, &path);
 
         let out_dir = editor_state.export.platform.export_dir(&mut editor_state.project_local.export_dirs).clone();
-        let zip_name = editor_state.export.zip.then(|| zip_file_name(&state.project.name, &state.project.version, editor_state.export.platform, &path));
-        editor_state.export.start(&path, &out_dir, zip_name);
+        let platform = editor_state.export.platform;
+        let zip_name = editor_state.export.zip.then(|| package_file_name(&state.project.name, &state.project.version, platform, &path, "zip"));
+        let dmg_name = (editor_state.export.dmg && platform == ExportPlatform::Mac).then(|| package_file_name(&state.project.name, &state.project.version, platform, &path, "dmg"));
+        editor_state.export.start(&path, &out_dir, zip_name, dmg_name);
     }
 }
 

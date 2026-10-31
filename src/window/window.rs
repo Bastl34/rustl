@@ -252,6 +252,10 @@ pub fn run()
     #[cfg(not(target_arch = "wasm32"))]
     {
         event_loop.run_app(&mut app_state).unwrap();
+
+        // game builds: the apps got their exit already - the teardown of gpu, scenes and audio is left to the os, a hang there keeps the process alive without a window (macos: still in the dock)
+        #[cfg(not(feature = "editor"))]
+        std::process::exit(0);
     }
 
     #[cfg(target_arch = "wasm32")]
