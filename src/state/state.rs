@@ -69,6 +69,8 @@ pub struct Rendering
 {
     pub clear_color: ChangeTracker<Vector3<f32>>,
     pub present_mode: ChangeTracker<PresentModeSetting>,
+    // one frame in flight instead of two: less input lag, but cpu and gpu work one after the other - needs headroom, else vsync drops to half the refresh rate
+    pub low_latency: ChangeTracker<bool>,
 
     // window state (the run modes toggle it), not a project setting
     #[serde(skip)]
@@ -157,6 +159,7 @@ impl Default for Rendering
         {
             clear_color: ChangeTracker::new(Vector3::<f32>::new(0.0, 0.0, 0.0)),
             present_mode: ChangeTracker::new(PresentModeSetting::VSync),
+            low_latency: ChangeTracker::new(false),
 
             fullscreen: ChangeTracker::new(false),
             msaa: ChangeTracker::new(8),
@@ -204,6 +207,7 @@ impl Rendering
 
         set_changed(&mut self.clear_color, *settings.clear_color.get_ref());
         set_changed(&mut self.present_mode, *settings.present_mode.get_ref());
+        set_changed(&mut self.low_latency, *settings.low_latency.get_ref());
         set_changed(&mut self.msaa, (*settings.msaa.get_ref()).clamp(1, adapter.max_msaa_samples.max(1)));
         set_changed(&mut self.shadow, *settings.shadow.get_ref());
         set_changed(&mut self.shadow_map_resolution, (*settings.shadow_map_resolution.get_ref()).min(adapter.max_texture_resolution));

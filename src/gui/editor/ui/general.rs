@@ -258,6 +258,16 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
 
         ui.horizontal(|ui|
         {
+            let mut low_latency = *state.rendering.low_latency.get_ref();
+            if ui.checkbox(&mut low_latency, "Low Latency").changed()
+            {
+                state.rendering.low_latency.set(low_latency);
+            }
+            ui.label("ℹ").on_hover_text("one frame in flight instead of two: less input lag (up to one frame), for fast games like shooters. CPU and GPU work one after the other - without enough headroom VSync drops to half the refresh rate (e.g. 30 instead of 60 fps)");
+        });
+
+        ui.horizontal(|ui|
+        {
             ui.add_enabled(state.rendering_adapter.wireframe_mode_support, egui::Checkbox::new(&mut state.rendering.debug.wireframe_mode, "Wireframe Mode"));
             ui.label("ℹ").on_hover_text(if state.rendering_adapter.wireframe_mode_support { "renders all objects in wireframe mode, useful for debugging" } else { "not supported by this GPU/backend" });
         });
