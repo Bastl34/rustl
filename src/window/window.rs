@@ -246,6 +246,9 @@ pub fn run()
         crate::resources::resources::resources_url();
     }
 
+    #[cfg(target_os = "macos")]
+    disable_autofill();
+
     let event_loop = winit::event_loop::EventLoop::with_user_event().build().unwrap();
     let mut app_state = AppState::Uninitialized(event_loop.create_proxy());
 
@@ -260,4 +263,18 @@ pub fn run()
 
         event_loop.spawn_app(app_state);
     }
+}
+
+// macOS 26+: AppKit's AutoFill heuristics start an "AutoFill (<app>)" helper for the text input of the window, it often outlives the app
+// and stays in the Dock "running in background" - registered default only, nothing is stored and a value set by the user still wins
+#[cfg(target_os = "macos")]
+fn disable_autofill()
+{
+    use objc2_foundation::{NSDictionary, NSNumber, NSObject, NSString, NSUserDefaults};
+
+    let key = NSString::from_str("NSAutoFillHeuristicsEnabled");
+    let off = NSNumber::new_bool(false);
+    let value: &NSObject = &off;
+    let defaults = NSDictionary::from_slices(&[&*key], &[&**value]);
+    unsafe { NSUserDefaults::standardUserDefaults().registerDefaults(&defaults) };
 }
