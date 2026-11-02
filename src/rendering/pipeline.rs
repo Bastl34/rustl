@@ -14,6 +14,8 @@ pub struct Pipeline
 
     shader: ShaderModule,
     pipeline: Option<wgpu::RenderPipeline>,
+    constants: Vec<(String, f64)>, // override values (std + shadow pipelines)
+    fs_entry: &'static str, // fragment entry point (std + shadow pipelines)
 }
 
 crate::render_item_send_sync!(Pipeline);
@@ -25,6 +27,46 @@ impl RenderItem for Pipeline
 
 impl Pipeline
 {
+    // color / depth pipeline from an already compiled module (material shaders share one module for all variants)
+    pub fn new_color(wgpu: &mut WGpu, name: &str, shader: &ShaderModule, fs_entry: &'static str, constants: Vec<(String, f64)>, bind_group_layouts: &[&BindGroupLayout], depth_compare: bool, depth_write: bool, additive: bool, reverse_z: bool, samples: u32, polygon_mode: wgpu::PolygonMode) -> Pipeline
+    {
+        let mut pipe = Self
+        {
+            name: name.to_string(),
+            fragment_attachment: true,
+            additive,
+
+            shader: shader.clone(),
+            pipeline: None,
+            constants,
+            fs_entry,
+        };
+
+        pipe.create_std(wgpu, bind_group_layouts, true, depth_compare, depth_write, reverse_z, true, samples, polygon_mode);
+
+        pipe
+    }
+
+    // shadow pipeline of a material shader (vertex hook + alpha test in fs_material)
+    pub fn new_shadow_material(wgpu: &mut WGpu, name: &str, shader: &ShaderModule, constants: Vec<(String, f64)>, bind_group_layouts: &[&BindGroupLayout]) -> Pipeline
+    {
+        let mut pipe = Self
+        {
+            name: name.to_string(),
+            fragment_attachment: false,
+            additive: false,
+
+            shader: shader.clone(),
+            pipeline: None,
+            constants,
+            fs_entry: "fs_material",
+        };
+
+        pipe.create_shadow(wgpu, bind_group_layouts, true);
+
+        pipe
+    }
+
     pub fn new_std(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], max_lights: u32, depth_stencil: bool, depth_compare: bool, depth_write: bool, reverse_z: bool, fragment_attachment: bool, samples: u32, polygon_mode: wgpu::PolygonMode) -> Pipeline
     {
         let shader;
@@ -49,6 +91,8 @@ impl Pipeline
 
             shader,
             pipeline: None,
+            constants: vec![],
+            fs_entry: "fs_main",
         };
 
         pipe.create_std(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, reverse_z, fragment_attachment, samples, polygon_mode);
@@ -73,6 +117,8 @@ impl Pipeline
 
             shader,
             pipeline: None,
+            constants: vec![],
+            fs_entry: "fs_main",
         };
 
         pipe.create_std(wgpu, bind_group_layouts, true, depth_compare, false, reverse_z, true, samples, polygon_mode);
@@ -104,6 +150,8 @@ impl Pipeline
 
             shader,
             pipeline: None,
+            constants: vec![],
+            fs_entry: "fs_main",
         };
 
         pipe.create_shadow(wgpu, bind_group_layouts, alpha_test);
@@ -128,15 +176,17 @@ impl Pipeline
             ..Default::default()
         });
 
+        let constants: Vec<(&str, f64)> = self.constants.iter().map(|(name, value)| (name.as_str(), *value)).collect();
+
         let mut fragment_state = None;
         if alpha_test
         {
             fragment_state = Some(wgpu::FragmentState
             {
                 module: &self.shader,
-                entry_point: Some("fs_main"),
+                entry_point: Some(self.fs_entry),
                 targets: &[],
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions { constants: &constants, ..Default::default() },
             });
         }
 
@@ -153,7 +203,7 @@ impl Pipeline
                     Some(Vertex::desc()),
                     Some(Instance::desc())
                 ],
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions { constants: &constants, ..Default::default() },
             },
             fragment: fragment_state,
             primitive: wgpu::PrimitiveState
@@ -224,6 +274,8 @@ impl Pipeline
 
             shader,
             pipeline: None,
+            constants: vec![],
+            fs_entry: "fs_main",
         };
 
         pipe.create_depth_export(wgpu, bind_group_layouts);
@@ -313,15 +365,17 @@ impl Pipeline
             write_mask: wgpu::ColorWrites::ALL,
         })];
 
+        let constants: Vec<(&str, f64)> = self.constants.iter().map(|(name, value)| (name.as_str(), *value)).collect();
+
         let mut fragment_state = None;
         if fragment_attachment
         {
             fragment_state = Some(wgpu::FragmentState
             {
                 module: &self.shader,
-                entry_point: Some("fs_main"),
+                entry_point: Some(self.fs_entry),
                 targets: fragment_targets,
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions { constants: &constants, ..Default::default() },
             });
         }
 
@@ -338,7 +392,7 @@ impl Pipeline
                     Some(Vertex::desc()),
                     Some(Instance::desc())
                 ],
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions { constants: &constants, ..Default::default() },
             },
             fragment: fragment_state,
             primitive: wgpu::PrimitiveState
@@ -465,6 +519,8 @@ impl Pipeline
 
             shader,
             pipeline: None,
+            constants: vec![],
+            fs_entry: "fs_main",
         };
 
         pipe.create_fullscreen(wgpu, bind_group_layouts, target_format, fs_entry, reverse_z);

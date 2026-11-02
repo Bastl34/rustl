@@ -746,6 +746,7 @@ pub struct VehicleControls
     pub zoom_in: InputAction,
     pub zoom_out: InputAction,
     pub zoom_speed: f32, // 1/s, the distance changes by e^(speed * t)
+    pub mouse: bool, // the mouse orbits this camera - off for a gamepad player in split screen
 }
 
 impl Default for VehicleControls
@@ -772,6 +773,7 @@ impl Default for VehicleControls
             zoom_in: InputAction::new(&[Button(GamepadButton::DPadUp)]),
             zoom_out: InputAction::new(&[Button(GamepadButton::DPadDown)]),
             zoom_speed: 1.2,
+            mouse: true,
         }
     }
 }
@@ -1098,6 +1100,10 @@ pub struct VehicleController
     pub wheel_grip_scale: Vec<f32>, // per wheel on top of grip_scale, a missing one = 1
     #[serde(skip, default)]
     pub wheel_mark_force: Vec<f32>, // per wheel: marks at least this opaque while on the ground, past the opacity setting (oily tires), a missing one = 0
+    #[serde(skip, default)]
+    pub external_force: Vector3<f32>, // world, N - added to the body forces every step (water, wind)
+    #[serde(skip, default)]
+    pub external_torque: Vector3<f32>, // world, N·m
 }
 
 fn default_one() -> f32 { 1.0 }
@@ -1195,6 +1201,8 @@ impl VehicleController
             steer_rate_scale: 1.0,
             wheel_grip_scale: vec![],
             wheel_mark_force: vec![],
+            external_force: Vector3::zeros(),
+            external_torque: Vector3::zeros(),
         };
 
         controller.apply_preset();
@@ -2546,9 +2554,10 @@ impl VehicleController
 
         // orbiting by mouse or stick pauses the swing in behind the vehicle
         let mouse = &io.input_manager.mouse;
+        let use_mouse = self.controls.mouse;
         let (look, zoom) = (input.look, input.zoom);
         let looking = look.0 != 0.0 || look.1 != 0.0;
-        let orbiting = looking || mouse.is_holding(MouseButton::Left) || (!*mouse.visible.get_ref() && mouse.raw_velocity.velocity.norm() > 0.0);
+        let orbiting = looking || (use_mouse && (mouse.is_holding(MouseButton::Left) || (!*mouse.visible.get_ref() && mouse.raw_velocity.velocity.norm() > 0.0)));
         self.orbit_idle_time = if orbiting { 0.0 } else { self.orbit_idle_time + dt };
 
         let forward_world = rotation * frame.forward;
@@ -2575,6 +2584,7 @@ impl VehicleController
 
             // sits on the vehicle node and looks ahead, pitching and rolling with it
             controller.basis = frame.camera_basis();
+            controller.mouse_look = use_mouse;
             if controller.data.get_ref().offset != self.camera.cockpit_offset
             {
                 controller.data.get_mut().offset = self.camera.cockpit_offset;
@@ -2599,6 +2609,7 @@ impl VehicleController
             let node = self.node.as_ref().cloned();
             let Some(cam) = scene.get_game_camera_mut(&self.cam_name) else { return; };
             let Some(controller) = cam.controller.as_mut().and_then(|controller| controller.as_any_mut().downcast_mut::<TargetRotationController>()) else { return; };
+            controller.mouse_input = use_mouse;
 
             // on the roof the vehicle up points into the ground - the camera and its collision ray would start below the track
             let vehicle_up = rotation * frame.up;
@@ -3435,8 +3446,8 @@ impl VehicleController
             local.x * local.x * self.principal_inertia.x + local.y * local.y * self.principal_inertia.y + local.z * local.z * self.principal_inertia.z
         };
 
-        let force = -linvel * linvel.norm() * self.brakes.air_drag;
-        let mut torque_world = Vector3::<f32>::zeros();
+        let force = -linvel * linvel.norm() * self.brakes.air_drag + self.external_force;
+        let mut torque_world = self.external_torque;
 
         // two wheelers: lean into the curve like a rider would, and stay upright while standing
         let mut lean_target = 0.0;
@@ -4208,6 +4219,7 @@ impl VehicleController
             {
                 let id = format!("vehicle_controls_{}", self.node_name);
                 gamepad_select_ui(ui, &id, &mut self.controls.gamepad);
+                ui.checkbox(&mut self.controls.mouse, "Mouse").on_hover_text("the mouse orbits the camera - off for a gamepad player in split screen");
 
                 let controls = &mut self.controls;
                 for (label, action) in [("Throttle", &mut controls.throttle), ("Brake / Reverse", &mut controls.brake), ("Steer Left", &mut controls.steer_left), ("Steer Right", &mut controls.steer_right), ("Handbrake", &mut controls.handbrake), ("Recover", &mut controls.recover), ("Camera", &mut controls.camera), ("Look Left", &mut controls.look_left), ("Look Right", &mut controls.look_right), ("Look Up", &mut controls.look_up), ("Look Down", &mut controls.look_down), ("Zoom In", &mut controls.zoom_in), ("Zoom Out", &mut controls.zoom_out)]

@@ -10,6 +10,13 @@ const LIGHT_TYPE_POINT: u32 = 1u;
 const LIGHT_TYPE_SPOT: u32 = 2u;
 const JOINTS_LIMIT: u32 = 4u;
 
+// feature switches - set per material pipeline, switched off parts are compiled out
+override USE_LIGHTING: bool = true;
+override USE_SHADOWS: bool = true;
+override USE_FOG: bool = true;
+override USE_NORMAL_MAP: bool = true;
+override USE_PROJECTED_MAPPING: bool = true;
+
 // ****************************** structs ******************************
 
 struct CameraUniform
@@ -127,6 +134,7 @@ struct VertexOutput
     @location(11) object_position: vec3<f32>, // object/local space (pre model matrix) - for object space texture mapping
     @location(12) object_normal: vec3<f32>,   // object/local space geometric normal - for object space texture mapping
     @location(13) model_rotation: vec4<f32>,  // object -> world rotation (quaternion) - for object space mapped normals
+    @location(14) object_origin: vec3<f32>, // material shaders: world position of the object origin
 };
 
 // ****************************** inputs / bindings ******************************
@@ -377,6 +385,12 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     ).xyz;
     */
 
+    // material shader hook: world space vertex
+    var vertex = CustomVertex(world_position.xyz / world_position.w, normal, object_position.xyz / max(object_position.w, 0.0001), model.tex_coords_0_1.xy, model.tex_coords_0_1.zw, model.color, model_matrix[3].xyz, model_matrix);
+    custom_vertex(&vertex);
+    world_position = vec4<f32>(vertex.position, 1.0);
+    normal = vertex.normal;
+
     var tangent = cross(normal, vec3<f32>(0.0, 1.0, 0.0));
 
     if length(tangent) <= 0.0001
@@ -389,7 +403,7 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
     var out: VertexOutput;
     out.clip_position = camera.view_proj * world_position;
-    out.tex_coords_0_1 = model.tex_coords_0_1;
+    out.tex_coords_0_1 = vec4<f32>(vertex.uv, vertex.uv1);
     out.tex_coords_2_3 = model.tex_coords_2_3;
 
     out.position = world_position.xyz / world_position.w;
@@ -409,12 +423,19 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     out.color = instance.color;
     if (material.vertex_colors != 0u)
     {
-        out.color *= model.color;
+        out.color *= vertex.color;
     }
     out.highlight = instance.highlight;
     out.locked = instance.locked;
+    out.object_origin = vertex.object_position;
 
     out.weights = model.weights;
+
+    // hidden instances (visible = false gives alpha 0) - opaque materials ignore the alpha, so they leave the view volume
+    if (instance.color.a <= 0.0)
+    {
+        out.clip_position = vec4<f32>(0.0, 0.0, -1.0, 1.0);
+    }
 
     return out;
 }
@@ -473,7 +494,11 @@ struct MaterialUniform
 
     no_fog: u32,
 
-    vertex_colors: u32, // struct size gets rounded up to 16 bytes (matches the rust side padding)
+    vertex_colors: u32,
+
+    time: f32, // seconds - only written for materials with a material shader
+
+    custom_params: array<vec4<f32>, 8>, // values of the material shader (// @param)
 };
 
 @group(0) @binding(0) var<uniform> material: MaterialUniform;
@@ -779,11 +804,11 @@ fn sample_triplanar(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f
 // samples a material texture with the active mapping mode (uv / triplanar / cube / planar / cylindrical / spherical)
 fn sample_material_texture(tex: texture_2d<f32>, samp: sampler, in: VertexOutput, texture_index: u32) -> vec4<f32>
 {
-    if (material.mapping_mode == MAPPING_MODE_TRIPLANAR)
+    if (USE_PROJECTED_MAPPING && material.mapping_mode == MAPPING_MODE_TRIPLANAR)
     {
         return sample_triplanar(tex, samp, mapping_position(in), mapping_normal(in), material.mapping_scale, material.mapping_sharpness, texture_index);
     }
-    if (material.mapping_mode != MAPPING_MODE_UV)
+    if (USE_PROJECTED_MAPPING && material.mapping_mode != MAPPING_MODE_UV)
     {
         return sample_projected(tex, samp, projected_uv(mapping_position(in), mapping_normal(in)), texture_index);
     }
@@ -1067,6 +1092,60 @@ fn environment_reflection(in: VertexOutput, normal: vec3<f32>, view_dir: vec3<f3
     return reflection_color.rgb * reflectivity;
 }
 
+// ****************************** material shader hooks ******************************
+// same block in shadow.wgsl - a material shader replaces the default hooks (each one has to stay a single line)
+
+struct CustomVertex
+{
+    position: vec3<f32>, // world space
+    normal: vec3<f32>, // world space
+    local_position: vec3<f32>, // object space (read only)
+    uv: vec2<f32>,
+    uv1: vec2<f32>,
+    color: vec4<f32>, // vertex color (used when the material uses vertex colors)
+    object_position: vec3<f32>, // world position of the object origin (read only)
+    model: mat4x4<f32>, // object -> world (read only)
+};
+
+struct CustomSurfaceInput
+{
+    position: vec3<f32>, // world space
+    local_position: vec3<f32>, // object space
+    normal: vec3<f32>, // world space geometry normal
+    uv: vec2<f32>,
+    color: vec4<f32>, // instance * vertex color
+    view_dir: vec3<f32>, // to the camera (zero in the shadow pass)
+    object_position: vec3<f32>, // world position of the object origin
+};
+
+struct CustomSurface
+{
+    base_color: vec4<f32>, // alpha in a
+    ambient_color: vec4<f32>,
+    normal: vec3<f32>,
+};
+
+fn custom_param(index: u32) -> f32 { return material.custom_params[index / 4u][index % 4u]; }
+fn get_time() -> f32 { return material.time; }
+// 0..1 per object from its position (e.g. in.object_position) - changes when it moves
+fn instance_seed(origin: vec3<f32>) -> f32 { return fract(sin(dot(origin, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453); }
+
+fn custom_vertex(vertex: ptr<function, CustomVertex>) {}
+fn custom_surface(in: CustomSurfaceInput, surface: ptr<function, CustomSurface>) {}
+fn custom_fragment(in: CustomSurfaceInput, color: vec3<f32>) -> vec3<f32> { return color; }
+
+fn surface_input(in: VertexOutput) -> CustomSurfaceInput
+{
+    return CustomSurfaceInput(in.position, in.object_position, normalize(in.normal), in.tex_coords_0_1.xy, in.color, normalize(in.view_dir), in.object_origin);
+}
+
+// depth pre-pass of materials with a material shader (vs_main applies the vertex hook)
+@fragment
+fn fs_depth(in: VertexOutput) -> @location(0) vec4<f32>
+{
+    return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
@@ -1092,9 +1171,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     var bitangent = in.bitangent;
 
     // normal mapping
-    if (has_normal_texture())
+    if (USE_NORMAL_MAP && has_normal_texture())
     {
-        if (material.mapping_mode != MAPPING_MODE_UV) // projected normal mapping
+        if (USE_PROJECTED_MAPPING && material.mapping_mode != MAPPING_MODE_UV) // projected normal mapping
         {
             let p = mapping_position(in);
             let n = mapping_normal(in);
@@ -1148,6 +1227,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         normal = normalize(normal);
     }
 
+    // material shader hook: surface values before the lighting
+    var surface = CustomSurface(object_color, ambient_color, normal);
+    custom_surface(surface_input(in), &surface);
+    object_color = surface.base_color;
+    ambient_color = surface.ambient_color;
+    normal = surface.normal;
+
     var color = vec3<f32>(0.0, 0.0, 0.0);
 
     // screen space ambient occlusion (sampled 1:1 via the framebuffer pixel position)
@@ -1162,12 +1248,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         ssao_factor = 1.0 - (1.0 - ssao_value) * scene.ssao_strength;
     }
 
-    if (material.unlit_shading != 0u || light_amount == 0)
+    if (!USE_LIGHTING || material.unlit_shading != 0u || light_amount == 0)
     {
         color = object_color.rgb;
 
         // unlit (pre-lit, baked) surfaces still take the shadows of the lights - the darkest one counts
-        if (material.unlit_shading != 0u && material.receive_shadow != 0u)
+        if (USE_SHADOWS && material.unlit_shading != 0u && material.receive_shadow != 0u)
         {
             var shadow = 1.0;
             for (var i = 0; i < min(light_amount, MAX_LIGHTS); i += 1)
@@ -1328,7 +1414,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
                 // shadow mapping (skip surfaces facing away from the light - they are dark anyway)
                 var shadow = 1.0;
-                if (material.receive_shadow != 0u && lights[i].shadow_index >= 0 && diffuse_strength > 0.0)
+                if (USE_SHADOWS && material.receive_shadow != 0u && lights[i].shadow_index >= 0 && diffuse_strength > 0.0)
                 {
                     shadow = shadow_factor(i, in.position);
 
@@ -1373,11 +1459,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     color.y += ambient_color.y * ssao_factor;
     color.z += ambient_color.z * ssao_factor;
 
+    // material shader hook: final color before fog and tone mapping
+    color = custom_fragment(surface_input(in), color);
+
     // distance based fog (world space distance -> independent of the depth convention),
     // applied in linear hdr space so tone mapping/gamma treat the fog color consistently.
     // materials with no_fog (sky spheres, editor helpers like grid/gizmos, ...) are excluded
     let linear_fog = scene.fog_end > scene.fog_start + 0.0001;
-    if ((scene.fog_density > 0.0001 || linear_fog) && material.no_fog == 0u)
+    if (USE_FOG && (scene.fog_density > 0.0001 || linear_fog) && material.no_fog == 0u)
     {
         let fog_distance = length(in.view_dir);
         var fog_factor = 1.0 - exp(-scene.fog_density * fog_distance);

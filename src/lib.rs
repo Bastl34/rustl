@@ -3,6 +3,7 @@ pub mod rendering
     pub mod wgpu;
     pub mod egui;
     pub mod pipeline;
+    pub mod custom_shader;
     pub mod compute_pipeline;
     pub mod vertex_buffer;
     pub mod instance;

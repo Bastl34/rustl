@@ -2,9 +2,9 @@ use std::{mem::swap, collections::HashMap};
 
 use wgpu::{BindGroup, BindGroupLayout, Sampler, util::DeviceExt};
 
-use crate::{render_item_impl_default, rendering::bind_groups::uniform, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, resources::texture::TextureItem, scene::components::{component::Component, material::{Material, TextureMappingMode, TextureState, TextureType, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}}};
+use crate::{render_item_impl_default, rendering::bind_groups::uniform, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, resources::texture::TextureItem, scene::components::{component::Component, material::{BlendMode, Material, TextureMappingMode, TextureState, TextureType, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}}};
 
-use super::{texture::{Texture, TextureFormat}, wgpu::WGpu};
+use super::{custom_shader::MAX_CUSTOM_PARAMS, texture::{Texture, TextureFormat}, wgpu::WGpu};
 
 //TODO: future: compile shaders for each texture combination to prevent branching/if statements
 
@@ -121,7 +121,10 @@ pub struct MaterialUniform
 
     pub vertex_colors: u32,
 
-    pub _padding: [u32; 3], // uniform struct size has to be a multiple of 16
+    pub time: f32, // only written for materials with a material shader (write_time)
+    pub _padding: [u32; 2], // custom_params starts at a multiple of 16
+
+    pub custom_params: [[f32; 4]; MAX_CUSTOM_PARAMS / 4],
 }
 
 impl MaterialUniform
@@ -227,7 +230,10 @@ impl MaterialUniform
 
             vertex_colors: material_data.vertex_colors as u32,
 
-            _padding: [0, 0, 0],
+            time: 0.0,
+            _padding: [0, 0],
+
+            custom_params: bytemuck::cast(material_data.custom_params),
         }
     }
 }
@@ -244,6 +250,10 @@ pub struct MaterialBuffer
 
     pub bind_group_layout: Option<BindGroupLayout>,
     pub bind_group: Option<BindGroup>,
+
+    pub shader_key: u64, // 0 = builtin color pipelines
+    pub shader_transparent: bool, // material shader with a "// @transparent" line
+    pub shader_alpha_tested: bool, // material shader which discards
 }
 
 crate::render_item_send_sync!(MaterialBuffer);
@@ -280,7 +290,10 @@ impl MaterialBuffer
             empty_texture,
             default_texture_sampler,
             bind_group_layout: None,
-            bind_group: None
+            bind_group: None,
+            shader_key: 0,
+            shader_transparent: false,
+            shader_alpha_tested: false,
         };
 
         buffer.to_buffers(wgpu, material, default_env_map.clone(), additional_textures);
@@ -292,6 +305,9 @@ impl MaterialBuffer
     pub fn to_buffers(&mut self, wgpu: &mut WGpu, material: &Material, default_env_map: Option<TextureState>, additional_textures: Option<&Vec<(&Texture, u32)>>)
     {
         let mut material_uniform = MaterialUniform::new(material, default_env_map.is_some());
+        self.shader_key = super::custom_shader::shader_key(material);
+        self.shader_transparent = material.get_data().shader_source_code.contains("// @transparent");
+        self.shader_alpha_tested = material.get_data().shader_source_code.contains("discard") || (!material.get_data().shader_source_code.is_empty() && material.get_data().blend_mode == BlendMode::Mask);
 
         if let Some(additional_textures) = additional_textures
         {
@@ -311,6 +327,16 @@ impl MaterialBuffer
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
+    }
+
+    // time + params of a material shader - every frame, so param changes need no rebuild of the material
+    pub fn write_shader_values(&self, wgpu: &mut WGpu, time: f32, params: &[f32; MAX_CUSTOM_PARAMS])
+    {
+        let time_offset = std::mem::offset_of!(MaterialUniform, time);
+        let params_offset = std::mem::offset_of!(MaterialUniform, custom_params);
+
+        wgpu.queue_mut().write_buffer(&self.buffer, time_offset as u64, bytemuck::bytes_of(&time));
+        wgpu.queue_mut().write_buffer(&self.buffer, params_offset as u64, bytemuck::cast_slice(params));
     }
 
     /*

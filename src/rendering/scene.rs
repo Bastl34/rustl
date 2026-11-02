@@ -5,9 +5,9 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BOUNDING_BOX_FLAG_OCCLUSION_TEST, BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, debug_volumes::{BOUNDING_BOX_COLOR, BOUNDING_SPHERE_COLOR, DebugVolume, DebugVolumeList, DebugVolumesBuffer}, draw_slots::{DRAW_INDEXED_ARGS_SIZE, DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::{BlendMode, TextureType}, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX, RunMode, State}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BOUNDING_BOX_FLAG_OCCLUSION_TEST, BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, debug_volumes::{BOUNDING_BOX_COLOR, BOUNDING_SPHERE_COLOR, DebugVolume, DebugVolumeList, DebugVolumesBuffer}, draw_slots::{DRAW_INDEXED_ARGS_SIZE, DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::{BlendMode, TextureType}, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX, RunMode, State}}};
 
-use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
+use super::{wgpu::WGpu, pipeline::Pipeline, custom_shader, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 
@@ -241,6 +241,10 @@ pub struct Scene
     render_pipelines: Vec<Pipeline>,
     compute_pipelines: Vec<ComputePipeline>,
 
+    // pipelines per material shader key (see custom_shader.rs) - key 0 uses the ones in render_pipelines
+    custom_pipelines: HashMap<u64, custom_shader::CustomPipelines>,
+    start_time: web_time::Instant, // time of material shaders
+
     buffer: wgpu::Buffer,
 
     pub depth_pass_buffer_texture: Texture,
@@ -384,6 +388,8 @@ impl Scene
             update_result: UpdateResult::new(),
 
             render_pipelines: vec![],
+            custom_pipelines: HashMap::new(),
+            start_time: web_time::Instant::now(),
             compute_pipelines: vec![],
 
             buffer: create_empty_buffer(wgpu),
@@ -486,6 +492,16 @@ impl Scene
         - (2) Skeleton (node)
         - (3) Custom (node)
         */
+
+        // material shaders / feature sets: rebuilt with the current settings (msaa, wireframe, ...)
+        self.custom_pipelines.clear();
+        let max_lights = scene.get_data().max_lights;
+        for (_material_id, material) in &scene.materials
+        {
+            let mut material = material.write().unwrap();
+            let material = material.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
+            self.ensure_custom_pipelines(wgpu, material, max_lights);
+        }
 
         let light_cam_scene_bind_layout = LightCamSceneBindGroup::bind_layout(wgpu);
 
@@ -710,6 +726,8 @@ impl Scene
     pub fn update_materials(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
     {
         let default_env_map = scene.get_data().environment_texture.clone();
+        let max_lights = scene.get_data().max_lights;
+        let time = self.start_time.elapsed().as_secs_f32();
 
         for (_material_id, material) in &mut scene.materials
         {
@@ -723,6 +741,8 @@ impl Scene
                 console_log!("material render item recreate");
                 let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material, default_env_map.clone(), None);
                 material.get_base_mut().render_item = Some(Box::new(render_item));
+
+                self.ensure_custom_pipelines(wgpu, material, max_lights);
             }
             else if material_changed || self.update_result.scene_changed
             {
@@ -736,9 +756,92 @@ impl Scene
 
                 material.get_base_mut().render_item = render_item;
 
+                self.ensure_custom_pipelines(wgpu, material, max_lights);
+
                 console_log!("material render item update");
             }
+
+            // custom material shaders get the time and their params every frame
+            if !material.get_data().shader_source_code.is_empty()
+            {
+                if let Some(render_item) = material.get_base().render_item.as_ref()
+                {
+                    get_render_item::<MaterialBuffer>(render_item).write_shader_values(wgpu, time, &material.get_data().custom_params);
+                }
+            }
         }
+    }
+
+    // pipelines of a material shader / feature set - built once per shader key
+    fn ensure_custom_pipelines(&mut self, wgpu: &mut WGpu, material: &mut MaterialComponent, max_lights: u32)
+    {
+        let Some(render_item) = material.get_base().render_item.as_ref() else { return };
+        let render_item = get_render_item::<MaterialBuffer>(render_item);
+        let shader_key = render_item.shader_key;
+
+        if shader_key == 0
+        {
+            material.shader_error = None;
+            return;
+        }
+
+        if let Some(pipelines) = self.custom_pipelines.get(&shader_key)
+        {
+            material.shader_error = pipelines.warning.clone();
+            return;
+        }
+
+        let light_cam_scene_bind_layout = LightCamSceneBindGroup::bind_layout(wgpu);
+        let skeleton_morph_bind_layout = SkeletonMorphTargetBindGroup::bind_layout(wgpu);
+        let shadow_view_bind_layout = ShadowBuffer::caster_bind_layout(wgpu);
+        let material_bind_layout = render_item.bind_group_layout.as_ref().unwrap();
+
+        let bind_group_layouts = [material_bind_layout, &light_cam_scene_bind_layout, &skeleton_morph_bind_layout];
+        let shadow_bind_group_layouts = [&shadow_view_bind_layout, &skeleton_morph_bind_layout, material_bind_layout];
+
+        let polygon_mode = if self.wireframe_mode { wgpu::PolygonMode::Line } else { wgpu::PolygonMode::Fill };
+        let result = custom_shader::build_pipelines(wgpu, &self.color_shader, &self.shadow_shader, material, &bind_group_layouts, &shadow_bind_group_layouts, max_lights, self.reverse_z, self.samples, polygon_mode);
+
+        match result
+        {
+            Ok(pipelines) =>
+            {
+                if let Some(warning) = &pipelines.warning
+                {
+                    console_warning!("material shader of '{}': {}", material.get_base().name, warning);
+                }
+
+                material.shader_error = pipelines.warning.clone();
+                self.custom_pipelines.insert(shader_key, pipelines);
+            },
+            Err(error) =>
+            {
+                console_error!("material shader of '{}' does not compile:\n{}", material.get_base().name, error);
+                material.shader_error = Some(error);
+            }
+        }
+    }
+
+    // the color pipeline of a material: its own one (material shader / feature set) or the builtin one
+    fn color_pipeline(&self, shader_key: u64, pipe: RenderPipelineType) -> &wgpu::RenderPipeline
+    {
+        if let Some(pipelines) = self.custom_pipelines.get(&shader_key)
+        {
+            return pipelines.color[pipe as usize - RenderPipelineType::Color as usize].get();
+        }
+
+        self.render_pipelines[pipe as usize].get()
+    }
+
+    // the depth pipeline of a material: the one of its material shader (vertex hook) or the builtin one
+    fn depth_pipeline(&self, shader_key: u64, pipe: RenderPipelineType) -> &wgpu::RenderPipeline
+    {
+        if let Some(pipelines) = self.custom_pipelines.get(&shader_key).filter(|pipelines| !pipelines.depth.is_empty())
+        {
+            return pipelines.depth[pipe as usize - RenderPipelineType::Depth as usize].get();
+        }
+
+        self.render_pipelines[pipe as usize].get()
     }
 
     pub fn update_light_cameras_shadows(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, shadow_map_size: u32, shadow_enabled_changed: bool, ssao_params_changed: bool)
@@ -2023,8 +2126,9 @@ impl Scene
             let alpha_test;
             {
                 let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
-                has_transparency = mat.has_transparency();
-                alpha_test = mat.is_alpha_tested();
+                let material_buffer = mat.get_base().render_item.as_ref().map(|render_item| get_render_item::<MaterialBuffer>(render_item));
+                has_transparency = mat.has_transparency() || material_buffer.as_ref().is_some_and(|buffer| buffer.shader_transparent);
+                alpha_test = mat.is_alpha_tested() || material_buffer.as_ref().is_some_and(|buffer| buffer.shader_alpha_tested);
             }
 
             let node = nodes_read.get(i).unwrap();
@@ -2986,6 +3090,7 @@ impl Scene
             let material_render_item = mat.get_base().render_item.as_ref();
             let material_render_item = get_render_item::<MaterialBuffer>(material_render_item.as_ref().unwrap());
             let material_bind_group = material_render_item.bind_group.as_ref().unwrap();
+            let shader_key = material_render_item.shader_key;
 
             let material_allow_xray = material_component.map(|m| m.get_data().allow_xray).unwrap_or(true);
             let material_additive = material_component.map(|m| m.get_data().blend_mode == BlendMode::Additive).unwrap_or(false);
@@ -3017,7 +3122,13 @@ impl Scene
                         {
                             DrawPhase::Shadow { shadow_view } =>
                             {
-                                if shadow_cutout
+                                if let Some(shadow_pipeline) = self.custom_pipelines.get(&shader_key).and_then(|pipelines| pipelines.shadow.as_ref())
+                                {
+                                    // material shader: vertex hook + alpha test with the material bound like for cutout casters
+                                    pass.set_pipeline(shadow_pipeline.get());
+                                    pass.set_bind_group(2, material_bind_group, &[]);
+                                }
+                                else if shadow_cutout
                                 {
                                     // alpha tested casters need the material textures for the alpha test
                                     pass.set_pipeline(&self.render_pipelines[RenderPipelineType::ShadowCutout as usize].get());
@@ -3046,18 +3157,18 @@ impl Scene
                                 if color_pipeline && material_additive
                                 {
                                     let pipe = if node.settings.depth_test { RenderPipelineType::ColorAdditive } else { RenderPipelineType::ColorAdditiveNoCompare };
-                                    pass.set_pipeline(&self.render_pipelines[pipe as usize].get());
+                                    pass.set_pipeline(self.color_pipeline(shader_key, pipe));
                                 }
                                 else if node.settings.depth_test && node.settings.depth_write
                                 {
                                     if color_pipeline
                                     {
                                         let pipe = if xray_color { RenderPipelineType::ColorNoWrite } else { RenderPipelineType::Color };
-                                        pass.set_pipeline(&self.render_pipelines[pipe as usize].get());
+                                        pass.set_pipeline(self.color_pipeline(shader_key, pipe));
                                     }
                                     else
                                     {
-                                        pass.set_pipeline(&self.render_pipelines[RenderPipelineType::Depth as usize].get());
+                                        pass.set_pipeline(self.depth_pipeline(shader_key, RenderPipelineType::Depth));
                                     }
                                 }
                                 else if !node.settings.depth_test && node.settings.depth_write
@@ -3065,33 +3176,33 @@ impl Scene
                                     if color_pipeline
                                     {
                                         let pipe = if xray_color { RenderPipelineType::ColorNoWriteNoCompare } else { RenderPipelineType::ColorNoCompare };
-                                        pass.set_pipeline(&self.render_pipelines[pipe as usize].get());
+                                        pass.set_pipeline(self.color_pipeline(shader_key, pipe));
                                     }
                                     else
                                     {
-                                        pass.set_pipeline(&self.render_pipelines[RenderPipelineType::DepthNoCompare as usize].get());
+                                        pass.set_pipeline(self.depth_pipeline(shader_key, RenderPipelineType::DepthNoCompare));
                                     }
                                 }
                                 else if node.settings.depth_test && !node.settings.depth_write
                                 {
                                     if color_pipeline
                                     {
-                                        pass.set_pipeline(&self.render_pipelines[RenderPipelineType::ColorNoWrite as usize].get());
+                                        pass.set_pipeline(self.color_pipeline(shader_key, RenderPipelineType::ColorNoWrite));
                                     }
                                     else
                                     {
-                                        pass.set_pipeline(&self.render_pipelines[RenderPipelineType::DepthNoWrite as usize].get());
+                                        pass.set_pipeline(self.depth_pipeline(shader_key, RenderPipelineType::DepthNoWrite));
                                     }
                                 }
                                 else
                                 {
                                     if color_pipeline
                                     {
-                                        pass.set_pipeline(&self.render_pipelines[RenderPipelineType::ColorNoWriteNoCompare as usize].get());
+                                        pass.set_pipeline(self.color_pipeline(shader_key, RenderPipelineType::ColorNoWriteNoCompare));
                                     }
                                     else
                                     {
-                                        pass.set_pipeline(&self.render_pipelines[RenderPipelineType::DepthNoWriteNoCompare as usize].get());
+                                        pass.set_pipeline(self.depth_pipeline(shader_key, RenderPipelineType::DepthNoWriteNoCompare));
                                     }
                                 }
 

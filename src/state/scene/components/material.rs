@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use nalgebra::{Vector2, Vector3, Vector4};
@@ -14,6 +15,7 @@ use crate::state::scene::node::NodeItem;
 use crate::{state::resources::texture::TextureItem, helper};
 use crate::state::scene::exporter::serialization_helper;
 use crate::gui::helper::info_box::info_box;
+use crate::rendering::custom_shader::{MAX_CUSTOM_PARAMS, ParamType, parse_features, parse_params};
 
 use super::component::{Component, ComponentItem, ComponentBase};
 
@@ -294,13 +296,24 @@ pub struct MaterialData
 
     #[serde(default = "default_vertex_colors")]
     pub vertex_colors: bool, // multiply the base color with the mesh vertex colors (COLOR_0)
+
+    // material shader: hooks for base.wgsl, stored with the material - the path is only used to reload it
+    #[serde(default, skip_serializing_if = "String::is_empty")] pub shader_path: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")] pub shader_source_code: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")] pub shader_features: BTreeMap<String, bool>,
+    #[serde(default, skip_serializing_if = "is_zero_params")] pub custom_params: [f32; MAX_CUSTOM_PARAMS],
 }
+
+fn is_zero_params(params: &[f32; MAX_CUSTOM_PARAMS]) -> bool { params.iter().all(|value| *value == 0.0) }
 
 #[derive(Serialize, Deserialize)]
 pub struct Material
 {
     base: ComponentBase,
     data: ChangeTracker<MaterialData>,
+
+    #[serde(skip)]
+    pub shader_error: Option<String>, // set by the renderer when the material shader does not compile
 }
 
 impl Material
@@ -365,12 +378,18 @@ impl Material
             no_fog: false,
 
             vertex_colors: true,
+
+            shader_path: String::new(),
+            shader_source_code: String::new(),
+            shader_features: BTreeMap::new(),
+            custom_params: [0.0; MAX_CUSTOM_PARAMS],
         };
 
         Material
         {
             base: ComponentBase::new(name.to_string(), "Material".to_string(), "🎨".to_string()),
             data: ChangeTracker::new(material_data),
+            shader_error: None,
         }
     }
 
@@ -453,6 +472,14 @@ impl Material
         if default_material_data.mapping_axis != new_mat_data.mapping_axis { data.mapping_axis = new_mat_data.mapping_axis; }
         if !helper::math::approx_equal(default_material_data.mapping_scale, new_mat_data.mapping_scale) { data.mapping_scale = new_mat_data.mapping_scale; }
         if !helper::math::approx_equal(default_material_data.mapping_sharpness, new_mat_data.mapping_sharpness) { data.mapping_sharpness = new_mat_data.mapping_sharpness; }
+
+        if !new_mat_data.shader_source_code.is_empty()
+        {
+            data.shader_path = new_mat_data.shader_path.clone();
+            data.shader_source_code = new_mat_data.shader_source_code.clone();
+            data.shader_features = new_mat_data.shader_features.clone();
+            data.custom_params = new_mat_data.custom_params;
+        }
     }
 
     pub fn apply_diff(&mut self, new_mat: &Material)
@@ -912,6 +939,212 @@ impl Material
         res
     }
 
+    // material shader (hooks for base.wgsl) - a new path starts with the param defaults, the same path keeps the tweaked values (reload)
+    pub fn set_shader(&mut self, path: &str, source: &str)
+    {
+        let data = self.get_data_mut().get_mut();
+
+        // a reload keeps the values of params whose name, type and default stayed the same - changed ones get the new default
+        let old_params = if data.shader_path == path { parse_params(&data.shader_source_code) } else { vec![] };
+        let old_values = data.custom_params;
+        data.custom_params = [0.0; MAX_CUSTOM_PARAMS];
+
+        for param in parse_params(source)
+        {
+            let size = param.param_type.size();
+            let new_range = param.slot..param.slot + size;
+
+            // same param as before the reload (the slot may have moved)
+            let unchanged = old_params.iter().find(|old| old.name == param.name && old.param_type == param.param_type && old.default == param.default);
+
+            if let Some(old) = unchanged
+            {
+                let old_range = old.slot..old.slot + size;
+                data.custom_params[new_range].copy_from_slice(&old_values[old_range]);
+            }
+            else
+            {
+                data.custom_params[new_range].copy_from_slice(&param.default);
+            }
+        }
+
+        if data.shader_path != path
+        {
+            data.shader_features.clear();
+        }
+
+        // the alpha of a transparent material shader needs blending (opaque forces alpha 1)
+        if source.contains("// @transparent") && data.blend_mode == BlendMode::Opaque
+        {
+            data.blend_mode = BlendMode::Blend;
+        }
+
+        data.shader_path = path.to_string();
+        data.shader_source_code = source.to_string();
+    }
+
+    // sets a param of the material shader by its name (// @param line) - cheap: uploaded every frame, no rebuild of the material
+    pub fn set_shader_param(&mut self, name: &str, values: &[f32]) -> bool
+    {
+        let Some(param) = parse_params(&self.get_data().shader_source_code).into_iter().find(|param| param.name == name) else { return false; };
+
+        let count = values.len().min(param.param_type.size());
+        self.get_data_mut().get_unmarked_mut().custom_params[param.slot..param.slot + count].copy_from_slice(&values[..count]);
+
+        true
+    }
+
+    // material shader: file, params (// @param lines) and switches (override NAME: bool lines)
+    pub fn ui_shader(&mut self, ui: &mut egui::Ui)
+    {
+        // the path is only applied with "Load" - typing must not rebuild the material
+        let path_id = ui.make_persistent_id(("material shader path", self.get_base().id));
+        let mut path = ui.data_mut(|data| data.get_temp::<String>(path_id)).unwrap_or_else(|| self.get_data().shader_path.clone());
+
+        let mut load = false;
+        let mut remove = false;
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Shader:");
+            ui.text_edit_singleline(&mut path);
+
+            #[cfg(feature = "editor")]
+            if ui.button("...").on_hover_text("pick a .wgsl file and load it").clicked()
+            {
+                if let Some(picked) = pick_shader_file(&path)
+                {
+                    path = picked;
+                    load = true;
+                }
+            }
+
+            load = ui.button("Load").on_hover_text("load / reload (the same file keeps the param values)").clicked() || load;
+            remove = ui.button("Remove").clicked();
+        });
+
+        ui.data_mut(|data| data.insert_temp(path_id, path.clone()));
+
+        if load
+        {
+            match crate::resources::resources::load_string(&path)
+            {
+                Ok(source) => self.set_shader(&path, &source),
+                Err(error) => self.shader_error = Some(format!("can not load '{}': {}", path, error)),
+            }
+        }
+
+        if remove
+        {
+            let data = self.get_data_mut().get_mut();
+            data.shader_path.clear();
+            data.shader_source_code.clear();
+            data.shader_features.clear();
+            data.custom_params = [0.0; MAX_CUSTOM_PARAMS];
+            self.shader_error = None;
+        }
+
+        if let Some(error) = &self.shader_error
+        {
+            ui.colored_label(egui::Color32::RED, egui::RichText::new(error).monospace());
+        }
+
+        if self.get_data().shader_source_code.is_empty()
+        {
+            return;
+        }
+
+        // params
+        let mut values = self.get_data().custom_params;
+        let mut params_changed = false;
+
+        for param in parse_params(&self.get_data().shader_source_code)
+        {
+            let value = &mut values[param.slot..param.slot + param.param_type.size()];
+
+            match param.param_type
+            {
+                ParamType::F32 =>
+                {
+                    params_changed = ui.add(egui::Slider::new(&mut value[0], param.min..=param.max).text(&param.name)).changed() || params_changed;
+                },
+                ParamType::Color =>
+                {
+                    ui.horizontal(|ui|
+                    {
+                        let mut color = [value[0], value[1], value[2], value[3]];
+                        if ui.color_edit_button_rgba_unmultiplied(&mut color).changed()
+                        {
+                            value.copy_from_slice(&color);
+                            params_changed = true;
+                        }
+                        ui.label(&param.name);
+                    });
+                },
+                _ =>
+                {
+                    ui.horizontal(|ui|
+                    {
+                        for component in value.iter_mut()
+                        {
+                            params_changed = ui.add(egui::DragValue::new(component).speed(0.01).range(param.min..=param.max)).changed() || params_changed;
+                        }
+                        ui.label(&param.name);
+                    });
+                }
+            }
+        }
+
+        // switches
+        let mut features = self.get_data().shader_features.clone();
+        let mut features_changed = false;
+
+        for (name, default) in parse_features(&self.get_data().shader_source_code)
+        {
+            let mut on = features.get(&name).copied().unwrap_or(default);
+            if ui.checkbox(&mut on, name.as_str()).changed()
+            {
+                features.insert(name, on);
+                features_changed = true;
+            }
+        }
+
+        if params_changed
+        {
+            self.get_data_mut().get_unmarked_mut().custom_params = values;
+        }
+
+        if features_changed
+        {
+            self.get_data_mut().get_mut().shader_features = features;
+        }
+
+        // builtin switches of base.wgsl - the same values as in the material settings, off ones are compiled out
+        ui.separator();
+        ui.label("builtin switches:");
+
+        let data = self.get_data();
+        let mut lighting = !data.unlit_shading;
+        let mut shadows = data.receive_shadow;
+        let mut fog = !data.no_fog;
+        let mut normal_map = self.is_texture_enabled(TextureType::Normal);
+        let mut projected_mapping = data.mapping_mode != TextureMappingMode::Uv;
+
+        let mut builtin_changed = ui.checkbox(&mut lighting, "USE_LIGHTING").changed();
+        builtin_changed = ui.checkbox(&mut shadows, "USE_SHADOWS").changed() || builtin_changed;
+        builtin_changed = ui.checkbox(&mut fog, "USE_FOG").changed() || builtin_changed;
+        ui.add_enabled(false, egui::Checkbox::new(&mut normal_map, "USE_NORMAL_MAP")).on_disabled_hover_text("on with an enabled normal texture");
+        ui.add_enabled(false, egui::Checkbox::new(&mut projected_mapping, "USE_PROJECTED_MAPPING")).on_disabled_hover_text("on with a mapping mode other than UV");
+
+        if builtin_changed
+        {
+            let data = self.get_data_mut().get_mut();
+            data.unlit_shading = !lighting;
+            data.receive_shadow = shadows;
+            data.no_fog = !fog;
+        }
+    }
+
     pub fn ui_texture_state(&mut self, ui: &mut egui::Ui, tex_type: TextureType)
     {
         if self.get_texture_by_type(tex_type).is_none()
@@ -1365,6 +1598,9 @@ impl Component for Material
             info_box(ui, "Projected texture mapping is active: the Address Mode is automatically forced to 'Repeat' for all textures of this material.");
         }
 
+        ui.separator();
+        self.ui_shader(ui);
+
         if apply_settings
         {
             let data = self.get_data_mut().get_mut();
@@ -1425,5 +1661,22 @@ impl Component for Material
             data.mapping_scale = mapping_scale;
             data.mapping_sharpness = mapping_sharpness;
         }
+    }
+}
+// file dialog for a material shader - starts at the current shader, relative to the working directory when it is below it
+#[cfg(feature = "editor")]
+fn pick_shader_file(current: &str) -> Option<String>
+{
+    let cwd = std::env::current_dir().ok()?;
+    let current = std::path::PathBuf::from(crate::resources::resources::get_path(current));
+    let start = current.parent().filter(|dir| !current.as_os_str().is_empty() && dir.is_dir()).map(|dir| dir.to_path_buf()).unwrap_or(cwd.clone());
+
+    let picked = rfd::FileDialog::new().add_filter("WGSL", &["wgsl"]).set_directory(start).pick_file()?;
+    let picked = helper::file::real_path(&picked);
+
+    match picked.strip_prefix(helper::file::real_path(&cwd))
+    {
+        Ok(relative) => Some(helper::file::normalize_path_separators(&relative.to_string_lossy())),
+        Err(_) => Some(helper::file::normalize_path_separators(&picked.to_string_lossy())),
     }
 }

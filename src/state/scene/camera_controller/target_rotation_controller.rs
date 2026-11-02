@@ -51,6 +51,10 @@ pub struct TargetRotationController
     pub mouse_sensitivity: Vector2::<f32>,
     pub mouse_wheel_sensitivity: f32,
 
+    // off = the mouse leaves this camera alone (e.g. a gamepad player in split screen)
+    #[serde(default = "default_true")]
+    pub mouse_input: bool,
+
     pub auto_rotate: Option<f32>,
     pub auto_rotate_timeout: u64,
 
@@ -114,6 +118,7 @@ impl TargetRotationController
 
             mouse_sensitivity,
             mouse_wheel_sensitivity,
+            mouse_input: true,
 
             auto_rotate: None,
             auto_rotate_timeout: DEFAULT_AUTO_ROTATE_TIMEOUT,
@@ -159,6 +164,7 @@ impl TargetRotationController
 
             mouse_sensitivity: DEFAULT_MOUSE_SENSITIVITY,
             mouse_wheel_sensitivity: DEFAULT_MOUSE_WHEEL_SENSITIVITY,
+            mouse_input: true,
 
             auto_rotate: None,
             auto_rotate_timeout: DEFAULT_AUTO_ROTATE_TIMEOUT,
@@ -355,6 +361,11 @@ impl CameraController for TargetRotationController
             velocity = io.input_manager.mouse.raw_velocity.velocity;
         }
 
+        if !self.mouse_input
+        {
+            velocity = Vector2::zeros();
+        }
+
         let mut update_needed = false;
         if let Some(node) = &node
         {
@@ -408,7 +419,7 @@ impl CameraController for TargetRotationController
         }
 
         // auto rotate
-        if !io.input_manager.mouse.is_any_button_holding() && self.last_manual_move + self.auto_rotate_timeout < get_millis()
+        if !(self.mouse_input && io.input_manager.mouse.is_any_button_holding()) && self.last_manual_move + self.auto_rotate_timeout < get_millis()
         {
             if let Some(auto_rotate) = self.auto_rotate
             {
@@ -420,7 +431,7 @@ impl CameraController for TargetRotationController
         }
 
         // distance
-        if !math::approx_zero(io.input_manager.mouse.wheel_delta_y)
+        if self.mouse_input && !math::approx_zero(io.input_manager.mouse.wheel_delta_y)
         {
             // from the wanted distance, not the one a collision pulled the camera to
             let radius = self.last_radius.unwrap_or(self.data.get_ref().radius) + self.mouse_wheel_sensitivity * -io.input_manager.mouse.wheel_delta_y;

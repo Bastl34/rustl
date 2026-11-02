@@ -166,6 +166,12 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
     out.clip_position = camera.view_proj * world_position;
 
+    // hidden instances (visible = false gives alpha 0) - opaque materials ignore the alpha, so they leave the view volume
+    if (instance.color.a <= 0.0)
+    {
+        out.clip_position = vec4<f32>(0.0, 0.0, -1.0, 1.0);
+    }
+
     return out;
 }
 

@@ -10,6 +10,7 @@ todo:
  * null engine
  * PBR
  * LODs
+ * material shader vertex hook: hzb/frustum culling bounds ignore the displacement (e.g. "// @bounds 0.3" margin in scene.rs bbox upload, refresh on shader change)
 
 done:
  * winit + wgpu update

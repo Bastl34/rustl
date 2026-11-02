@@ -25,6 +25,7 @@ simple_logger = "5.2.0"
 log = "0.4.34"
 cfg-if = "1.0.5"
 wgpu = "30.0.1"
+naga = { version = "30.0.1", features = [ "wgsl-in" ] } # validates material shaders before wgpu gets them
 bytemuck = { version = "1.25.2", features = [ "derive" ] }
 web-time = "1.1.0"
 winit = "0.30.13"

@@ -3629,6 +3629,7 @@ dependencies = [
  "js-sys",
  "libloading 0.9.0",
  "log",
+ "naga",
  "nalgebra",
  "parry3d",
  "pollster 1.0.1",
