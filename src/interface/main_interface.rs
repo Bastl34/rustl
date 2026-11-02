@@ -503,6 +503,13 @@ impl MainInterface
                 self.context.wgpu.set_present_mode(present_mode);
             }
 
+            // frames in flight
+            let (low_latency, low_latency_changed) = state.rendering.low_latency.consume_clone();
+            if low_latency_changed
+            {
+                self.context.wgpu.set_low_latency(low_latency);
+            }
+
             // full screen
             let (fullscreen, fullscreen_changed) = state.rendering.fullscreen.consume_clone();
             if fullscreen_changed

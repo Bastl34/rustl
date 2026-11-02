@@ -285,7 +285,9 @@ pub fn log(msg: &str, log_type: LogType)
 // the console_*! macros - module_path of the caller: rustl::... is the engine, everything else the code of a project
 pub fn log_from_module(msg: &str, log_type: LogType, module: &str)
 {
-    let source = if module.starts_with("rustl") { LogSource::Engine } else { LogSource::Code };
+    // not starts_with("rustl"): projects like rustl_volt are code
+    let is_engine = module == "rustl" || module.starts_with("rustl::");
+    let source = if is_engine { LogSource::Engine } else { LogSource::Code };
     log_from(msg, log_type, source);
 }
 

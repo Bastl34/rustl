@@ -171,7 +171,7 @@ function buildNative(target, name, code)
     const targetDir = path.join(ROOT, "target", "dist");
     const engineArgs = code ? engineCargoArgs(code.dir) : [];
     const packageArgs = code ? ["--manifest-path", path.join(code.dir, "Cargo.toml"), "--bin", code.crate] : [];
-    run("cargo", [...engineArgs, "build", ...packageArgs, "--no-default-features", ...(dev ? [] : ["--release"])], { CARGO_TARGET_DIR: targetDir });
+    run("cargo", [...engineArgs, "build", ...packageArgs, "--no-default-features", ...(dev ? [] : ["--release"])], { CARGO_TARGET_DIR: targetDir, ...(code ? { RUSTC_BOOTSTRAP: "1" } : {}) });
 
     const exe = code ? code.crate : "rustl";
     fs.mkdirSync(path.dirname(target.exe), { recursive: true });
@@ -202,6 +202,11 @@ function buildEditorLibrary()
         return false;
     }
 
+    if (!checkEngineFeatures(code))
+    {
+        return false;
+    }
+
     const cargoArgs = [...engineCargoArgs(code.dir), "rustc", "--lib", "--crate-type", "dylib", "--message-format=json", "--color", "never", "-p", code.crate, "--profile", profileArg, "--target-dir", targetDirArg, "--manifest-path", path.join(code.dir, "Cargo.toml")];
     const result = spawnSync("cargo", cargoArgs, { cwd: code.dir, stdio: "inherit", env: buildEnv(ENGINE_LIBRARY_ENV) });
     if (result.error)
@@ -210,6 +215,85 @@ function buildEditorLibrary()
     }
 
     return result.status === 0;
+}
+
+// cargo unifies the features of a crate per workspace: a project that adds features to a crate of the engine (image, serde, ...) changes its hash
+// -> the build makes another engine shared library than the one of the editor and the project library does not load (dlopen: symbol not found)
+// says which crate and what to do instead - before the build, it would overwrite the engine library of the editor
+function checkEngineFeatures(code)
+{
+    // "name vX.Y.Z (source)" -> features - null when cargo tree fails (offline, broken manifest): the build says why
+    const features = (globalArgs, manifest, cwd) =>
+    {
+        const result = spawnSync("cargo", [...globalArgs, "tree", "--manifest-path", manifest, "-q", "-e", "normal", "--prefix", "none", "-f", "{p}|{f}"], { cwd, encoding: "utf8", env: buildEnv(ENGINE_LIBRARY_ENV) });
+        if (result.status !== 0)
+        {
+            console.error(`warning: the features of the engine crates are not checked (cargo tree failed): ${(result.error?.message ?? result.stderr ?? "").trim().split("\n")[0]}`);
+            return null;
+        }
+
+        const packages = new Map();
+        for (const line of result.stdout.split(/\r?\n/))
+        {
+            const [name, list] = line.replace(" (*)", "").split("|");
+            if (list !== undefined)
+            {
+                packages.set(name.trim(), new Set(list.split(",").filter(Boolean)));
+            }
+        }
+        return packages;
+    };
+
+    const editor = features([], path.join(ROOT, "crates", "rustl_editor", "Cargo.toml"), ROOT);
+    const projectFeatures = editor && features(engineCargoArgs(code.dir), path.join(code.dir, "Cargo.toml"), code.dir);
+    if (!editor || !projectFeatures)
+    {
+        return true;
+    }
+
+    const conflicts = [];
+    for (const [name, engineSet] of editor)
+    {
+        const projectSet = projectFeatures.get(name);
+        if (!projectSet)
+        {
+            continue;
+        }
+
+        const added = [...projectSet].filter(feature => !engineSet.has(feature));
+        const missing = [...engineSet].filter(feature => !projectSet.has(feature));
+        if (added.length || missing.length)
+        {
+            conflicts.push({ name, crate: name.split(" ")[0], added, missing });
+        }
+    }
+
+    if (!conflicts.length)
+    {
+        return true;
+    }
+
+    const quote = (list) => list.map(feature => `"${feature}"`).join(", ");
+    const example = conflicts.find(conflict => conflict.added.length) ?? conflicts[0];
+    const [, version] = example.name.split(" ");
+    const major = version?.replace(/^v/, "").split(".") ?? [];
+    const otherVersion = major[0] === "0" ? `0.${Math.max(Number(major[1]) - 1, 0)}` : `${Math.max(Number(major[0]) - 1, 0)}`;
+
+    const lines = [`error: the project builds crates of the engine with other features - the editor could not load its library (another engine library than the one of the editor, dlopen: symbol not found)`];
+    for (const { name, added, missing } of conflicts)
+    {
+        const changes = [added.length ? `the project adds ${quote(added)}` : "", missing.length ? `the engine has ${quote(missing)}, the project not` : ""].filter(Boolean).join(", ");
+        lines.push(`  ${name}: ${changes}`);
+    }
+    lines.push(`  who wants them: cargo tree -e features -i ${example.crate} (in ${code.dir})`);
+    lines.push(`  fix (one of):`);
+    lines.push(`  - add the features to the engine: ${path.join(ROOT, "Cargo.toml")}, e.g. ${example.crate} = { ..., features = [..., ${quote(example.added.length ? example.added : example.missing)}] }`);
+    lines.push(`  - use the crate of the engine instead of an own dependency: rustl::${example.crate.replaceAll("-", "_")} (only works when the engine re-exports it and its features are enough)`);
+    lines.push(`  - another semver incompatible version in the project, e.g. ${example.crate} = "${otherVersion}" - cargo builds it separately and the engine stays as it is (its types are not the ones of the engine)`);
+    lines.push(`  - remove the features in the project (or in the dependency of the project that turns them on)`);
+    lines.push(`  exports (web, windows, ...) are not affected - only the editor shares the engine library with the project`);
+    console.error(lines.join("\n"));
+    return false;
 }
 
 // <project folder>/code with its crate name - null without code (src/gui/editor/project_code.rs)
@@ -233,10 +317,12 @@ function projectCode(projectFile)
 }
 
 // the code of a project is a workspace of its own - the cargo args for the config of the engine (profiles) and its lock (.cargo/Cargo.lock) - also for the shared library of the editor (--editor-library)
+// resolver.lockfile-path is unstable: without -Zlockfile-path cargo ignores it (only a warning) and resolves code/Cargo.lock with the newest versions
+// -> another engine shared library than the one of the editor, the project library does not load (dlopen: symbol not found) - needs RUSTC_BOOTSTRAP on stable
 function engineCargoArgs(dir)
 {
     const slashes = (file) => file.replaceAll("\\", "/");
-    return ["--config", slashes(fs.realpathSync.native(path.join(ROOT, ".cargo", "config.toml"))), "--config", `resolver.lockfile-path='${slashes(prepareLock(dir))}'`];
+    return ["-Zlockfile-path", "--config",slashes(fs.realpathSync.native(path.join(ROOT, ".cargo", "config.toml"))), "--config", `resolver.lockfile-path='${slashes(prepareLock(dir))}'`];
 }
 
 // .cargo/Cargo.lock of the project: the entries of the engine plus the crates only the project uses - by content, not by date: an engine update always arrives

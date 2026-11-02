@@ -20,6 +20,13 @@ fn resolve_present_mode(setting: PresentModeSetting, supports_mailbox: bool) -> 
     }
 }
 
+// 2: cpu and gpu work on two frames at once - 1 (low latency): one after the other, every frame that misses a vsync waits for the next one
+// without headroom the gpu idles half of the time, clocks down (apple silicon) and stays at half the refresh rate (rustl-volt on an M4 MacBook Air: 30 fps with 1, 60 with 2)
+fn frame_latency(low_latency: bool) -> u32
+{
+    if low_latency { 1 } else { 2 }
+}
+
 pub struct WGpu
 {
     instance: wgpu::Instance,
@@ -148,6 +155,19 @@ impl WGpu
             }
         };
 
+        // a lost device fails everything silently afterwards (no rendering, every map_async errors) -> say why
+        device.set_device_lost_callback(|reason, msg|
+        {
+            console_error!("gpu device lost ({:?}): {}", reason, msg);
+        });
+
+        // web: the default handler panics - inside a js callback that only traps the callback and the message gets lost -> log it
+        #[cfg(target_arch = "wasm32")]
+        device.on_uncaptured_error(Arc::new(|err: wgpu::Error|
+        {
+            console_error!("wgpu error: {}", err);
+        }));
+
         console_log!(" ********** features used **********");
         console_log!(device.features());
 
@@ -176,7 +196,7 @@ impl WGpu
             // Auto reproduces the pre-wgpu-30 behaviour (sRGB, or extended linear sRGB for fp16 surfaces)
             color_space: wgpu::SurfaceColorSpace::Auto,
             view_formats: vec![],
-            desired_maximum_frame_latency: 1, // 1: lower latency, 2: higher throughput maybe check https://github.com/emilk/egui/blob/main/crates/egui-wgpu/src/lib.rs#L331 for ios issues
+            desired_maximum_frame_latency: frame_latency(*state.rendering.low_latency.get_ref()),
         };
 
         surface.configure(&device, &surface_configuration(&surface_config, surface_format));
@@ -363,6 +383,14 @@ impl WGpu
     pub fn set_present_mode(&mut self, setting: PresentModeSetting)
     {
         self.surface_config.present_mode = resolve_present_mode(setting, self.supports_mailbox);
+
+        self.surface.configure(&self.device, &surface_configuration(&self.surface_config, self.surface_format));
+        self.create_msaa_texture(self.msaa_samples);
+    }
+
+    pub fn set_low_latency(&mut self, low_latency: bool)
+    {
+        self.surface_config.desired_maximum_frame_latency = frame_latency(low_latency);
 
         self.surface.configure(&self.device, &surface_configuration(&self.surface_config, self.surface_format));
         self.create_msaa_texture(self.msaa_samples);

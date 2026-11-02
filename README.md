@@ -22,7 +22,7 @@
 <sub>model from: https://sketchfab.com/3d-models/apocalyptic-city-a0c8f318ed6f4075a97c2e55b1272495</sub>
 <br><br>
 
-## requrements
+## requirements
 
 ```bash
 # install
@@ -30,9 +30,16 @@
 # cargo watch
 cargo install cargo-watch
 
-# wasm-pack
-#https://rustwasm.github.io/wasm-pack/installer/
-curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+# node.js (npm/npx) - runs scripts/build.mjs and npx serve, e.g. via nvm: https://github.com/nvm-sh/nvm
+nvm install node
+
+# web builds: wasm with threads needs nightly + build-std
+rustup toolchain install nightly
+rustup +nightly target add wasm32-unknown-unknown
+rustup +nightly component add rust-src
+
+# wasm-pack (0.12+)
+cargo install wasm-pack
 ```
 
 ```bash
@@ -49,7 +56,7 @@ cargo run -- "path/to/x.project"
 # builds without the editor into dist/<platform> - scripts/build.mjs
 # the project is packed in and starts directly: its whole folder (without code/, hidden entries and what <project folder>/.exportignore lists - patterns like .gitignore), files of the scenes outside of it go to external/
 # a project next to other projects (old layout) only packs its scenes and the files they use
-# web: wasm with threads, one time: rustup toolchain install nightly && rustup +nightly target add wasm32-unknown-unknown && rustup +nightly component add rust-src
+# web: wasm with threads (nightly, see requirements)
 npm run build-web -- x.project                                   # dist/web, the project is required
 npm run build-web -- resources/projects/web_test/web_test.project   # the web test project
 npm run build-web -- --dev x.project                             # dev build

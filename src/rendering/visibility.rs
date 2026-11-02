@@ -1,5 +1,5 @@
 
-use std::sync::{Arc, Mutex, atomic::{AtomicU8, AtomicUsize, Ordering}};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering}};
 
 use wgpu::util::DeviceExt;
 
@@ -36,6 +36,7 @@ pub struct VisibilityBuffer
     readback_state: AtomicU8,
     readback_count: AtomicUsize, // number of valid entries at the time the copy was recorded
     map_result: Arc<AtomicU8>,
+    map_error_logged: AtomicBool,
     results: Mutex<Vec<Visibility>>, // latest read back results (a few frames behind - stats/debug only)
 }
 
@@ -92,6 +93,7 @@ impl VisibilityBuffer
             readback_state: AtomicU8::new(READBACK_IDLE),
             readback_count: AtomicUsize::new(0),
             map_result: Arc::new(AtomicU8::new(MAP_PENDING)),
+            map_error_logged: AtomicBool::new(false),
             results: Mutex::new(vec![]),
         }
     }
@@ -197,7 +199,11 @@ impl VisibilityBuffer
             MAP_ERROR =>
             {
                 // a failed map must not wedge the state machine -> reset and try again with a fresh copy
-                console_warning!("visibility readback map failed -> retrying");
+                // only warn once - it keeps failing every frame when the device is lost
+                if !self.map_error_logged.swap(true, Ordering::SeqCst)
+                {
+                    console_warning!("visibility readback map failed -> retrying (further failures are not logged)");
+                }
 
                 self.map_result.store(MAP_PENDING, Ordering::SeqCst);
                 self.readback_state.store(READBACK_IDLE, Ordering::SeqCst);

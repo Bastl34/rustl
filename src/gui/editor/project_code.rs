@@ -748,8 +748,8 @@ mod hot
             {
                 let copy = self.copy(library)?;
 
-                let handle = unsafe { libloading::Library::new(&copy) }.map_err(|err| err.to_string())?;
-                let factory = unsafe { handle.get::<AppFactory>(APP_FACTORY_SYMBOL.as_bytes()) }.map_err(|err| format!("{} not found: {}", APP_FACTORY_SYMBOL, err))?;
+                let handle = unsafe { libloading::Library::new(&copy) }.map_err(|err| error_chain(&err))?;
+                let factory = unsafe { handle.get::<AppFactory>(APP_FACTORY_SYMBOL.as_bytes()) }.map_err(|err| format!("{} not found: {}", APP_FACTORY_SYMBOL, error_chain(&err)))?;
 
                 self.factory = Some(*factory);
                 self.libraries.push(handle);
@@ -779,5 +779,18 @@ mod hot
             fs::copy(library, &copy).map_err(|err| format!("copy to {}: {}", copy.display(), err))?;
             Ok(copy)
         }
+    }
+
+    // libloading only says "dlopen failed" - the reason of the system (missing symbol, library not found) is its source
+    fn error_chain(err: &libloading::Error) -> String
+    {
+        let mut text = err.to_string();
+        let mut source = std::error::Error::source(err);
+        while let Some(err) = source
+        {
+            text += &format!(": {}", err);
+            source = err.source();
+        }
+        text
     }
 }
