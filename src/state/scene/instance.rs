@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use nalgebra::{Matrix4, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, observable::Observable, option_or_id::OptionOrId}, state::{scene::components::component::{find_and_add_new_components, remove_components_by_type}, state::{InputOutput, RunMode}}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, observable::Observable, option_or_id::OptionOrId}, state::{scene::{components::component::{find_and_add_new_components, remove_components_by_type}, physics::physics_world::PhysicsWorld}, state::{InputOutput, RunMode}}};
 
 use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
 
@@ -297,7 +297,7 @@ impl Instance
         }
     }
 
-    pub fn update(instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> bool
+    pub fn update(instance: &InstanceItemArc, io: &mut InputOutput, physics: &PhysicsWorld, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> bool
     {
         crate::notify_observable_arc!(instance, on_before_update);
 
@@ -346,7 +346,7 @@ impl Instance
 
             {
                 let mut component_write = component.write().unwrap();
-                component_write.update_instance(node.as_ref().cloned(), instance, io, time, frame_scale, frame);
+                component_write.update_instance(node.as_ref().cloned(), instance, io, physics, time, frame_scale, frame);
             }
 
             // after each update, check if new components were added during the update --> add

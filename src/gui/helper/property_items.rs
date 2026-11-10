@@ -1,7 +1,7 @@
 use std::{hash::Hash, ops::RangeInclusive};
 
 use egui::{emath::Numeric, Ui};
-use nalgebra::Vector3;
+use nalgebra::{Vector3, Vector4};
 use strum::IntoEnumIterator;
 
 // one property row: "Label: ℹ <widget>" - an empty label or info is left out
@@ -42,6 +42,24 @@ pub fn vector_edit(ui: &mut Ui, label: &str, info: &str, value: &mut Vector3<f32
         changed |= ui.add(egui::DragValue::new(&mut value.x).speed(0.01).prefix("x: ")).changed();
         changed |= ui.add(egui::DragValue::new(&mut value.y).speed(0.01).prefix("y: ")).changed();
         changed |= ui.add(egui::DragValue::new(&mut value.z).speed(0.01).prefix("z: ")).changed();
+        changed
+    })
+}
+
+// rgba 0..1, not premultiplied - alpha on its own, egui's rgba picker loses the color at alpha 0
+pub fn color_edit(ui: &mut Ui, label: &str, info: &str, value: &mut Vector4<f32>) -> bool
+{
+    property_row(ui, label, info, |ui|
+    {
+        let mut rgb = [value.x, value.y, value.z];
+        let mut changed = ui.color_edit_button_rgb(&mut rgb).changed();
+        changed |= ui.add(egui::DragValue::new(&mut value.w).range(0.0..=1.0).speed(0.01).prefix("alpha: ")).changed();
+        if changed
+        {
+            value.x = rgb[0];
+            value.y = rgb[1];
+            value.z = rgb[2];
+        }
         changed
     })
 }

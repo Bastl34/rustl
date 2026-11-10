@@ -228,6 +228,30 @@ pub fn bezier_interpolate(t: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32
     3.0 * (1.0 - refined_t).powi(2) * refined_t * y1 + 3.0 * (1.0 - refined_t) * refined_t.powi(2) * y2 + refined_t.powi(3)
 }
 
+// pseudo random 0..1 (xorshift32) - state must not be 0
+pub fn xorshift32(state: &mut u32) -> f32
+{
+    *state ^= *state << 13;
+    *state ^= *state >> 17;
+    *state ^= *state << 5;
+
+    *state as f32 / u32::MAX as f32
+}
+
+// even direction inside the cone of this half angle around the axis - rand_a/rand_b in 0..1
+pub fn direction_in_cone(axis: &Vector3<f32>, angle: f32, rand_a: f32, rand_b: f32) -> Vector3<f32>
+{
+    let cos = 1.0 - rand_a * (1.0 - angle.min(PI).cos());
+    let sin = (1.0 - cos * cos).max(0.0).sqrt();
+    let phi = rand_b * std::f32::consts::TAU;
+
+    let helper = if axis.x.abs() < 0.9 { Vector3::x() } else { Vector3::z() };
+    let u = axis.cross(&helper).normalize();
+    let v = axis.cross(&u);
+
+    axis * cos + (u * phi.cos() + v * phi.sin()) * sin
+}
+
 // up vector that is not parallel to the given direction (e.g. for look-at matrices)
 pub fn up_vector_for_direction(dir: &Vector3<f32>) -> Vector3<f32>
 {

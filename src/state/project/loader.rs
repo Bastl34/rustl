@@ -14,7 +14,9 @@ use crate::helper::file::resolve_relative_path;
 use crate::helper::option_or_id::OptionOrId;
 use crate::resources::resources::{RESOURCE_SCHEME, exists, load_binary, load_string};
 use crate::state::resources::sound_source::SoundSource;
-use crate::state::project::project::{EDITOR_VIEW_EXTRA, SceneObject, SceneObjectOptions, ProjectFile, SceneFile, SceneSound, LoadingGuard, ProjectDoneCallback, ProjectSettings, RESUSE_MATERIALS_TAG, SceneLoadingStatusItem, SceneSettings};
+use crate::helper::file::get_stem;
+use crate::state::resources::texture::Texture;
+use crate::state::project::project::{EDITOR_VIEW_EXTRA, SceneObject, SceneObjectOptions, ProjectFile, SceneFile, SceneSound, SceneTexture, LoadingGuard, ProjectDoneCallback, ProjectSettings, RESUSE_MATERIALS_TAG, SceneLoadingStatusItem, SceneSettings};
 use crate::state::scene::scene::{Scene, SceneLoadState};
 use crate::state::scene::physics::physics_world::PhysicsWorldSettings;
 use crate::state::scene::utilities::{extras::Extras, origin::Origin};
@@ -366,6 +368,83 @@ fn load_editor_sounds(sounds: &[SceneSound], base_path: &str, known: &HashSet<St
     }).collect()
 }
 
+// the image files of the texture list, read and decoded off the main thread - known ones (loaded by another scene) are skipped
+// relative to the scene file, else as written (bundled resources of older saves)
+fn load_editor_textures(textures: &[SceneTexture], base_path: &str, known: &HashSet<String>, max_tex_res: u32, create_mipmaps: bool, progress: &LoadProgress) -> Vec<Texture>
+{
+    textures.iter().filter_map(|scene_texture|
+    {
+        if known.contains(&scene_texture.uuid)
+        {
+            progress.done(None);
+            return None;
+        }
+
+        let paths = match scene_texture.source.strip_prefix(RESOURCE_SCHEME)
+        {
+            Some(resource) => vec![resource.to_string()],
+            None => vec![resolve_relative_path(base_path, &scene_texture.source), scene_texture.source.clone()],
+        };
+
+        progress.begin(&scene_texture.source);
+        let result = match paths.iter().find_map(|path| load_binary(path).ok().map(|bytes| (path, bytes)))
+        {
+            Some((path, bytes)) =>
+            {
+                let mut texture = Texture::new_from_file(path, &bytes, max_tex_res, create_mipmaps);
+                texture.uuid = scene_texture.uuid.clone();
+                texture.name = scene_texture.name.clone();
+                Some(texture)
+            },
+            None =>
+            {
+                console_error!("can not load texture '{}' ({})", scene_texture.name, scene_texture.source);
+                None
+            }
+        };
+        progress.done(Some(&scene_texture.source));
+        result
+    }).collect()
+}
+
+// older saves: the particle emitters had the path of their texture - into the texture list, the emitter gets the uuid
+fn migrate_particle_textures(scene: &mut SceneFile) -> usize
+{
+    fn migrate(objects: &mut [SceneObject], textures: &mut Vec<SceneTexture>, added: &mut usize)
+    {
+        for object in objects.iter_mut()
+        {
+            for component in object.components.iter_mut().filter(|component| component["type"] == "ParticleEmitter")
+            {
+                let Some(path) = component["data"]["texture"].as_str().map(str::to_string) else { continue; };
+                if textures.iter().any(|texture| texture.uuid == path)
+                {
+                    continue;
+                }
+
+                let uuid = match textures.iter().find(|texture| texture.source == path)
+                {
+                    Some(texture) => texture.uuid.clone(),
+                    None =>
+                    {
+                        let uuid = uuid::Uuid::new_v4().to_string();
+                        textures.push(SceneTexture { uuid: uuid.clone(), name: get_stem(&path), source: path });
+                        *added += 1;
+                        uuid
+                    }
+                };
+                component["data"]["texture"] = serde_json::Value::String(uuid);
+            }
+
+            migrate(&mut object.objects, textures, added);
+        }
+    }
+
+    let mut added = 0;
+    migrate(&mut scene.objects, &mut scene.textures, &mut added);
+    added
+}
+
 // cameras and controllers reference the objects -> applied after them
 fn apply_scene_entries(state: &mut State, scene_id: u32, node_components: PendingComponents, cameras: Vec<serde_json::Value>, lights: Vec<serde_json::Value>, controller: Vec<serde_json::Value>)
 {
@@ -586,7 +665,7 @@ fn load_scene_jobs(state: &mut State, jobs: Vec<SceneLoadJob>, loading_state: Ar
     }
     let job_ids: Vec<u32> = jobs.iter().map(|(_, id, _)| *id).collect();
 
-    let known_total: usize = jobs.iter().filter_map(|(file, _, _)| file.as_ref()).map(|file| count_objects(&file.objects) + file.sounds.len()).sum();
+    let known_total: usize = jobs.iter().filter_map(|(file, _, _)| file.as_ref()).map(|file| count_objects(&file.objects) + file.sounds.len() + file.textures.len()).sum();
     let status = state.scene_loading.clone();
     status.write().unwrap().begin_job(&status_scenes, known_total);
 
@@ -606,6 +685,17 @@ fn load_scene_jobs(state: &mut State, jobs: Vec<SceneLoadJob>, loading_state: Ar
         let sound_source = sound_source.read().unwrap();
         known_sounds.insert(sound_source.uuid.clone());
         known_sounds.extend(sound_source.uuid_aliases.iter().cloned());
+    }
+
+    let mut known_textures: HashSet<String> = HashSet::new();
+    for texture in state.resources.textures.values()
+    {
+        let texture = texture.read().unwrap();
+        if !texture.delete_later_request
+        {
+            known_textures.insert(texture.uuid.clone());
+            known_textures.extend(texture.uuid_aliases.iter().cloned());
+        }
     }
 
     *loading_state.write().unwrap() = true;
@@ -632,7 +722,7 @@ fn load_scene_jobs(state: &mut State, jobs: Vec<SceneLoadJob>, loading_state: Ar
                     {
                         Some(editor_scene) =>
                         {
-                            status.write().unwrap().add_total(count_objects(&editor_scene.objects) + editor_scene.sounds.len());
+                            status.write().unwrap().add_total(count_objects(&editor_scene.objects) + editor_scene.sounds.len() + editor_scene.textures.len());
                             editor_scene
                         },
                         None =>
@@ -648,6 +738,12 @@ fn load_scene_jobs(state: &mut State, jobs: Vec<SceneLoadJob>, loading_state: Ar
                 },
             };
 
+            let migrated_textures = migrate_particle_textures(&mut editor_scene);
+            if migrated_textures > 0
+            {
+                status.write().unwrap().add_total(migrated_textures);
+            }
+
             // parse pass: share caches across all objects in this scene
             let mut mat_cache: MaterialCache = HashMap::new();
 
@@ -660,6 +756,10 @@ fn load_scene_jobs(state: &mut State, jobs: Vec<SceneLoadJob>, loading_state: Ar
             let sounds = load_editor_sounds(&editor_scene.sounds, &base_path, &known_sounds, &progress);
             known_sounds.extend(editor_scene.sounds.iter().map(|sound| sound.uuid.clone()));
             let file_sounds: Vec<String> = editor_scene.sounds.iter().map(|sound| sound.uuid.clone()).collect();
+
+            let textures = load_editor_textures(&editor_scene.textures, &base_path, &known_textures, max_tex_res, create_mipmaps, &progress);
+            known_textures.extend(textures.iter().map(|texture| texture.uuid.clone()));
+            let file_textures: Vec<String> = editor_scene.textures.iter().map(|texture| texture.uuid.clone()).collect();
 
             let editor_cameras = if reread { std::mem::take(&mut editor_scene.editor_cameras) } else { vec![] };
             let SceneFile { cameras, lights, controller, settings, physics, tags, .. } = editor_scene;
@@ -675,10 +775,16 @@ fn load_scene_jobs(state: &mut State, jobs: Vec<SceneLoadJob>, loading_state: Ar
                     state.add_sound_source(sound_source);
                 }
 
+                for texture in textures
+                {
+                    state.add_texture(texture);
+                }
+
                 if let Some(scene) = state.find_scene_by_id_mut(scene_id)
                 {
                     apply_editor_cameras_extra(scene, &editor_cameras);
                     scene.file_sounds = file_sounds;
+                    scene.file_textures = file_textures;
                     if std::mem::take(&mut scene.file_missing)
                     {
                         apply_scene_file_settings(scene, settings.as_ref(), physics, &tags);

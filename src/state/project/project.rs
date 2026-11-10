@@ -190,6 +190,10 @@ pub struct SceneFile
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sounds: Vec<SceneSound>,
 
+    // image files (particle textures) - loaded before the components, which refer to them by uuid
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub textures: Vec<SceneTexture>,
+
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objects: Vec<SceneObject>,
 
@@ -226,6 +230,14 @@ pub struct SceneSound
     pub uuid: String,
     pub name: String,
     pub source: String, // like an object source: relative to the project file or "resources://..."
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SceneTexture
+{
+    pub uuid: String,
+    pub name: String,
+    pub source: String, // like the sound source
 }
 
 #[derive(Serialize, Deserialize, Clone)]

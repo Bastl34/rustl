@@ -6,7 +6,7 @@ use web_time::Instant;
 use nalgebra::{Point3, Vector3};
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{project::project::{ProjectData, SceneLoadingStatus, SceneLoadingStatusItem}, resources::{utilities::resource_utils::play_and_forget_sound, mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem, canonical_sound_path}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::{Scene, SceneLoadState}}}};
+use crate::{component_downcast_mut, console_log, console_warning, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{project::project::{ProjectData, SceneLoadingStatus, SceneLoadingStatusItem}, resources::{utilities::resource_utils::play_and_forget_sound, mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem, canonical_sound_path}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::{Scene, SceneLoadState}}}};
 
 use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, loader::loader::load_texture, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox};
 
@@ -80,6 +80,7 @@ pub struct Rendering
     pub shadow: ChangeTracker<bool>,
     pub shadow_map_resolution: ChangeTracker<u32>,
     pub shadow_max_distance: f32,
+    pub translucent_shadows: bool, // particles with translucent shadows - off: they cast hard ones
 
     pub ssao: bool,
     pub ssao_half_res: bool,
@@ -166,6 +167,7 @@ impl Default for Rendering
             shadow: ChangeTracker::new(true),
             shadow_map_resolution: ChangeTracker::new(DEFAULT_SHADOW_MAP_SIZE),
             shadow_max_distance: DEFAULT_SHADOW_MAX_DISTANCE,
+            translucent_shadows: true,
 
             ssao: true,
             ssao_half_res: false,
@@ -212,6 +214,7 @@ impl Rendering
         set_changed(&mut self.shadow, *settings.shadow.get_ref());
         set_changed(&mut self.shadow_map_resolution, (*settings.shadow_map_resolution.get_ref()).min(adapter.max_texture_resolution));
         self.shadow_max_distance = settings.shadow_max_distance;
+        self.translucent_shadows = settings.translucent_shadows;
 
         self.ssao = settings.ssao;
         self.ssao_half_res = settings.ssao_half_res;
@@ -321,6 +324,9 @@ pub struct Statistics
 
     pub shadow_views: u32,
     pub shadow_draw_calls: u32,
+
+    pub particles: u32, // drawn this frame
+    pub particle_emitters: u32,
 
     pub gpu_shadow_time: Option<f32>,
     pub gpu_depth_time: Option<f32>,
@@ -561,7 +567,8 @@ impl State
         components.push(("Animation Blending".to_string(), crate::state::scene::components::animation_blending::AnimationBlending::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::animation_blending::AnimationBlending::new_empty(name)))) }));
         components.push(("Sound".to_string(), crate::state::scene::components::sound::Sound::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::sound::Sound::new_empty(name)))) }));
         components.push(("Delay".to_string(), crate::state::scene::components::delay::Delay::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::delay::Delay::new_empty(name)))) }));
-        components.push(("Look At".to_string(), crate::state::scene::components::delay::Delay::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::look_at::LookAt::new_empty(name)))) }));
+        components.push(("Look At".to_string(), crate::state::scene::components::look_at::LookAt::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::look_at::LookAt::new_empty(name)))) }));
+        components.push(("Particle Emitter".to_string(), crate::state::scene::components::particle_emitter::ParticleEmitter::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::particle_emitter::ParticleEmitter::new_empty(name)))) }));
 
         let mut cam_controller: Vec<(String, fn() -> CameraControllerBox)> = vec![];
         cam_controller.push(("Fly Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::fly_controller::FlyController::default()) }));
@@ -695,6 +702,9 @@ impl State
                 shadow_views: 0,
                 shadow_draw_calls: 0,
 
+                particles: 0,
+                particle_emitters: 0,
+
                 gpu_shadow_time: None,
                 gpu_depth_time: None,
                 gpu_ssao_time: None,
@@ -719,6 +729,45 @@ impl State
         let image_bytes = load_binary(path)?;
 
         Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension, max_tex_res))
+    }
+
+    // an image file right away (blocks) - for code at runtime, the scene loader loads the textures of a scene file in the background
+    pub fn load_texture_file(&mut self, path: &str) -> anyhow::Result<TextureItem>
+    {
+        let image_bytes = load_binary(path)?;
+        let texture = Texture::new_from_file(path, &image_bytes, self.max_texture_resolution(), self.rendering.create_mipmaps);
+
+        Ok(self.add_texture(texture))
+    }
+
+    // a loaded file with the same bytes is reused, it takes over the uuid as an alias (and the path if it had none)
+    pub fn add_texture(&mut self, texture: Texture) -> TextureItem
+    {
+        if let Some(existing) = self.resources.textures.get(&texture.hash)
+        {
+            {
+                let mut existing = existing.write().unwrap();
+                if existing.uuid != texture.uuid && !existing.uuid_aliases.contains(&texture.uuid)
+                {
+                    existing.uuid_aliases.push(texture.uuid.clone());
+                }
+
+                if existing.source.is_none()
+                {
+                    existing.source = texture.source.clone();
+                }
+
+                existing.delete_later_request = false;
+            }
+
+            return existing.clone();
+        }
+
+        let hash = texture.hash.clone();
+        let item: TextureItem = Arc::new(RwLock::new(Box::new(texture)));
+        self.resources.textures.insert(hash, item.clone());
+
+        item
     }
 
     pub fn load_texture_byte_or_reuse(&mut self, image_bytes: &Vec<u8>, name: &str, extension: Option<String>, max_tex_res: u32) -> TextureItem
@@ -1296,16 +1345,10 @@ impl State
         let content = scene.unload_content();
 
         let mut freed_textures = 0;
+        let used_textures: std::collections::HashSet<u32> = self.scenes.iter().flat_map(|scene| scene.used_texture_ids()).collect();
         for texture in content.textures
         {
-            let texture_id = texture.read().unwrap().id;
-            let used = self.scenes.iter().any(|scene| scene.materials.values().any(|material|
-            {
-                component_downcast!(material, Material);
-                material.has_texture_id(texture_id)
-            }));
-
-            if !used
+            if !used_textures.contains(&texture.read().unwrap().id)
             {
                 texture.write().unwrap().delete_later();
                 freed_textures += 1;

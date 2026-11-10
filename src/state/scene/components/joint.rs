@@ -580,7 +580,7 @@ impl Component for Joint
         None
     }
 
-    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, _time: u128, _frame_scale: f32, _frame: u64)
     {
         let local_trans = self.get_changed_local_transform(node.clone());
 

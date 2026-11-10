@@ -120,7 +120,7 @@ pub fn create_run_mode_bar(editor_state: &mut EditorState, state: &mut State, ui
                 toggle_pause = true;
             }
 
-            if icon_button(ui, egui::include_image!("../../../../resources/icons/simulate.svg"), SIMULATE_COLOR, run_mode == RunMode::Simulate, true, "Simulate (Ctrl+T, hold Shift for fullscreen) - physics runs, the editor stays open") && run_mode != RunMode::Simulate
+            if icon_button(ui, egui::include_image!("../../../../resources/icons/simulate.svg"), SIMULATE_COLOR, run_mode == RunMode::Simulate, true, "Simulate (Ctrl+T, hold Shift for fullscreen) - physics and particles run, no game logic, the editor stays open") && run_mode != RunMode::Simulate
             {
                 picked_run_mode = Some((RunMode::Simulate, false));
             }

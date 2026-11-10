@@ -164,7 +164,7 @@ impl Component for MorphTargetAnimation
         Some(Arc::new(RwLock::new(Box::new(animation))))
     }
 
-    fn update(&mut self, node: NodeItem, io: &mut InputOutput, _time: u128, frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, io: &mut InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, _time: u128, frame_scale: f32, _frame: u64)
     {
         if self.target_id.is_none() || !self.base.is_enabled
         {

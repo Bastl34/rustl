@@ -47,11 +47,15 @@ struct LightUniform
 
     // how much light the shadow removes (1.0 = fully dark, 0.0 = no visible shadow)
     shadow_strength: f32,
+
+    // spot lights: outer share of the cone that fades out (0 = hard edge)
+    softness: f32,
 };
 
 struct ShadowView
 {
     view_proj: mat4x4<f32>,
+    params: vec4<f32>, // x: 1 = translucent shadows (particles) in this view
 };
 
 struct SceneUniform
@@ -156,6 +160,9 @@ var<uniform> shadow_views: array<ShadowView, MAX_SHADOW_VIEWS>;
 
 @group(1) @binding(5) var t_shadow: texture_depth_2d_array;
 @group(1) @binding(6) var s_shadow: sampler_comparison;
+
+// translucent shadows of particles per shadow view: rgb = light that passes, a = light depth of the nearest particle
+@group(1) @binding(8) var t_translucent: texture_2d_array<f32>;
 
 // blurred ssao result (1:1 with the framebuffer pixels)
 @group(1) @binding(7) var t_ssao: texture_2d<f32>;
@@ -386,7 +393,7 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     */
 
     // material shader hook: world space vertex
-    var vertex = CustomVertex(world_position.xyz / world_position.w, normal, object_position.xyz / max(object_position.w, 0.0001), model.tex_coords_0_1.xy, model.tex_coords_0_1.zw, model.color, model_matrix[3].xyz, model_matrix);
+    var vertex = CustomVertex(world_position.xyz / world_position.w, normal, object_position.xyz / max(object_position.w, 0.0001), model.tex_coords_0_1.xy, model.tex_coords_0_1.zw, model.color, model_matrix[3].xyz, model_matrix, instance.color);
     custom_vertex(&vertex);
     world_position = vec4<f32>(vertex.position, 1.0);
     normal = vertex.normal;
@@ -940,13 +947,13 @@ fn sample_wrapped_normal(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: v
 // ****************************** shadow mapping ******************************
 
 // sample one shadow atlas layer with a 3x3 PCF kernel
-// (the comparison sampler adds hardware 2x2 PCF per tap)
-fn shadow_sample_view(view_index: u32, world_pos: vec3<f32>, bias: f32) -> f32
+// (the comparison sampler adds hardware 2x2 PCF per tap) - rgb: translucent shadows of particles can tint the light
+fn shadow_sample_view(view_index: u32, world_pos: vec3<f32>, bias: f32) -> vec3<f32>
 {
     let clip = shadow_views[view_index].view_proj * vec4<f32>(world_pos, 1.0);
     if (clip.w <= 0.0)
     {
-        return 1.0;
+        return vec3<f32>(1.0);
     }
 
     let ndc = clip.xyz / clip.w;
@@ -957,7 +964,7 @@ fn shadow_sample_view(view_index: u32, world_pos: vec3<f32>, bias: f32) -> f32
     // outside of the shadow map -> not shadowed
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z <= 0.0 || ndc.z >= 1.0)
     {
-        return 1.0;
+        return vec3<f32>(1.0);
     }
 
     let depth_ref = ndc.z - bias;
@@ -975,16 +982,30 @@ fn shadow_sample_view(view_index: u32, world_pos: vec3<f32>, bias: f32) -> f32
         }
     }
 
-    return shadow / 9.0;
+    var lit = vec3<f32>(shadow / 9.0);
+
+    // particles between the light and the position let only part of the light through
+    if (shadow_views[view_index].params.x > 0.5)
+    {
+        let size = vec2<i32>(textureDimensions(t_translucent));
+        let texel_pos = clamp(vec2<i32>(uv * vec2<f32>(size)), vec2<i32>(0), size - vec2<i32>(1));
+        let translucent = textureLoad(t_translucent, texel_pos, i32(view_index), 0);
+        if (depth_ref > translucent.a)
+        {
+            lit = lit * translucent.rgb;
+        }
+    }
+
+    return lit;
 }
 
-// 1.0 = fully lit, 0.0 = fully shadowed
-fn shadow_factor(light_index: i32, world_pos: vec3<f32>) -> f32
+// 1.0 = fully lit, 0.0 = fully shadowed - per color channel
+fn shadow_factor(light_index: i32, world_pos: vec3<f32>) -> vec3<f32>
 {
     let shadow_index = lights[light_index].shadow_index;
     if (shadow_index < 0)
     {
-        return 1.0;
+        return vec3<f32>(1.0);
     }
 
     let first_view = u32(shadow_index);
@@ -1005,7 +1026,7 @@ fn shadow_factor(light_index: i32, world_pos: vec3<f32>) -> f32
 
             if (fade >= 1.0)
             {
-                return 1.0;
+                return vec3<f32>(1.0);
             }
 
             // use the first (smallest) cascade that contains the position
@@ -1020,11 +1041,11 @@ fn shadow_factor(light_index: i32, world_pos: vec3<f32>) -> f32
                 let ndc = clip.xyz / clip.w;
                 if (abs(ndc.x) < 0.99 && abs(ndc.y) < 0.99 && ndc.z > 0.0 && ndc.z < 1.0)
                 {
-                    return mix(shadow_sample_view(first_view + cascade, world_pos, bias), 1.0, fade);
+                    return mix(shadow_sample_view(first_view + cascade, world_pos, bias), vec3<f32>(1.0), fade);
                 }
             }
 
-            return 1.0;
+            return vec3<f32>(1.0);
         }
         case 2u //LIGHT_TYPE_POINT -> pick the cube face by the major axis
         {
@@ -1053,7 +1074,7 @@ fn shadow_factor(light_index: i32, world_pos: vec3<f32>) -> f32
         }
         default
         {
-            return 1.0;
+            return vec3<f32>(1.0);
         }
     }
 }
@@ -1105,6 +1126,7 @@ struct CustomVertex
     color: vec4<f32>, // vertex color (used when the material uses vertex colors)
     object_position: vec3<f32>, // world position of the object origin (read only)
     model: mat4x4<f32>, // object -> world (read only)
+    instance_color: vec4<f32>, // color of the instance (read only, alpha = visibility) - can carry per instance data
 };
 
 struct CustomSurfaceInput
@@ -1129,6 +1151,8 @@ fn custom_param(index: u32) -> f32 { return material.custom_params[index / 4u][i
 fn get_time() -> f32 { return material.time; }
 // 0..1 per object from its position (e.g. in.object_position) - changes when it moves
 fn instance_seed(origin: vec3<f32>) -> f32 { return fract(sin(dot(origin, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453); }
+// true while the shadow maps are drawn (e.g. fewer leaves there)
+fn is_shadow_pass() -> bool { return false; }
 
 fn custom_vertex(vertex: ptr<function, CustomVertex>) {}
 fn custom_surface(in: CustomSurfaceInput, surface: ptr<function, CustomSurface>) {}
@@ -1234,6 +1258,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     ambient_color = surface.ambient_color;
     normal = surface.normal;
 
+    // mask: the cut out texels leave before the lighting (leaf / grass cards are mostly holes)
+    if (material.blend_mode == 1u)
+    {
+        var mask_alpha = object_color.a * material.alpha;
+        if (has_alpha_texture())
+        {
+            mask_alpha *= sample_material_texture(tex_alpha, tex_alpha_sampler, in, TEXTURE_INDEX_ALPHA).x;
+        }
+        if (mask_alpha <= material.alpha_cutoff)
+        {
+            discard;
+        }
+    }
+
     var color = vec3<f32>(0.0, 0.0, 0.0);
 
     // screen space ambient occlusion (sampled 1:1 via the framebuffer pixel position)
@@ -1255,7 +1293,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         // unlit (pre-lit, baked) surfaces still take the shadows of the lights - the darkest one counts
         if (USE_SHADOWS && material.unlit_shading != 0u && material.receive_shadow != 0u)
         {
-            var shadow = 1.0;
+            var shadow = vec3<f32>(1.0);
             for (var i = 0; i < min(light_amount, MAX_LIGHTS); i += 1)
             {
                 if (lights[i].light_type == 0u || lights[i].light_type == 4u || lights[i].shadow_index < 0)
@@ -1274,7 +1312,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
                     continue;
                 }
 
-                shadow = min(shadow, mix(1.0, shadow_factor(i, in.position), lights[i].shadow_strength));
+                shadow = min(shadow, mix(vec3<f32>(1.0), shadow_factor(i, in.position), lights[i].shadow_strength));
             }
             color *= shadow;
         }
@@ -1332,9 +1370,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
                         let dir_from_light = -normalize(direction_to_light);
                         let dot = dot(dir_from_light, lights[i].dir.xyz);
-                        let angle = acos(dot);
+                        let angle = acos(clamp(dot, -1.0, 1.0));
 
-                        if angle > lights[i].max_angle
+                        let soft = clamp(lights[i].softness, 0.0, 1.0);
+                        if soft > 0.001
+                        {
+                            intensity *= 1.0 - smoothstep(lights[i].max_angle * (1.0 - soft), lights[i].max_angle, angle);
+                        }
+                        else if angle > lights[i].max_angle
                         {
                             intensity = 0.0;
                         }
@@ -1413,13 +1456,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
                 let specular_color = (lights[i].color * specular * specular_strength).rgb;
 
                 // shadow mapping (skip surfaces facing away from the light - they are dark anyway)
-                var shadow = 1.0;
+                var shadow = vec3<f32>(1.0);
                 if (USE_SHADOWS && material.receive_shadow != 0u && lights[i].shadow_index >= 0 && diffuse_strength > 0.0)
                 {
                     shadow = shadow_factor(i, in.position);
 
                     // shadow strength: lift the shadow so it never removes more than shadow_strength of the light
-                    shadow = mix(1.0, shadow, lights[i].shadow_strength);
+                    shadow = mix(vec3<f32>(1.0), shadow, lights[i].shadow_strength);
                 }
 
                 color += (diffuse_color + specular_color) * intensity * shadow;

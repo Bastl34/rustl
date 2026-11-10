@@ -37,11 +37,15 @@ const SHADOW_CSM_SPLIT_LAMBDA: f32 = 0.75;
 // dynamic offset stride for the caster pass uniform (min_uniform_buffer_offset_alignment is <= 256 everywhere)
 pub const SHADOW_VIEW_UNIFORM_STRIDE: u64 = 256;
 
+// translucent shadows of particles: rgb = light that passes, a = light depth of the nearest particle (half the atlas size)
+pub const TRANSLUCENT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct ShadowViewUniform
 {
     view_proj: [[f32; 4]; 4],
+    params: [f32; 4], // x: 1 = the view has translucent shadows
 }
 
 pub enum ShadowCull
@@ -358,6 +362,12 @@ pub struct ShadowBuffer
     atlas_view: wgpu::TextureView,
     comparison_sampler: wgpu::Sampler,
 
+    // translucent shadows (particles), one layer per shadow view - 1x1 while off
+    translucent: bool,
+    translucent_texture: wgpu::Texture,
+    translucent_layer_views: Vec<wgpu::TextureView>,
+    translucent_view: wgpu::TextureView,
+
     // per shadow view matrix with 256 byte stride (dynamic offset) - used by the caster pass
     caster_views_buffer: wgpu::Buffer,
     pub caster_bind_group: wgpu::BindGroup,
@@ -375,7 +385,8 @@ impl RenderItem for ShadowBuffer
     fn gpu_usage(&self) -> u64
     {
         let atlas = self.layers as u64 * self.size as u64 * self.size as u64 * 4;
-        atlas + self.caster_views_buffer.size() + self.shadow_views_buffer.size()
+        let translucent = self.translucent_texture.width() as u64 * self.translucent_texture.height() as u64 * self.translucent_texture.depth_or_array_layers() as u64 * 8;
+        atlas + translucent + self.caster_views_buffer.size() + self.shadow_views_buffer.size()
     }
 }
 
@@ -458,6 +469,7 @@ impl ShadowBuffer
         });
 
         let (atlas_texture, layer_views, atlas_view) = Self::create_atlas(wgpu, 1, size);
+        let (translucent_texture, translucent_layer_views, translucent_view) = Self::create_translucent(wgpu, 1, size, false);
 
         ShadowBuffer
         {
@@ -468,6 +480,11 @@ impl ShadowBuffer
             layer_views,
             atlas_view,
             comparison_sampler,
+
+            translucent: false,
+            translucent_texture,
+            translucent_layer_views,
+            translucent_view,
 
             caster_views_buffer,
             caster_bind_group,
@@ -516,25 +533,66 @@ impl ShadowBuffer
         (texture, layer_views, atlas_view)
     }
 
+    fn create_translucent(wgpu: &mut WGpu, layers: u32, size: u32, enabled: bool) -> (wgpu::Texture, Vec<wgpu::TextureView>, wgpu::TextureView)
+    {
+        let size = if enabled { (size / 2).max(1) } else { 1 };
+
+        let texture = wgpu.device().create_texture(&wgpu::TextureDescriptor
+        {
+            label: Some("translucent shadow texture"),
+            size: wgpu::Extent3d { width: size, height: size, depth_or_array_layers: layers },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TRANSLUCENT_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        let layer_views = (0..layers).map(|layer| texture.create_view(&wgpu::TextureViewDescriptor
+        {
+            label: Some("translucent shadow layer view"),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            base_array_layer: layer,
+            array_layer_count: Some(1),
+            ..Default::default()
+        })).collect();
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor
+        {
+            label: Some("translucent shadow view"),
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+
+        (texture, layer_views, view)
+    }
+
     // resizes the atlas to fit all shadow views of the given lights
     // returns true if the atlas was re-created (bind groups referencing it must be re-created)
-    pub fn ensure_for_lights(&mut self, wgpu: &mut WGpu, lights: &Vec<RefCell<ChangeTracker<LightItem>>>, max_lights: usize, size: u32, shadows_enabled: bool) -> bool
+    pub fn ensure_for_lights(&mut self, wgpu: &mut WGpu, lights: &Vec<RefCell<ChangeTracker<LightItem>>>, max_lights: usize, size: u32, shadows_enabled: bool, translucent: bool) -> bool
     {
         // shadows disabled -> shrink the atlas to a single (unused) layer
         let needed_layers = if shadows_enabled { total_shadow_views(lights, max_lights) } else { 0 };
-        self.ensure(wgpu, needed_layers, size)
+        self.ensure(wgpu, needed_layers, size, translucent && shadows_enabled)
     }
 
     // returns true if the atlas was re-created (bind groups referencing it must be re-created)
-    fn ensure(&mut self, wgpu: &mut WGpu, needed_layers: u32, size: u32) -> bool
+    fn ensure(&mut self, wgpu: &mut WGpu, needed_layers: u32, size: u32, translucent: bool) -> bool
     {
         let needed_layers = needed_layers.clamp(1, MAX_SHADOW_VIEWS);
         let size = size.max(MIN_SHADOW_MAP_SIZE);
 
-        if needed_layers == self.layers && size == self.size
+        if needed_layers == self.layers && size == self.size && translucent == self.translucent
         {
             return false;
         }
+
+        let (translucent_texture, translucent_layer_views, translucent_view) = Self::create_translucent(wgpu, needed_layers, size, translucent);
+        self.translucent = translucent;
+        self.translucent_texture = translucent_texture;
+        self.translucent_layer_views = translucent_layer_views;
+        self.translucent_view = translucent_view;
 
         let (atlas_texture, layer_views, atlas_view) = Self::create_atlas(wgpu, needed_layers, size);
 
@@ -547,9 +605,10 @@ impl ShadowBuffer
         true
     }
 
-    pub fn write_views(&self, wgpu: &mut WGpu, views: &Vec<ShadowViewData>)
+    // translucent_layers: the views with translucent shadows this frame
+    pub fn write_views(&self, wgpu: &mut WGpu, views: &Vec<ShadowViewData>, translucent_layers: &[u32])
     {
-        let mut fragment_views = [ShadowViewUniform { view_proj: Matrix4::<f32>::zeros().into() }; MAX_SHADOW_VIEWS as usize];
+        let mut fragment_views = [ShadowViewUniform { view_proj: Matrix4::<f32>::zeros().into(), params: [0.0; 4] }; MAX_SHADOW_VIEWS as usize];
 
         for view in views
         {
@@ -558,7 +617,8 @@ impl ShadowBuffer
                 continue;
             }
 
-            let uniform = ShadowViewUniform { view_proj: view.view_proj.into() };
+            let translucent = if translucent_layers.contains(&view.layer) { 1.0 } else { 0.0 };
+            let uniform = ShadowViewUniform { view_proj: view.view_proj.into(), params: [translucent, 0.0, 0.0, 0.0] };
             fragment_views[view.layer as usize] = uniform;
 
             wgpu.queue_mut().write_buffer
@@ -590,6 +650,21 @@ impl ShadowBuffer
     pub fn get_atlas_view(&self) -> &wgpu::TextureView
     {
         &self.atlas_view
+    }
+
+    pub fn translucent(&self) -> bool
+    {
+        self.translucent
+    }
+
+    pub fn get_translucent_layer_view(&self, layer: u32) -> &wgpu::TextureView
+    {
+        &self.translucent_layer_views[layer as usize]
+    }
+
+    pub fn get_translucent_view(&self) -> &wgpu::TextureView
+    {
+        &self.translucent_view
     }
 
     pub fn get_sampler(&self) -> &wgpu::Sampler

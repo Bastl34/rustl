@@ -228,12 +228,12 @@ impl Component for Delay
         Some(Arc::new(RwLock::new(Box::new(delay))))
     }
 
-    fn update(&mut self, _node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
+    fn update(&mut self, _node: NodeItem, io: &mut InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, time: u128, frame_scale: f32, frame: u64)
     {
         self._update(self.target.as_ref().cloned(), io, time, frame_scale, frame);
     }
 
-    fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
+    fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &InstanceItemArc, io: &mut InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, time: u128, frame_scale: f32, frame: u64)
     {
         self._update(self.target.as_ref().cloned(), io, time, frame_scale, frame);
     }

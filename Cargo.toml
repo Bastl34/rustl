@@ -45,7 +45,10 @@ typetag = "0.2.23"
 
 regex = "1.13.1"
 # use lewton for ogg (symphonia-vorbis can not seek or loop properly)
-rodio = { version = "0.22.2", default-features = false, features = ["playback", "mp3", "mp4", "lewton", "wav"] }
+# rodio = { version = "0.23.0", default-features = false, features = ["playback", "mp3", "mp4", "lewton", "wav"] }
+# master pinned: rodio <= 0.23.0 pans spatial sound left / right swapped, fix https://github.com/RustAudio/rodio/pull/886 (6d31466) not released yet
+# a359d2a = last commit before the rubato resampler (#843); back to a release with #886 and drop the rodio overflow-checks in .cargo/config.toml
+rodio = { git = "https://github.com/RustAudio/rodio", rev = "a359d2ab697909ceac1c5825c3b7a9043858ed77", default-features = false, features = ["playback", "mp3", "mp4", "lewton", "wav"] }
 gilrs = { version = "0.11.2", default-features = false, features = ["xinput"]}
 take_mut = "0.2.2"
 uuid = {version = "1.26.1", features = ["v4", "v5"] }
@@ -97,7 +100,9 @@ wasm-bindgen = "0.2.129"
 wasm-bindgen-futures = "0.4.79"
 js-sys = "0.3.106"
 # web audio output for cpal
-rodio = { version = "0.22.2", default-features = false, features = ["wasm-bindgen"] }
+# rodio = { version = "0.23.0", default-features = false, features = ["wasm-bindgen"] }
+# see the left / right note at the rodio entry above
+rodio = { git = "https://github.com/RustAudio/rodio", rev = "a359d2ab697909ceac1c5825c3b7a9043858ed77", default-features = false, features = ["wasm-bindgen"] }
 
 uuid = { version = "1.26.0", features = ["js", "v5"] }
 getrandom = { version = "0.3.4", features = ["wasm_js"] } # needed for ahash (egui, tobj) - must match the version ahash uses

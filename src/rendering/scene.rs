@@ -1,10 +1,11 @@
 use std::{collections::HashMap, mem::swap, sync::{Arc, RwLock, RwLockReadGuard}, vec};
 
-use nalgebra::{Point3, distance_squared};
+use nalgebra::{Matrix4, Point3, distance_squared};
 use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
+use crate::rendering::particles::ParticleRenderer;
 use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BOUNDING_BOX_FLAG_OCCLUSION_TEST, BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, debug_volumes::{BOUNDING_BOX_COLOR, BOUNDING_SPHERE_COLOR, DebugVolume, DebugVolumeList, DebugVolumesBuffer}, draw_slots::{DRAW_INDEXED_ARGS_SIZE, DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::{BlendMode, TextureType}, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX, RunMode, State}}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, custom_shader, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
@@ -290,6 +291,9 @@ pub struct Scene
     pub draw_light_camera_volumes: bool,
     debug_volumes_buffer: DebugVolumesBuffer,
 
+    // particle emitters as camera facing quads
+    particles: ParticleRenderer,
+
     // one slot per (node, mesh) draw - the slot index is the fixed offset into the indirect
     // args buffers and connects the cpu-recorded draws with the gpu culling results
     draw_slots: DrawSlotsBuffer,
@@ -319,6 +323,7 @@ impl RenderItem for Scene
         self.buffer.size()
         + self.bounding_boxes_buffer.gpu_usage()
         + self.debug_volumes_buffer.gpu_usage()
+        + self.particles.gpu_usage()
         + self.draw_slots.gpu_usage()
         + self.hzb_cull_buffer.gpu_usage()
         + self.shadow.gpu_usage()
@@ -426,6 +431,9 @@ impl Scene
             draw_physics_volumes: false,
             draw_light_camera_volumes: false,
             debug_volumes_buffer: DebugVolumesBuffer::new(wgpu),
+
+            // WebGL can not read the depth texture (like ssao) - no soft particles there
+            particles: ParticleRenderer::new(wgpu, resources::load_string("shader/particles.wgsl").unwrap().replace("[SOFT_PARTICLES]", if state.rendering_adapter.ssao_support { "true" } else { "false" }), resources::load_string("shader/particles_shadow.wgsl").unwrap()),
 
             draw_slots: DrawSlotsBuffer::new(wgpu),
             culling_state_hash: 0,
@@ -693,6 +701,9 @@ impl Scene
         {
             self.debug_volumes_buffer.create_pipelines(wgpu, &self.debug_volumes_shader, self.samples, self.reverse_z);
         }
+
+        // ********** particles pass **********
+        self.particles.create_pipelines(wgpu, self.samples, self.reverse_z);
     }
 
     pub fn update_textures(&mut self, _wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
@@ -892,7 +903,7 @@ impl Scene
         }
 
         // ********** shadow atlas **********
-        let shadow_atlas_recreated = self.shadow.ensure_for_lights(wgpu, lights, max_lights as usize, shadow_map_size, self.shadow_enabled);
+        let shadow_atlas_recreated = self.shadow.ensure_for_lights(wgpu, lights, max_lights as usize, shadow_map_size, self.shadow_enabled, self.particles.translucent_shadows);
 
         // ********** lights and cameras **********
         for cam in &mut scene.cameras
@@ -947,6 +958,12 @@ impl Scene
                     let debug_volumes_bind_group = DebugVolumesBindGroup::new(wgpu, &cam.name, &camera_buffer, &self.debug_volumes_buffer);
                     cam.debug_volumes_bind_group_render_item = Some(Box::new(debug_volumes_bind_group));
                 }
+            }
+
+            // ********** particles bind group **********
+            {
+                let camera_buffer = get_render_item::<CameraBuffer>(cam.render_item.as_ref().unwrap());
+                self.particles.update_camera(wgpu, cam.id, &camera_buffer, cam_buffer_created, &self.depth_pass_buffer_texture);
             }
 
             // ********** ssao bind group + uniform **********
@@ -1084,6 +1101,7 @@ impl Scene
     {
         let mut instance_buffers_updated = false;
         let mut vertex_buffers_updated = false;
+        let mut skeleton_cache: HashMap<Vec<u32>, Option<Vec<Matrix4<f32>>>> = HashMap::new();
 
         // go in reverse to find parent transformations for child nodes
         for node_id in (0..nodes.len()).rev()
@@ -1187,10 +1205,15 @@ impl Scene
                             create_new_skeleton_morph_target_bind_group = true;
                         }
                     }
-                    else if Self::has_changed_joints(node_arc.clone())
+                    else
                     {
-                        let joint_matrices = node_arc.read().unwrap().get_joint_transform_vec(true);
-                        if let Some(joint_matrices) = joint_matrices
+                        // once per skeleton: the meshes of one avatar share it
+                        let key = node_arc.read().unwrap().skin_key();
+                        let entry = skeleton_cache.entry(key).or_insert_with(||
+                        {
+                            if Self::has_changed_joints(node_arc.clone()) { node_arc.read().unwrap().get_joint_transform_vec(true) } else { None }
+                        });
+                        if let Some(joint_matrices) = entry.as_ref()
                         {
                             let mut node_write = node_arc.write().unwrap();
                             let render_item = get_render_item_mut::<SkeletonBuffer>(node_write.skeleton_render_item.as_mut().unwrap());
@@ -1611,18 +1634,16 @@ impl Scene
     pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene)
     {
         // ********** clear color **********
-        let (clear_color, clear_color_changed) = state.rendering.clear_color.consume_borrow();
+        // every frame, not only on a change - a scene loaded later (on demand) would miss the change another scene consumed
+        let (clear_color, _) = state.rendering.clear_color.consume_borrow();
 
-        if clear_color_changed
+        self.clear_color = wgpu::Color
         {
-            self.clear_color = wgpu::Color
-            {
-                r: clear_color.x as f64,
-                g: clear_color.y as f64,
-                b: clear_color.z as f64,
-                a: 1.0,
-            };
-        }
+            r: clear_color.x as f64,
+            g: clear_color.y as f64,
+            b: clear_color.z as f64,
+            a: 1.0,
+        };
 
         self.update_result = UpdateResult::new();
 
@@ -1649,6 +1670,11 @@ impl Scene
 
         self.update_nodes(wgpu, &mut all_nodes, state.rendering.occlusion_culling);
         Self::consume_changed_joints(&all_nodes);
+
+        // ********** particles **********
+        self.particles.remove_unused_cameras(scene);
+        let particle_cameras: Vec<u32> = scene.cameras.iter().filter(|cam| scene.is_camera_active(cam, self.run_mode)).map(|cam| cam.id).collect();
+        self.particles.update(wgpu, scene, &all_nodes, &particle_cameras, &self.fog, self.reverse_z);
 
         // ********** debug volumes (bounding boxes / spheres, physics colliders) **********
         self.draw_bounding_boxes = state.rendering.debug.draw_bounding_boxes && self.debug_volumes_supported;
@@ -1786,6 +1812,7 @@ impl Scene
         let shadow_enabled = *state.rendering.shadow.get_ref();
         let shadow_enabled_changed = shadow_enabled != self.shadow_enabled;
         self.shadow_enabled = shadow_enabled;
+        self.particles.translucent_shadows = state.rendering.translucent_shadows;
 
         self.update_light_cameras_shadows(wgpu, scene, *state.rendering.shadow_map_resolution.get_ref(), shadow_enabled_changed, ssao_params_changed);
 
@@ -2307,7 +2334,7 @@ impl Scene
                             let b_dist = distance_squared(&b_middle, &cam_pos);
 
                             // front-to-back: smaller distance first
-                            a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
+                            a_dist.total_cmp(&b_dist)
                         });
                     }
 
@@ -2332,7 +2359,7 @@ impl Scene
                             let b_dist = distance_squared(&b_middle, &cam_pos);
 
                             // back-to-front: larger distance first
-                            b_dist.partial_cmp(&a_dist).unwrap_or(std::cmp::Ordering::Equal)
+                            b_dist.total_cmp(&a_dist)
                         }
                     });
                 }
@@ -2457,6 +2484,12 @@ impl Scene
 
                     render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &color_batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
                 }
+            }
+
+            // ********** particles **********
+            if self.particles.has_particles()
+            {
+                render_result.draw_calls += self.particles.render(view, msaa_view, &self.depth_buffer_texture.get_view(), encoder, cam_data, cam.id);
             }
 
             // ********** debug bounding volumes **********
@@ -2636,10 +2669,14 @@ impl Scene
             return (0, 0);
         }
 
-        self.shadow.write_views(wgpu, &shadow_views);
-
         // only views which fit into the shadow atlas are rendered
         let views_to_render: Vec<_> = shadow_views.iter().filter(|shadow_view| shadow_view.layer < self.shadow.layers()).collect();
+
+        // views with particles that cast translucent shadows get the opacity pass below
+        let translucent_views: Vec<&shadow::ShadowViewData> = if self.shadow.translucent() { views_to_render.iter().copied().filter(|shadow_view| self.particles.has_translucent_shadows(shadow_view)).collect() } else { vec![] };
+        let translucent_layers: Vec<u32> = translucent_views.iter().map(|shadow_view| shadow_view.layer).collect();
+
+        self.shadow.write_views(wgpu, &shadow_views, &translucent_layers);
 
         // the begin timestamp is written by the first shadow pass and the end timestamp by the last one
         let timer_segment = if views_to_render.is_empty() { None } else { gpu_timer.and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Shadow)) };
@@ -2676,6 +2713,34 @@ impl Scene
                 draw_calls += self.draw_phase(&mut render_pass, &DrawPhase::Shadow { shadow_view }, solid_objects, None);
                 draw_calls += self.draw_phase(&mut render_pass, &DrawPhase::Shadow { shadow_view }, transparent_objects, None);
             }
+
+            // particles of emitters with cast_shadows
+            draw_calls += self.particles.draw_shadows(&mut render_pass, shadow_view, &self.shadow.caster_bind_group, false);
+        }
+
+        // translucent shadows: the light that passes the particles, per view
+        for shadow_view in translucent_views
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
+            {
+                label: Some("translucent shadow pass"),
+                color_attachments:
+                &[
+                    Some(wgpu::RenderPassColorAttachment
+                    {
+                        view: self.shadow.get_translucent_layer_view(shadow_view.layer),
+                        resolve_target: None,
+                        ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::WHITE), store: wgpu::StoreOp::Store },
+                        depth_slice: None,
+                    })
+                ],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+
+            draw_calls += self.particles.draw_shadows(&mut render_pass, shadow_view, &self.shadow.caster_bind_group, true);
         }
 
         (views_to_render.len() as u32, draw_calls)
@@ -2960,6 +3025,12 @@ impl Scene
         }
 
         draw_calls
+    }
+
+    // particles and emitters drawn this frame
+    pub fn particle_stats(&self) -> (u32, u32)
+    {
+        self.particles.stats()
     }
 
     fn draw_debug_volumes(&self) -> bool

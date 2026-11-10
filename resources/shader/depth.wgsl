@@ -29,6 +29,7 @@ struct LightUniform
     shadow_views: u32,
     shadow_bias: f32,
     shadow_strength: f32,
+    softness: f32,
 };
 
 struct SceneUniform

@@ -2567,8 +2567,9 @@ impl PhysicsWorld
 
             let Some(body) = entry.body.and_then(|handle| self.bodies.get(handle)) else { continue; };
 
-            // a sleeping body costs nothing already, and a load must stay free - frozen it would hold its vehicle like a wall
-            if body.is_sleeping() || carried.contains(&index)
+            // a sleeping body costs nothing already, and a load must stay free - frozen it would hold its vehicle like a wall, a locked one too
+            let locked = entry.body.is_some_and(|handle| self.impulse_joints.attached_joints(handle).next().is_some());
+            if body.is_sleeping() || carried.contains(&index) || locked
             {
                 self.entries[index].rest = None;
                 self.entries[index].active_time = 0.0;
@@ -4678,6 +4679,58 @@ impl PhysicsWorld
         let carried_by_tow = self.hitch_load(node_id, 0);
 
         ((weight + carried - carried_by_tow) / weight).clamp(0.2, 10.0)
+    }
+
+    // ********** locks from code (glue, straps, a hand holding on) **********
+
+    // Holds two objects together as they are right now, by node id - an object or a vehicle. None while one of them has no body.
+    // They no longer collide with each other. Whoever made the lock removes it again, see unlock_objects.
+    pub fn lock_objects(&mut self, a: u32, b: u32) -> Option<ImpulseJointHandle>
+    {
+        let body_a = self.lock_body(a)?;
+        let body_b = self.lock_body(b)?;
+        if body_a == body_b
+        {
+            return None;
+        }
+
+        let frame = self.bodies.get(body_a)?.position().inv_mul(self.bodies.get(body_b)?.position());
+        let joint = FixedJointBuilder::new().local_frame1(frame).local_frame2(Pose::IDENTITY).contacts_enabled(false);
+
+        Some(self.impulse_joints.insert(body_a, body_b, joint.build(), true))
+    }
+
+    pub fn unlock_objects(&mut self, lock: ImpulseJointHandle)
+    {
+        self.impulse_joints.remove(lock, true);
+    }
+
+    pub fn is_locked(&self, lock: ImpulseJointHandle) -> bool
+    {
+        self.impulse_joints.get(lock).is_some()
+    }
+
+    // the body of a vehicle or an object - a waiting or frozen object is set moving first, a fixed body would hold the other one like a wall
+    fn lock_body(&mut self, node_id: u32) -> Option<RigidBodyHandle>
+    {
+        if let Some(vehicle) = self.vehicles.get(&node_id)
+        {
+            return Some(vehicle.body);
+        }
+
+        let index = self.entries.iter().position(|entry| entry.has_node(node_id) && entry.body.is_some())?;
+        if self.entries[index].body_type != PhysicsBodyType::Dynamic
+        {
+            return None;
+        }
+
+        if self.entries[index].waiting
+        {
+            self.set_waiting(index, false);
+        }
+        self.thaw_entry(index);
+
+        self.entries[index].body
     }
 
     fn vehicle_weight(&self, node_id: u32) -> Option<f32>

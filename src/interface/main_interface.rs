@@ -538,7 +538,12 @@ impl MainInterface
         }
 
         // ******************** build ui ********************
-        self.build_ui();
+        // without the editor ui the apps draw after the engine update: overlays projected with the camera match the rendered frame
+        let editor_ui = self.editor_visible();
+        if editor_ui
+        {
+            self.build_ui();
+        }
 
 
         // ******************** app update ********************
@@ -635,6 +640,11 @@ impl MainInterface
             state.stats.engine_update_time -= state.stats.physics_update_time; // get raw update time without physics
         }
 
+        if !editor_ui
+        {
+            self.build_ui();
+        }
+
 
         // ******************** render ********************
         crate::notify_observable!(&mut self.context, on_before_render);
@@ -655,6 +665,8 @@ impl MainInterface
                     state.stats.frustum_culled_objects = 0;
                     state.stats.shadow_views = 0;
                     state.stats.shadow_draw_calls = 0;
+                    state.stats.particles = 0;
+                    state.stats.particle_emitters = 0;
 
                     state.stats.gpu_shadow_time = None;
                     state.stats.gpu_depth_time = None;
@@ -688,6 +700,10 @@ impl MainInterface
 
                         // render scene
                         let render_results =  render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
+
+                        let (particles, particle_emitters) = render_scene.particle_stats();
+                        state.stats.particles += particles;
+                        state.stats.particle_emitters += particle_emitters;
 
                         scene.notify_after_render_all();
 
@@ -1220,16 +1236,21 @@ impl MainInterface
 
     // the editor captures the mouse in play mode - without it the game does it, per InputSettings
     #[cfg(not(feature = "editor"))]
-    fn update_game_mouse_capture(&mut self)
+    fn game_capture_wanted(&self, state: &crate::state::state::State) -> bool
     {
-        let state = &mut *(self.context.state.borrow_mut());
-
-        let wanted = match state.input.mouse_capture
+        match state.input.mouse_capture
         {
             MouseCapture::Always => true,
             MouseCapture::Fullscreen => self.context.window.fullscreen().is_some(),
             MouseCapture::Never => false,
-        };
+        }
+    }
+
+    #[cfg(not(feature = "editor"))]
+    fn update_game_mouse_capture(&mut self)
+    {
+        let wanted = self.game_capture_wanted(&self.context.state.borrow());
+        let state = &mut *(self.context.state.borrow_mut());
 
         #[cfg(target_arch = "wasm32")]
         {
@@ -1250,6 +1271,17 @@ impl MainInterface
 
     pub fn window_input(&mut self, event: &winit::event::WindowEvent)
     {
+        // the click that brings a released mouse back (window left, Esc, focus lost) only captures it - the game does not get it (it fired a shot)
+        let recapture_click = matches!(event, winit::event::WindowEvent::MouseInput { state: ElementState::Pressed, .. }) &&
+        {
+            let state = self.context.state.borrow();
+            #[cfg(not(feature = "editor"))]
+            let back = self.mouse_released && self.game_capture_wanted(&state);
+            #[cfg(feature = "editor")]
+            let back = !self.mouse_captured && !*state.io.input_manager.mouse.visible.get_ref();
+            back
+        };
+
         #[cfg(not(feature = "editor"))]
         match event
         {
@@ -1259,6 +1291,8 @@ impl MainInterface
             winit::event::WindowEvent::Touch(touch) if touch.phase == winit::event::TouchPhase::Started => self.mouse_released = false,
             _ => {}
         }
+
+        if recapture_click { return; }
 
         // the ui of the game gets every event, it takes only those over its widgets (or for a focused text field)
         let app_ui = self.app_ui;

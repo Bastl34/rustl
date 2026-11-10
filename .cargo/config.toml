@@ -40,6 +40,13 @@ opt-level = 3
 [profile.dev-dylib.package.rustl]
 opt-level = 0
 
+# rodio master (see Cargo.toml): Pausable::size_hint adds onto the usize::MAX of Repeat - panics in debug on pause and kills the audio thread, release just wraps
+[profile.dev.package.rodio]
+overflow-checks = false
+
+[profile.dev-dylib.package.rodio]
+overflow-checks = false
+
 # members here, but not in the workspace of a project - "*" would optimize them there and the engine shared library would be built again
 [profile.dev-dylib.package.rustl_dylib]
 opt-level = 0

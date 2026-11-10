@@ -54,6 +54,8 @@ pub struct Texture
     pub id: u32,
 
     pub uuid: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uuid_aliases: Vec<String>, // uuids of other loads of the same file (reused by hash) - references by them still find it
     pub source: Option<AssetPathDesciptor>,
 
     pub name: String,
@@ -98,6 +100,7 @@ impl Texture
         {
             id: id_manager::get_next_texture_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            uuid_aliases: vec![],
             source: None,
 
             name: "empty".to_string(),
@@ -168,6 +171,7 @@ impl Texture
         {
             id: id_manager::get_next_texture_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            uuid_aliases: vec![],
             source: None,
 
             name: name.to_string(),
@@ -236,6 +240,7 @@ impl Texture
         {
             id: id_manager::get_next_texture_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            uuid_aliases: vec![],
             source: texture.source.clone(),
 
             name: name.to_string(),
@@ -251,6 +256,20 @@ impl Texture
 
             delete_later_request: false
         }
+    }
+
+    // an image file: named by it, the path as source (saved with the scene, texture pickers)
+    pub fn new_from_file(path: &str, image_bytes: &Vec<u8>, max_resolution: u32, mipmapping: bool) -> Texture
+    {
+        let mut texture = Texture::new(&helper::file::get_stem(path), image_bytes, Some(helper::file::get_extension(path)), max_resolution);
+        texture.source = Some(AssetPathDesciptor::new_from_path(path.to_string()));
+        texture.get_data_mut().get_mut().mipmapping = mipmapping;
+        texture
+    }
+
+    pub fn matches_uuid(&self, uuid: &str) -> bool
+    {
+        self.uuid == uuid || self.uuid_aliases.iter().any(|alias| alias == uuid)
     }
 
     pub fn delete_later(&mut self)

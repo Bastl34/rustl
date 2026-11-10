@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::hash_map::DefaultHasher, hash::{Hash, Hasher
 
 use wgpu::BindGroupLayout;
 
-use crate::{console_debug, state::scene::components::{component::Component, material::{Material, TextureMappingMode, TextureType}}};
+use crate::{state::scene::components::{component::Component, material::{Material, TextureMappingMode, TextureType}}};
 
 use super::{pipeline::Pipeline, wgpu::WGpu};
 

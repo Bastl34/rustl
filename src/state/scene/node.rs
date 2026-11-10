@@ -7,7 +7,7 @@ use parry3d::bounding_volume::BoundingVolume; // Needed for BoundingSphere::merg
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, state::state::ENGINE_INTERNAL_TAG_PREFX, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::{extract_max_scale_from_transform, extract_scale_from_transform}, observable::Observable, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components, remove_components_by_type}, scene::Scene}, state::{InputOutput, RunMode}}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::{extract_max_scale_from_transform, extract_scale_from_transform}, observable::Observable, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components, remove_components_by_type}, physics::physics_world::PhysicsWorld, scene::Scene}, state::{ENGINE_INTERNAL_TAG_PREFX, InputOutput, RunMode}}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, layers::LAYER_DEFAULT, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -1651,6 +1651,12 @@ impl Node
         Matrix4::<f32>::identity()
     }
 
+    // the same for every mesh on one skeleton (an avatar has one node per material) - the joint matrices are computed once per key
+    pub fn skin_key(&self) -> Vec<u32>
+    {
+        self.skin.iter().map(|joint| if let OptionOrId::Some(joint) = joint { joint.read().unwrap().id } else { u32::MAX }).collect()
+    }
+
     pub fn get_joint_transform_vec(&self, animated: bool) -> Option<Vec<Matrix4<f32>>>
     {
         if self.skin.len() == 0
@@ -2259,7 +2265,7 @@ impl Node
         instance
     }
 
-    pub fn update(node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> NodeUpdateResult
+    pub fn update(node: NodeItem, io: &mut InputOutput, physics: &PhysicsWorld, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> NodeUpdateResult
     {
         crate::notify_observable_arc!(&node, on_before_update);
 
@@ -2303,7 +2309,7 @@ impl Node
             // component update
             {
                 let mut component_write = component.write().unwrap();
-                component_write.update(node.clone(), io, time, frame_scale, frame);
+                component_write.update(node.clone(), io, physics, time, frame_scale, frame);
             }
 
             // after each update, check if new components were added during the update --> add
@@ -2356,7 +2362,7 @@ impl Node
                         continue;
                     }
 
-                    if Instance::update(&instance, io, time, frame_scale, frame, run_mode)
+                    if Instance::update(&instance, io, physics, time, frame_scale, frame, run_mode)
                     {
                         updates += 1;
                     }
@@ -2393,7 +2399,7 @@ impl Node
             let node_read = node.read().unwrap();
             for child_node in &node_read.nodes
             {
-                let mut update_result = Self::update(child_node.clone(), io, time, frame_scale, frame, run_mode);
+                let mut update_result = Self::update(child_node.clone(), io, physics, time, frame_scale, frame, run_mode);
 
                 if update_result.delete_nodes.len() > 0
                 {

@@ -1,6 +1,13 @@
 # History
 Here are some screenshots which are showing the development progress.
 
+# 2026-10-05/06
+* Forest scene with particles
+
+<img src="history/2026-11-05.webp" width="720">
+<img src="history/2026-11-06.webp" width="720">
+<br><br>
+
 # 2026-09-22
 * Experiments with Physics and Vehicle Physics
 

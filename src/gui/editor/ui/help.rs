@@ -137,7 +137,7 @@ pub fn create_modal_help_shortcuts(editor_state: &mut EditorState, ctx: &egui::C
             category_header(ui, "  Play / Simulate");
             binding_row(ui, &["Ctrl", "R"],          "Play");
             binding_row(ui, &["Ctrl", "Shift", "R"], "Play in fullscreen");
-            binding_row(ui, &["Ctrl", "T"],          "Simulate - physics runs, the editor stays open");
+            binding_row(ui, &["Ctrl", "T"],          "Simulate - physics and particles run, no game logic, the editor stays open");
             binding_row(ui, &["Ctrl", "Shift", "T"], "Simulate in fullscreen");
             binding_row(ui, &["Ctrl", "P"],          "Pause / resume (play: editor + free camera at the game view)");
             binding_row(ui, &["Escape"],             "Stop - back to edit mode");

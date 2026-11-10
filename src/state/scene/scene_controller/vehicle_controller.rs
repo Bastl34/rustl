@@ -5338,7 +5338,7 @@ mod tests
     fn build_kart(start: Vector3<f32>, yaw: f32) -> Option<(Scene, VehicleController, u32)>
     {
         let meshes = gltf_meshes(KART_FILE)?;
-        let mut scene = Scene::new("kart bench");
+        let scene = Scene::new("kart bench");
 
         let node = Node::new("kart");
         node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::new("trans", start + Vector3::new(0.0, 0.02, 0.0), Vector3::new(0.0, yaw, 0.0), Vector3::new(1.0, 1.0, 1.0))))));

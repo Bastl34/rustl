@@ -320,12 +320,20 @@ impl Animation
 
     pub fn percentage(&self) -> f32
     {
-        if !self.running()
+        let delta = self.to - self.from;
+        if !self.running() || delta <= 0.0
         {
             return 0.0;
         }
 
-        1.0 / self.to * self.current_local_time
+        if self.looped
+        {
+            (self.current_local_time % delta) / delta
+        }
+        else
+        {
+            (self.current_local_time / delta).min(1.0)
+        }
     }
 
     pub fn animation_time(&self) -> f32
@@ -775,7 +783,7 @@ impl Component for Animation
         Some(Arc::new(RwLock::new(Box::new(animation))))
     }
 
-    fn update(&mut self, _node: NodeItem, _io: &mut InputOutput, time: u128, _frame_scale: f32, frame: u64)
+    fn update(&mut self, _node: NodeItem, _io: &mut InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, time: u128, _frame_scale: f32, frame: u64)
     {
         self.current_time = time;
 

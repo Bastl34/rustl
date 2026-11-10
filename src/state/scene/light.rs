@@ -60,6 +60,9 @@ pub struct Light
     pub range: f32, // 0.0 == undefined (infinity)
     pub distance_based_intensity: bool,
     pub max_angle: f32, //in rad
+    // spot lights: the outer share of the cone that fades out (0 = hard edge, 1 = soft from the center)
+    #[serde(default)]
+    pub softness: f32,
     pub light_type: LightType,
 
     #[serde(default = "default_cast_shadow")]
@@ -95,6 +98,7 @@ impl Light
             range: range,
             distance_based_intensity: false,
             max_angle: 0.0,
+            softness: 0.0,
             light_type: LightType::Point,
 
             cast_shadow: default_cast_shadow(),
@@ -124,6 +128,7 @@ impl Light
             range: 0.0,
             distance_based_intensity: false,
             max_angle: 0.0,
+            softness: 0.0,
             light_type: LightType::Directional,
 
             cast_shadow: default_cast_shadow(),
@@ -153,6 +158,7 @@ impl Light
             range: range,
             distance_based_intensity: false,
             max_angle: max_angle,
+            softness: 0.0,
             light_type: LightType::Spot,
 
             cast_shadow: default_cast_shadow(),
@@ -182,6 +188,7 @@ impl Light
             range: 0.0,
             distance_based_intensity: false,
             max_angle: 0.0,
+            softness: 0.0,
             light_type: LightType::Hemispheric,
 
             cast_shadow: false, // hemispheric lights can not cast shadows
@@ -243,6 +250,7 @@ impl Light
         let mut intensity;
         let mut range;
         let mut max_angle;
+        let mut softness;
         let mut light_type;
         let mut distance_based_intensity;
         let mut cast_shadow;
@@ -275,6 +283,7 @@ impl Light
             intensity = light.intensity;
             range = light.range;
             max_angle = light.max_angle.to_degrees();
+            softness = light.softness;
             light_type = light.light_type;
             distance_based_intensity = light.distance_based_intensity;
             cast_shadow = light.cast_shadow;
@@ -328,6 +337,10 @@ impl Light
                 changed = ui.add(egui::Slider::new(&mut intensity, 0.0..=10000.0).text("intensity")).changed() || changed;
             }
             changed = ui.add(egui::Slider::new(&mut max_angle, 0.0..=180.0).text("max_angle").suffix("°")).changed() || changed;
+            if light_type == LightType::Spot
+            {
+                changed = ui.add(egui::Slider::new(&mut softness, 0.0..=1.0).text("soft edge")).on_hover_text("outer share of the cone that fades out (0 = hard edge)").changed() || changed;
+            }
             changed = ui.add(egui::Slider::new(&mut range, 0.0..=1000.0).text("range")).changed() || changed;
 
             ui.horizontal(|ui|
@@ -377,6 +390,7 @@ impl Light
             light.range = range;
             light.intensity = intensity;
             light.max_angle = max_angle.to_radians();
+            light.softness = softness;
             light.light_type = light_type;
             light.distance_based_intensity = distance_based_intensity;
             light.cast_shadow = cast_shadow;

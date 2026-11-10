@@ -618,12 +618,12 @@ impl Component for Sound
         Some(Arc::new(RwLock::new(Box::new(sound))))
     }
 
-    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, _time: u128, _frame_scale: f32, _frame: u64)
     {
         self.update_state(Some(node), None, false);
     }
 
-    fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, _io: &mut InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, _time: u128, _frame_scale: f32, _frame: u64)
     {
         self.update_state(node, Some(instance), false);
     }

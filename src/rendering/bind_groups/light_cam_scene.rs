@@ -69,6 +69,20 @@ impl LightCamSceneBindGroup
                     },
                     count: None,
                 },
+
+                // translucent shadows of particles (texture array, read via textureLoad)
+                wgpu::BindGroupLayoutEntry
+                {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture
+                    {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
             ],
             label: Some("light_cam_scene_bind_group_layout"),
         })
@@ -92,6 +106,7 @@ impl LightCamSceneBindGroup
                 wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(scene_buffer.shadow.get_atlas_view()) },
                 wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(scene_buffer.shadow.get_sampler()) },
                 wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(scene_buffer.ssao_blur_texture.get_view()) },
+                wgpu::BindGroupEntry { binding: 8, resource: wgpu::BindingResource::TextureView(scene_buffer.shadow.get_translucent_view()) },
             ],
             label: Some(bind_group_name.as_str()),
         });

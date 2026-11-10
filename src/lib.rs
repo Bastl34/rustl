@@ -18,6 +18,7 @@ pub mod rendering
     pub mod morph_target;
     pub mod bounding_boxes;
     pub mod debug_volumes;
+    pub mod particles;
     pub mod visibility;
     pub mod hzb_cull_buffer;
     pub mod draw_slots;
@@ -89,6 +90,7 @@ pub mod state
             pub mod look_at;
             pub mod sound;
             pub mod delay;
+            pub mod particle_emitter;
         }
 
         pub mod physics

@@ -290,14 +290,10 @@ impl VehicleSoundPlayer
         }
     }
 
-    // pseudo random -1..1 (xorshift32) - no need for more here
+    // pseudo random -1..1 - no need for more here
     fn random_signed(&mut self) -> f32
     {
-        self.random_state ^= self.random_state << 13;
-        self.random_state ^= self.random_state >> 17;
-        self.random_state ^= self.random_state << 5;
-
-        (self.random_state as f32 / u32::MAX as f32) * 2.0 - 1.0
+        crate::helper::math::xorshift32(&mut self.random_state) * 2.0 - 1.0
     }
 
     pub fn update(&mut self, settings: &VehicleSoundSettings, input: &VehicleSoundInput, dt: f32)

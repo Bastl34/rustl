@@ -18,7 +18,7 @@ use crate::gui::editor::project_code;
 use crate::resources::resources::{self, RESOURCE_SCHEME};
 use crate::state::project::loader::{apply_editor_project, apply_editor_scene, load_editor_project};
 use crate::state::scene::utilities::origin::Origin;
-use crate::state::project::project::{AudioSettings, SceneObject, SceneObjectOptions, ProjectFile, ProjectFileFormat, ProjectLocalData,ProjectSceneRef, SceneFile, SceneSettings, SceneSound, ProjectSettings, RESUSE_MATERIALS_TAG};
+use crate::state::project::project::{AudioSettings, SceneObject, SceneObjectOptions, ProjectFile, ProjectFileFormat, ProjectLocalData,ProjectSceneRef, SceneFile, SceneSettings, SceneSound, SceneTexture, ProjectSettings, RESUSE_MATERIALS_TAG};
 use crate::state::resources::sound_source::SoundSourceItem;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::scene_controller::scene_controller::SceneControllerBox;
@@ -50,6 +50,33 @@ fn extract_sounds(sound_sources: &[SoundSourceItem], path: &str) -> Vec<SceneSou
     }).collect()
 }
 
+// the image files the scene needs (its list + its particle emitters) - by the main uuid, aliases resolve to it
+fn extract_textures(state: &State, scene: &crate::state::scene::scene::Scene, path: &str) -> Vec<SceneTexture>
+{
+    let uuids = scene.texture_uuids();
+    let mut textures: Vec<SceneTexture> = vec![];
+
+    for texture in state.resources.textures.values()
+    {
+        let texture = texture.read().unwrap();
+        if texture.delete_later_request || !uuids.iter().any(|uuid| texture.matches_uuid(uuid))
+        {
+            continue;
+        }
+
+        let Some(source) = texture.source.as_ref() else
+        {
+            console_warning!("texture '{}' has no file - not saved", texture.name);
+            continue;
+        };
+
+        textures.push(SceneTexture { uuid: texture.uuid.clone(), name: texture.name.clone(), source: asset_source_path(&source.origin_path, path) });
+    }
+
+    textures.sort_by(|a, b| a.name.cmp(&b.name).then(a.uuid.cmp(&b.uuid)));
+    textures
+}
+
 // bundled resources as "resources://...", other files relative to the project file if possible
 fn asset_source_path(origin: &str, path: &str) -> String
 {
@@ -76,7 +103,7 @@ fn extract_project_settings(state: &State) -> ProjectSettings
     }
 }
 
-fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, sounds: Vec<SceneSound>, path: &str) -> SceneFile
+fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, sounds: Vec<SceneSound>, textures: Vec<SceneTexture>, path: &str) -> SceneFile
 {
     let objects = scene.nodes.iter()
         .filter_map(|node_item| extract_node(node_item, path))
@@ -126,6 +153,7 @@ fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, sounds: Vec<S
         tags: scene.tags.scene_tags(),
         editor_cameras,
         sounds,
+        textures,
         objects,
         cameras,
         lights,
@@ -316,7 +344,7 @@ pub fn save_editor_project(state: &mut State, editor_state: &mut EditorState, pa
             continue;
         }
 
-        let editor_scene = extract_editor_scene(scene, sounds_of(scene.id), path);
+        let editor_scene = extract_editor_scene(scene, sounds_of(scene.id), extract_textures(state, scene, path), path);
         total_objects += editor_scene.objects.len();
 
         // determine scene file path: reuse source if set, otherwise generate from name

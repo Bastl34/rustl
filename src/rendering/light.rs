@@ -34,8 +34,11 @@ pub struct LightUniform
     pub shadow_bias: f32,
     pub shadow_strength: f32,
 
+    // spot lights: outer share of the cone that fades out
+    pub softness: f32,
+
     // uniform array stride must be a multiple of 16 bytes
-    pub _padding: [f32; 3],
+    pub _padding: [f32; 2],
 }
 
 impl LightUniform
@@ -93,7 +96,9 @@ impl LightUniform
             shadow_bias: light.shadow_bias,
             shadow_strength: light.shadow_strength.clamp(0.0, 1.0),
 
-            _padding: [0.0; 3],
+            softness: light.softness.clamp(0.0, 1.0),
+
+            _padding: [0.0; 2],
         }
     }
 }

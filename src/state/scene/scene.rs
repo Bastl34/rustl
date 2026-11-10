@@ -3,14 +3,14 @@
 use std::{cell::RefCell, collections::HashMap, fmt, mem::swap, sync::{Arc, RwLock}, vec};
 use web_time::Instant;
 
-use nalgebra::{Vector2, Vector3};
+use nalgebra::{Matrix4, Vector2, Vector3};
 use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, scene_controller::scene_controller::ControllerPhase, utilities::{extras::Extras, tags::{self, Tags}}}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput, RunMode, get_delta_t}}};
 
-use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, layers::LAYER_MASK_USER, light::{Light, LightItem}, node::{Node, NodeItem}, physics::physics_world::PhysicsWorld, scene_controller::scene_controller::SceneControllerBox};
+use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh, particle_emitter::ParticleEmitter}, layers::LAYER_MASK_USER, light::{Light, LightItem}, node::{Node, NodeItem}, physics::physics_world::PhysicsWorld, scene_controller::scene_controller::SceneControllerBox};
 
 pub type SceneItem = Box<Scene>;
 pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u32>) -> bool>;
@@ -90,6 +90,9 @@ pub struct Scene
 
     // the uuids of the sound list of its file - saved again with it (kept when it is unloaded)
     pub file_sounds: Vec<String>,
+
+    // the same for the texture list
+    pub file_textures: Vec<String>,
 
     pub extras: Extras,
     pub tags: Tags,
@@ -249,6 +252,7 @@ impl Scene
             preload: false,
             file_missing: false,
             file_sounds: vec![],
+            file_textures: vec![],
 
             extras: Extras::new(),
             tags: Tags::new(),
@@ -306,6 +310,11 @@ impl Scene
                 let id = texture.read().unwrap().id;
                 textures.insert(id, texture);
             }
+        }
+        for texture in self.emitter_textures()
+        {
+            let id = texture.read().unwrap().id;
+            textures.insert(id, texture);
         }
 
         let mut mesh_resources: HashMap<u32, MeshResourceItem> = HashMap::new();
@@ -381,6 +390,23 @@ impl Scene
 
         controller.append(&mut self.controller);
         self.controller = controller;
+
+        for node in self.list_all_nodes()
+        {
+            let all_components = node.read().unwrap().components.clone();
+            for (index, component) in all_components.iter().enumerate()
+            {
+                // out of the list while it runs - a lookup of the node would lock it again (like Node::update)
+                {
+                    let mut node = node.write().unwrap();
+                    node.components = all_components.iter().enumerate().filter(|(i, _)| *i != index).map(|(_, c)| c.clone()).collect();
+                }
+
+                component.write().unwrap().on_run_mode_changed(node.clone(), old, new);
+            }
+
+            node.write().unwrap().components = all_components;
+        }
     }
 
     fn update_controller(&mut self, phase: ControllerPhase, io: &mut InputOutput, frame_scale: f32, run_mode: RunMode)
@@ -463,7 +489,7 @@ impl Scene
         let mut skinned_nodes = vec![];
         for node in &self.nodes
         {
-            let mut update_result = Node::update(node.clone(), io, time, frame_scale, frame, run_mode);
+            let mut update_result = Node::update(node.clone(), io, &self.physics, time, frame_scale, frame, run_mode);
 
             if update_result.delete_nodes.len() > 0
             {
@@ -477,9 +503,17 @@ impl Scene
         }
 
         // ********** skinned bounding volumes **********
+        // cache the joint matrices for the same skeleton (the matrices are shared by all meshes of a skeleton)
+        let mut joint_cache: HashMap<Vec<u32>, Option<Vec<Matrix4<f32>>>> = HashMap::new();
+
         for node in &skinned_nodes
         {
             let node = node.read().unwrap();
+
+            if !node.is_visible()
+            {
+                continue;
+            }
 
             let meshes = node.find_components::<Mesh>();
             if meshes.len() == 0
@@ -487,7 +521,7 @@ impl Scene
                 continue;
             }
 
-            let joint_matrices = node.get_joint_transform_vec(true);
+            let joint_matrices = joint_cache.entry(node.skin_key()).or_insert_with(|| node.get_joint_transform_vec(true));
             if let Some(joint_matrices) = joint_matrices
             {
                 for mesh in meshes
@@ -1182,6 +1216,41 @@ impl Scene
         uuids
     }
 
+    // the textures of the particle emitters
+    pub fn emitter_textures(&self) -> Vec<TextureItem>
+    {
+        let mut textures = vec![];
+        for node in Scene::list_all_child_nodes(&self.nodes)
+        {
+            for emitter in node.read().unwrap().find_components::<ParticleEmitter>()
+            {
+                component_downcast!(emitter, ParticleEmitter);
+                textures.extend(emitter.get_data().texture.as_ref().cloned());
+            }
+        }
+        textures
+    }
+
+    // the textures of the materials and the particle emitters
+    pub fn used_texture_ids(&self) -> std::collections::HashSet<u32>
+    {
+        let mut ids: std::collections::HashSet<u32> = self.emitter_textures().iter().map(|texture| texture.read().unwrap().id).collect();
+        for material in self.materials.values()
+        {
+            component_downcast!(material, Material);
+            ids.extend(material.get_all_textures().iter().map(|texture| texture.read().unwrap().id));
+        }
+        ids
+    }
+
+    // the texture files this scene needs: the list of its file and the ones its particle emitters use
+    pub fn texture_uuids(&self) -> std::collections::HashSet<String>
+    {
+        let mut uuids: std::collections::HashSet<String> = self.file_textures.iter().cloned().collect();
+        uuids.extend(self.emitter_textures().iter().map(|texture| texture.read().unwrap().uuid.clone()));
+        uuids
+    }
+
     pub fn list_all_child_nodes(nodes: &Vec<NodeItem>) -> Vec<NodeItem>
     {
         let mut all_nodes = vec![];
@@ -1454,19 +1523,10 @@ impl Scene
             }
 
             // delete textures if not in use anymore
+            let used_textures = if textures_to_delete.is_empty() { std::collections::HashSet::new() } else { self.used_texture_ids() };
             for (texture_id, texture) in textures_to_delete
             {
-                let mut usage = 0;
-                for (_material_id, material) in &self.materials
-                {
-                    component_downcast!(material, Material);
-                    if material.has_texture_id(texture_id)
-                    {
-                        usage += 1;
-                    }
-                }
-
-                if usage == 0
+                if !used_textures.contains(&texture_id)
                 {
                     console_log!("deleting texture {} {}", &texture.read().unwrap().name, texture_id);
                     texture.write().unwrap().delete_later();

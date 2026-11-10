@@ -89,7 +89,7 @@ impl Component for AnimationBlending
         None
     }
 
-    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, time: u128, frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, time: u128, frame_scale: f32, _frame: u64)
     {
         //if (self.get_data().from.is_none() && self.get_data().to.is_none()) || !self.base.is_enabled
         if !self.base.is_enabled

@@ -55,6 +55,10 @@ pub struct TargetRotationController
     #[serde(default = "default_true")]
     pub mouse_input: bool,
 
+    // off = the right mouse button does not move the pivot (games that use it for aiming)
+    #[serde(default = "default_true")]
+    pub mouse_pan: bool,
+
     pub auto_rotate: Option<f32>,
     pub auto_rotate_timeout: u64,
 
@@ -119,6 +123,7 @@ impl TargetRotationController
             mouse_sensitivity,
             mouse_wheel_sensitivity,
             mouse_input: true,
+            mouse_pan: true,
 
             auto_rotate: None,
             auto_rotate_timeout: DEFAULT_AUTO_ROTATE_TIMEOUT,
@@ -165,6 +170,7 @@ impl TargetRotationController
             mouse_sensitivity: DEFAULT_MOUSE_SENSITIVITY,
             mouse_wheel_sensitivity: DEFAULT_MOUSE_WHEEL_SENSITIVITY,
             mouse_input: true,
+            mouse_pan: true,
 
             auto_rotate: None,
             auto_rotate_timeout: DEFAULT_AUTO_ROTATE_TIMEOUT,
@@ -373,7 +379,7 @@ impl CameraController for TargetRotationController
         }
 
         // offset
-        if io.input_manager.mouse.is_holding(MouseButton::Right) && !approx_zero_vec2(&velocity)
+        if self.mouse_pan && io.input_manager.mouse.is_holding(MouseButton::Right) && !approx_zero_vec2(&velocity)
         {
             let delta_x = velocity.x * self.mouse_sensitivity.x;
             let delta_y = velocity.y * self.mouse_sensitivity.y;

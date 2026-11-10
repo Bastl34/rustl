@@ -266,7 +266,7 @@ pub fn create_modal_new_project(editor_state: &mut EditorState, state: &mut Stat
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
             {
                 let button_size = egui::vec2(78.0, 28.0);
-                if ui.add_enabled(error.is_none(), egui::Button::new("Create").min_size(button_size)).clicked()
+                if ui.add_enabled(error.is_none(), egui::Button::new(egui::RichText::new("Create").strong().color(egui::Color32::WHITE)).fill(egui::Color32::from_rgb(80, 120, 200)).min_size(button_size)).clicked()
                 {
                     create = true;
                 }
@@ -434,11 +434,11 @@ pub fn create_modal_component_add(editor_state: &mut EditorState, state: &mut St
     {
         ui.label("Add your component");
 
-        ui.horizontal(|ui|
+        let name_edit = ui.horizontal(|ui|
         {
             ui.label("Name: ");
-            ui.text_edit_singleline(&mut editor_state.add_component_name);
-        });
+            ui.text_edit_singleline(&mut editor_state.add_component_name)
+        }).inner;
 
         ui.horizontal(|ui|
         {
@@ -461,7 +461,11 @@ pub fn create_modal_component_add(editor_state: &mut EditorState, state: &mut St
             });
         });
 
-        if ui.button("Add").clicked()
+        // enter in the name field or with nothing focused (not while picking in the combo box)
+        let enter = ui.input(|input| input.key_pressed(egui::Key::Enter)) && (name_edit.lost_focus() || ui.memory(|memory| memory.focused().is_none()));
+
+        let add_button = egui::Button::new(egui::RichText::new("Add").strong().color(egui::Color32::WHITE)).fill(egui::Color32::from_rgb(80, 120, 200));
+        if ui.add(add_button).clicked() || enter
         {
             let (node_id, instance_id) = editor_state.get_object_ids();
 

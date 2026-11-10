@@ -345,6 +345,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     engine.push(format!("occlusion culled objects: {}", state.stats.occlusion_culled_objects));
     engine.push(format!("shadow views: {}", state.stats.shadow_views));
     engine.push(format!("shadow draw calls: {}", state.stats.shadow_draw_calls));
+    engine.push(format!("particles: {} ({} emitters)", state.stats.particles, state.stats.particle_emitters));
     engine.push(format!("textures: {}", state.resources.textures.len()));
     engine.push(format!("sounds: {}", state.resources.sound_sources.len()));
     engine.push(format!("materials: {}", materials));

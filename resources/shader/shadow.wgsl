@@ -302,7 +302,7 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     // material shader hook (normal without skinning - good enough for the shadow)
     if (MATERIAL_SHADER)
     {
-        var vertex = CustomVertex(world_position.xyz / world_position.w, normalize((model_matrix * vec4<f32>(model.normal, 0.0)).xyz), model_pos.xyz, model.tex_coords_0_1.xy, model.tex_coords_0_1.zw, model.color, model_matrix[3].xyz, model_matrix);
+        var vertex = CustomVertex(world_position.xyz / world_position.w, normalize((model_matrix * vec4<f32>(model.normal, 0.0)).xyz), model_pos.xyz, model.tex_coords_0_1.xy, model.tex_coords_0_1.zw, model.color, model_matrix[3].xyz, model_matrix, instance.color);
         custom_vertex(&vertex);
         world_position = vec4<f32>(vertex.position, 1.0);
 
@@ -338,6 +338,7 @@ struct CustomVertex
     color: vec4<f32>, // vertex color (used when the material uses vertex colors)
     object_position: vec3<f32>, // world position of the object origin (read only)
     model: mat4x4<f32>, // object -> world (read only)
+    instance_color: vec4<f32>, // color of the instance (read only, alpha = visibility) - can carry per instance data
 };
 
 struct CustomSurfaceInput
@@ -362,6 +363,8 @@ fn custom_param(index: u32) -> f32 { return material.custom_params[index / 4u][i
 fn get_time() -> f32 { return material.time; }
 // 0..1 per object from its position (e.g. in.object_position) - changes when it moves
 fn instance_seed(origin: vec3<f32>) -> f32 { return fract(sin(dot(origin, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453); }
+// true while the shadow maps are drawn (e.g. fewer leaves there)
+fn is_shadow_pass() -> bool { return true; }
 
 fn custom_vertex(vertex: ptr<function, CustomVertex>) {}
 fn custom_surface(in: CustomSurfaceInput, surface: ptr<function, CustomSurface>) {}

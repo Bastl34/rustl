@@ -10,6 +10,7 @@ use crate::state::helper::render_item::RenderItemOption;
 use crate::state::resources::mesh_resource::MeshResourceItem;
 use crate::state::scene::manager::id_manager;
 use crate::state::scene::node::{NodeItem, InstanceItemArc};
+use crate::state::scene::physics::physics_world::PhysicsWorld;
 use crate::state::scene::utilities::extras::Extras;
 use crate::state::scene::utilities::tags::Tags;
 use crate::state::state::{InputOutput, RunMode};
@@ -37,13 +38,16 @@ pub trait Component: Any + Send + Sync
 
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>);
 
-    fn update(&mut self, node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64);
-    fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64);
+    fn update(&mut self, node: NodeItem, io: &mut InputOutput, physics: &PhysicsWorld, time: u128, frame_scale: f32, frame: u64);
+    fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, io: &mut InputOutput, physics: &PhysicsWorld, time: u128, frame_scale: f32, frame: u64);
 
     fn runs_in_mode(&self, run_mode: RunMode) -> bool
     {
         run_mode.updates_engine()
     }
+
+    // the selected mode changed (not on pause) - e.g. back to edit
+    fn on_run_mode_changed(&mut self, _node: NodeItem, _old: RunMode, _new: RunMode) {}
 
     fn duplicate(&self) -> Option<ComponentItem>;
     fn cleanup_node(&mut self, node: NodeItem) -> bool; // node was deleted and should be removed from component
@@ -233,11 +237,11 @@ macro_rules! component_impl_no_update
 {
     () =>
     {
-        fn update(&mut self, _node: NodeItem, _io: &mut crate::state::state::InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
+        fn update(&mut self, _node: NodeItem, _io: &mut crate::state::state::InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
 
-        fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &crate::state::scene::node::InstanceItemArc, _io: &mut crate::state::state::InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
+        fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &crate::state::scene::node::InstanceItemArc, _io: &mut crate::state::state::InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
     };
@@ -248,7 +252,7 @@ macro_rules! component_impl_no_update_instance
 {
     () =>
     {
-        fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &crate::state::scene::node::InstanceItemArc, _io: &mut crate::state::state::InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
+        fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &crate::state::scene::node::InstanceItemArc, _io: &mut crate::state::state::InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
     };

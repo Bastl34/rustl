@@ -239,13 +239,15 @@ fn read_node(gltf_node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_pat
                     let light = Light::new_point((*name).clone(), pos, color, intensity, range.unwrap_or(0.0));
                     asset_container.lights.push(Box::new(light));
                 },
-                gltf::khr_lights_punctual::Kind::Spot { inner_cone_angle: _, outer_cone_angle } =>
+                gltf::khr_lights_punctual::Kind::Spot { inner_cone_angle, outer_cone_angle } =>
                 {
                     let name = light.name().unwrap_or("Point").to_string();
                     console_log!("load light {}", name.as_str());
                     let name = Arc::new(name);
 
-                    let light = Light::new_spot((*name).clone(), pos, dir, color, outer_cone_angle, intensity, range.unwrap_or(0.0));
+                    let mut light = Light::new_spot((*name).clone(), pos, dir, color, outer_cone_angle, intensity, range.unwrap_or(0.0));
+                    // glTF fades from the inner to the outer cone
+                    light.softness = if outer_cone_angle > 0.0 { (1.0 - inner_cone_angle / outer_cone_angle).clamp(0.0, 1.0) } else { 0.0 };
                     asset_container.lights.push(Box::new(light));
                 },
             };

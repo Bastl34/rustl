@@ -190,13 +190,13 @@ impl Component for TransformationAnimation
         None
     }
 
-    fn update(&mut self, node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
+    fn update(&mut self, node: NodeItem, io: &mut InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, time: u128, frame_scale: f32, frame: u64)
     {
         let node = node.write().unwrap();
         self._update(node.find_component::<Transformation>(), io, time, frame_scale, frame);
     }
 
-    fn update_instance(&mut self, _node: Option<NodeItem>, instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
+    fn update_instance(&mut self, _node: Option<NodeItem>, instance: &InstanceItemArc, io: &mut InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, time: u128, frame_scale: f32, frame: u64)
     {
         let instance = instance.read().unwrap();
         self._update(instance.find_component::<Transformation>(), io, time, frame_scale, frame);

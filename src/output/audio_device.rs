@@ -89,8 +89,10 @@ impl Default for AudioDevice
             listeners: vec![(Point3::<f32>::new(-1.0, 0.0, 0.0), Point3::<f32>::new(1.0, 0.0, 0.0))],
         });
 
-        if let Ok(stream) = DeviceSinkBuilder::open_default_sink()
+        if let Ok(mut stream) = DeviceSinkBuilder::open_default_sink()
         {
+            // no note on stdout when the app closes
+            stream.log_on_drop(false);
             Self
             {
                 stream: Some(Arc::new(Mutex::new(SafeOutputStream::new(stream)))),

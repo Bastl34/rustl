@@ -112,6 +112,7 @@ enum CharAnimationType
     TurnRight,
     Jump,
     Crouch,
+    CrouchWalk,
     Roll,
     Action,
     Fall,
@@ -132,6 +133,7 @@ pub struct AnimationComponents
     run: Option<ComponentItem>,
     jump: Option<ComponentItem>,
     crouch: Option<ComponentItem>,
+    crouch_walk: Option<ComponentItem>,
     roll: Option<ComponentItem>,
     strafe_left_walk: Option<ComponentItem>,
     strafe_right_walk: Option<ComponentItem>,
@@ -157,6 +159,7 @@ impl Default for AnimationComponents
             run: None,
             jump: None,
             crouch: None,
+            crouch_walk: None,
             roll: None,
             strafe_left_walk: None,
             strafe_right_walk: None,
@@ -251,7 +254,13 @@ pub struct CharCollisionSettings
 fn default_roll_height_factor() -> f32 { 0.5 }
 fn default_crouch_height_factor() -> f32 { 0.65 }
 
+// a jump press is kept until the ground comes / the ground still counts after it was lost
+const JUMP_GRACE: f32 = 0.15; // in s
+
 fn default_push_bodies() -> bool { true }
+
+// half the walking speed
+fn default_crouch_walk_speed() -> Option<f32> { Some(MOVEMENT_SPEED * 0.5) }
 
 // roughly a person, in the same units the rest of the physics uses
 fn default_push_mass() -> f32 { 70.0 }
@@ -298,6 +307,10 @@ pub struct CharacterController
     pub fly_speed: f32,
     pub fly_speed_fast: f32,
 
+    // C held: walk at this speed with the low capsule - None = C stops the character
+    #[serde(default = "default_crouch_walk_speed")]
+    pub crouch_walk_speed: Option<f32>,
+
     pub rotation_speed: f32,
 
     #[serde(default)]
@@ -318,7 +331,15 @@ pub struct CharacterController
 
     // toggled with caps lock
     #[serde(skip, default)]
-    sprint_lock: bool,
+    pub sprint_lock: bool,
+
+    // off: the controller moves the character but leaves its clips to the game
+    #[serde(skip, default = "default_true")]
+    pub drive_animations: bool,
+
+    // Some: the game decides crouching (toggles, lying down) instead of the C key - crouch_height_factor / crouch_walk_speed apply
+    #[serde(skip, default)]
+    pub crouch_override: Option<bool>,
 
     // capsule height factor while rolling/crouching, or still under something that leaves no room to grow - None = standing
     #[serde(skip, default)]
@@ -371,6 +392,12 @@ pub struct CharacterController
 
     #[serde(skip, default)]
     current_y_velocity: f32,
+
+    // seconds left: a jump press waits for the ground / the ground still counts after leaving it (coyote time)
+    #[serde(skip, default)]
+    jump_press_left: f32,
+    #[serde(skip, default)]
+    ground_grace_left: f32,
 
     pub gravity: f32,
     pub jump_force: f32,
@@ -428,6 +455,8 @@ impl CharacterController
             fly_speed: FLY_SPEED,
             fly_speed_fast: FLY_SPEED_FAST,
 
+            crouch_walk_speed: default_crouch_walk_speed(),
+
             rotation_speed: ROTATION_SPEED,
 
             control_mode: CharControlMode::default(),
@@ -436,6 +465,8 @@ impl CharacterController
             idle_turn: true,
             idle_turn_speed: IDLE_TURN_SPEED,
             sprint_lock: false,
+            drive_animations: true,
+            crouch_override: None,
             low_capsule: None,
 
             rotation_follow: false,
@@ -459,6 +490,8 @@ impl CharacterController
             reported_ground_loss: false,
 
             current_y_velocity: 0.0,
+            jump_press_left: 0.0,
+            ground_grace_left: 0.0,
             gravity: EARTH_GRAVITY,
             jump_force: JUMP_FORCE,
             max_fall_speed: MAX_FALL_SPEED,
@@ -574,10 +607,11 @@ impl CharacterController
             let node = node_arc.read().unwrap();
 
             self.animations.idle = node.find_animation_by_regex("(?i)^idle");
-            self.animations.walk = node.find_animation_by_include_exclude(&["walk".to_string()].to_vec(), &["strafe".to_string()].to_vec());
+            self.animations.walk = node.find_animation_by_include_exclude(&["walk".to_string()].to_vec(), &["strafe".to_string(), "crouch".to_string()].to_vec());
             self.animations.run = node.find_animation_by_include_exclude(&["run".to_string()].to_vec(), &["strafe".to_string()].to_vec());
             self.animations.jump = node.find_animation_by_regex("(?i)jump.*");
-            self.animations.crouch = node.find_animation_by_regex("(?i)crouch.*");
+            self.animations.crouch = node.find_animation_by_include_exclude(&["crouch".to_string()].to_vec(), &["walk".to_string()].to_vec());
+            self.animations.crouch_walk = node.find_animation_by_include_exclude(&["crouch".to_string(), "walk".to_string()].to_vec(), &vec![]);
             self.animations.roll = node.find_animation_by_regex("(?i)roll.*");
             self.animations.strafe_left_walk = node.find_animation_by_include_exclude(&["strafe".to_string(), "left".to_string(), "walk".to_string()].to_vec(), &vec![]);
             self.animations.strafe_right_walk = node.find_animation_by_include_exclude(&["strafe".to_string(), "right".to_string(), "walk".to_string()].to_vec(), &vec![]);
@@ -800,13 +834,15 @@ impl CharacterController
         let root_joint = Self::find_root_joint_node(&self.animation_node);
         self.root_joint_name = root_joint.as_ref().map(|joint| joint.read().unwrap().name.clone());
 
-        let axis = Vector3::new(self.animation.in_place_x, self.animation.in_place_y, self.animation.in_place_z);
+        let wanted = Vector3::new(self.animation.in_place_x, self.animation.in_place_y, self.animation.in_place_z);
+        let axis = root_joint.as_ref().map(|joint| self.in_place_axis_in_joint_space(joint, &wanted)).unwrap_or(wanted);
         let enabled = self.animation.locomotion_in_place;
 
         let locomotion = vec!
         [
             self.animations.walk.clone(),
             self.animations.run.clone(),
+            self.animations.crouch_walk.clone(),
             self.animations.strafe_left_walk.clone(),
             self.animations.strafe_right_walk.clone(),
             self.animations.strafe_left_run.clone(),
@@ -839,6 +875,27 @@ impl CharacterController
                 }
             }
         }
+    }
+
+    // The axis flags are meant in character space (y up), the clip keys live in the root joint's parent space (mixamo: z up).
+    fn in_place_axis_in_joint_space(&self, root_joint: &NodeItem, wanted: &Vector3<bool>) -> Vector3<bool>
+    {
+        let Some(node) = self.node.as_ref() else { return *wanted; };
+        let Some(parent) = root_joint.read().unwrap().parent.as_ref().cloned() else { return *wanted; };
+
+        let parent_full = parent.read().unwrap().get_full_transform();
+        let Some(char_inverse) = node.read().unwrap().get_full_transform().try_inverse() else { return *wanted; };
+        let relative = char_inverse * parent_full;
+
+        let mut axis = *wanted;
+        for local in 0..3
+        {
+            let dir = Vector3::new(relative[(0, local)].abs(), relative[(1, local)].abs(), relative[(2, local)].abs());
+            let dominant = if dir.x >= dir.y && dir.x >= dir.z { 0 } else if dir.y >= dir.z { 1 } else { 2 };
+            axis[local] = wanted[dominant];
+        }
+
+        axis
     }
 
     // Derives the capsule from the bounding box, assuming the node origin sits at the feet.
@@ -900,6 +957,12 @@ impl CharacterController
             let (center_offset, half_height, radius) = self.capsule_dimensions();
             scene.physics.set_character_shape(node, center_offset, half_height, radius);
         }
+    }
+
+    // the capsule height now relative to standing (1: standing) - below the wanted height while there is no room to get up
+    pub fn capsule_factor(&self) -> f32
+    {
+        self.low_capsule.unwrap_or(1.0)
     }
 
     fn capsule_dimensions(&self) -> (f32, f32, f32)
@@ -965,6 +1028,7 @@ impl CharacterController
             CharAnimationType::TurnRight => self.animations.turn_right.clone(),
             CharAnimationType::Jump => self.animations.jump.clone(),
             CharAnimationType::Crouch => self.animations.crouch.clone(),
+            CharAnimationType::CrouchWalk => self.animations.crouch_walk.clone(),
             CharAnimationType::Roll => self.animations.roll.clone(),
             CharAnimationType::Fall => self.animations.fall_idle.clone(),
             CharAnimationType::FallLanding => self.animations.fall_landing.clone(),
@@ -1003,6 +1067,7 @@ impl CharacterController
             CharAnimationType::TurnRight => self.animations.turn_right.as_ref(),
             CharAnimationType::Jump => self.animations.jump.as_ref(),
             CharAnimationType::Crouch => self.animations.crouch.as_ref(),
+            CharAnimationType::CrouchWalk => self.animations.crouch_walk.as_ref(),
             CharAnimationType::Roll => self.animations.roll.as_ref(),
             CharAnimationType::Fall => self.animations.fall_idle.as_ref(),
             CharAnimationType::FallLanding => self.animations.fall_landing.as_ref(),
@@ -1034,6 +1099,7 @@ impl CharacterController
             CharAnimationType::TurnRight => self.animations.turn_right.as_ref(),
             CharAnimationType::Jump => self.animations.jump.as_ref(),
             CharAnimationType::Crouch => self.animations.crouch.as_ref(),
+            CharAnimationType::CrouchWalk => self.animations.crouch_walk.as_ref(),
             CharAnimationType::Roll => self.animations.roll.as_ref(),
             CharAnimationType::Fall => self.animations.fall_idle.as_ref(),
             CharAnimationType::FallLanding => self.animations.fall_landing.as_ref(),
@@ -1064,6 +1130,7 @@ impl CharacterController
             self.animations.turn_right.clone(),
             self.animations.jump.clone(),
             self.animations.crouch.clone(),
+            self.animations.crouch_walk.clone(),
             self.animations.roll.clone(),
             self.animations.fall_idle.clone(),
             self.animations.fall_landing.clone(),
@@ -1104,6 +1171,7 @@ impl CharacterController
             self.animations.turn_right.clone(),
             self.animations.jump.clone(),
             self.animations.crouch.clone(),
+            self.animations.crouch_walk.clone(),
             self.animations.roll.clone(),
             self.animations.fall_idle.clone(),
             self.animations.fall_landing.clone(),
@@ -1146,6 +1214,7 @@ impl CharacterController
             self.animations.turn_right.clone(),
             self.animations.jump.clone(),
             self.animations.crouch.clone(),
+            self.animations.crouch_walk.clone(),
             self.animations.roll.clone(),
             self.animations.fall_idle.clone(),
             self.animations.fall_landing.clone(),
@@ -1177,6 +1246,9 @@ impl CharacterController
 
     fn is_jumping(&self) -> bool
     {
+        // the game drives the clips (it may play the jump clip itself): the rise of the jump counts
+        if !self.drive_animations { return !self.grounded && self.current_y_velocity > 0.0; }
+
         if let Some(animation_jump) = &self.animations.jump
         {
             component_downcast!(animation_jump, Animation);
@@ -1188,6 +1260,8 @@ impl CharacterController
 
     fn is_rolling(&self) -> bool
     {
+        if !self.drive_animations { return false; }
+
         if let Some(animation_roll) = &self.animations.roll
         {
             component_downcast!(animation_roll, Animation);
@@ -1199,6 +1273,8 @@ impl CharacterController
 
     fn is_landing(&self) -> bool
     {
+        if !self.drive_animations { return false; }
+
         if let Some(animation_fall_landing) = &self.animations.fall_landing
         {
             component_downcast!(animation_fall_landing, Animation);
@@ -1210,6 +1286,8 @@ impl CharacterController
 
     fn is_action(&self) -> bool
     {
+        if !self.drive_animations { return false; }
+
         for animation in &self.animations.actions
         {
             component_downcast!(animation, Animation);
@@ -1237,6 +1315,7 @@ impl CharacterController
             self.animations.turn_right.clone(),
             self.animations.jump.clone(),
             self.animations.crouch.clone(),
+            self.animations.crouch_walk.clone(),
             self.animations.roll.clone(),
             self.animations.fall_idle.clone(),
             self.animations.fall_landing.clone(),
@@ -1260,7 +1339,7 @@ impl CharacterController
 
     fn start_animation(&mut self, animation: CharAnimationType, index: usize, mix_type: AnimationMixing, animation_speed: f32, looped: bool, reverse: bool, reset_time: bool)
     {
-        if self.node.is_none()
+        if self.node.is_none() || !self.drive_animations
         {
             return;
         }
@@ -1294,6 +1373,7 @@ impl CharacterController
             CharAnimationType::TurnRight => self.animations.turn_right.as_ref(),
             CharAnimationType::Jump => self.animations.jump.as_ref(),
             CharAnimationType::Crouch => self.animations.crouch.as_ref(),
+            CharAnimationType::CrouchWalk => self.animations.crouch_walk.as_ref(),
             CharAnimationType::Roll => self.animations.roll.as_ref(),
             CharAnimationType::Fall => self.animations.fall_idle.as_ref(),
             CharAnimationType::FallLanding => self.animations.fall_landing.as_ref(),
@@ -1396,6 +1476,7 @@ impl SceneController for CharacterController
         self.animations.run = None;
         self.animations.jump = None;
         self.animations.crouch = None;
+        self.animations.crouch_walk = None;
         self.animations.roll = None;
         self.animations.strafe_left_walk = None;
         self.animations.strafe_right_walk = None;
@@ -1530,6 +1611,15 @@ impl SceneController for CharacterController
         // shift inverts the lock, so it walks while the lock is on
         let fast = io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift) != self.sprint_lock;
 
+        // C held: no movement, unless the game lets it walk crouched
+        let crouch_held = self.crouch_override.unwrap_or_else(|| io.input_manager.keyboard.is_holding(Key::C));
+        let crouch_walk = crouch_held && self.crouch_walk_speed.is_some() && !self.fly_mode;
+        let movement_blocked_by_crouch = crouch_held && !crouch_walk;
+
+        // crouched: every walk/run/strafe clip becomes the crouch walk clip (if there is one)
+        let crouch_clip = crouch_walk && self.animations.crouch_walk.is_some();
+        let locomotion = |animation: CharAnimationType| if crouch_clip { CharAnimationType::CrouchWalk } else { animation };
+
         // ********** fly mode **********
         if io.input_manager.keyboard.is_pressed(Key::Y)
         {
@@ -1581,7 +1671,7 @@ impl SceneController for CharacterController
         // ********** camera relative input **********
         let mut move_dir: Option<Vector3<f32>> = None;
         let mut strafing = false;
-        if camera_relative && !io.input_manager.keyboard.is_holding(Key::C) && !is_action && !is_landing
+        if camera_relative && !movement_blocked_by_crouch && !is_action && !is_landing
         {
             let keyboard = &io.input_manager.keyboard;
 
@@ -1615,7 +1705,7 @@ impl SceneController for CharacterController
                         (false, _, true) => CharAnimationType::Run,
                     };
 
-                    self.start_animation(animation, 0, AnimationMixing::Fade, 1.0, true, backwards, false);
+                    self.start_animation(locomotion(animation), 0, AnimationMixing::Fade, 1.0, true, backwards, false);
                 }
 
                 let speed = match (self.fly_mode, fast)
@@ -1625,6 +1715,7 @@ impl SceneController for CharacterController
                     (false, true) => self.movement_speed_fast,
                     (false, false) => self.movement_speed,
                 };
+                let speed = if crouch_walk { self.crouch_walk_speed.unwrap_or(speed) } else { speed };
 
                 // negative only for strafing backwards (roll direction), move_dir carries the actual direction
                 movement.z = if backwards { -speed } else { speed };
@@ -1634,13 +1725,13 @@ impl SceneController for CharacterController
         }
 
         // ********** forward/backward **********
-        if !camera_relative && !io.input_manager.keyboard.is_holding(Key::C) && !is_action && !is_landing
+        if !camera_relative && !movement_blocked_by_crouch && !is_action && !is_landing
         {
             if io.input_manager.keyboard.is_holding(Key::W) && !fast
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
-                    self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, 1.0, true, false, false);
+                    self.start_animation(locomotion(CharAnimationType::Walk), 0, AnimationMixing::Fade, 1.0, true, false, false);
                 }
 
                 movement.z = if self.fly_mode { self.fly_speed } else { self.movement_speed };
@@ -1650,7 +1741,7 @@ impl SceneController for CharacterController
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
-                    self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, 1.0, true, true, false);
+                    self.start_animation(locomotion(CharAnimationType::Walk), 0, AnimationMixing::Fade, 1.0, true, true, false);
                 }
                 movement.z = if self.fly_mode { -self.fly_speed } else { -self.movement_speed };
                 has_change = true;
@@ -1659,7 +1750,7 @@ impl SceneController for CharacterController
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
-                    self.start_animation(CharAnimationType::Run, 0, AnimationMixing::Fade, 1.0, true, false, false);
+                    self.start_animation(locomotion(CharAnimationType::Run), 0, AnimationMixing::Fade, 1.0, true, false, false);
                 }
 
                 movement.z = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed_fast };
@@ -1669,12 +1760,17 @@ impl SceneController for CharacterController
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
-                    self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, 1.0, true, true, false);
+                    self.start_animation(locomotion(CharAnimationType::Walk), 0, AnimationMixing::Fade, 1.0, true, true, false);
                 }
 
                 movement.z = if self.fly_mode { -self.fly_speed } else { -self.movement_speed };
                 has_change = true;
             }
+        }
+
+        if crouch_walk && movement.z != 0.0
+        {
+            movement.z = movement.z.signum() * self.crouch_walk_speed.unwrap_or(self.movement_speed);
         }
 
         // ********** left/right **********
@@ -1692,7 +1788,7 @@ impl SceneController for CharacterController
                     {
                         if !self.fly_mode
                         {
-                            self.start_animation(CharAnimationType::StrafeLeftRun, 0, AnimationMixing::Fade, 1.0, true, false, false);
+                            self.start_animation(locomotion(CharAnimationType::StrafeLeftRun), 0, AnimationMixing::Fade, 1.0, true, false, false);
                         }
                         movement.x = if self.fly_mode { -self.fly_speed_fast } else { -self.movement_speed_fast };
                     }
@@ -1700,7 +1796,7 @@ impl SceneController for CharacterController
                     {
                         if !self.fly_mode
                         {
-                            self.start_animation(CharAnimationType::StrafeLeftWalk, 0, AnimationMixing::Fade, 1.0, true, false, false);
+                            self.start_animation(locomotion(CharAnimationType::StrafeLeftWalk), 0, AnimationMixing::Fade, 1.0, true, false, false);
                         }
                         movement.x = if self.fly_mode { -self.fly_speed } else { -self.movement_speed };
                     }
@@ -1720,7 +1816,7 @@ impl SceneController for CharacterController
                     {
                         if !self.fly_mode
                         {
-                            self.start_animation(CharAnimationType::StrafeRightRun, 0, AnimationMixing::Fade, 1.0, true, false, false);
+                            self.start_animation(locomotion(CharAnimationType::StrafeRightRun), 0, AnimationMixing::Fade, 1.0, true, false, false);
                         }
                         movement.x = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed_fast };
                     }
@@ -1728,7 +1824,7 @@ impl SceneController for CharacterController
                     {
                         if !self.fly_mode
                         {
-                            self.start_animation(CharAnimationType::StrafeRightWalk, 0, AnimationMixing::Fade, 1.0, true, false, false);
+                            self.start_animation(locomotion(CharAnimationType::StrafeRightWalk), 0, AnimationMixing::Fade, 1.0, true, false, false);
                         }
                         movement.x = if self.fly_mode { self.fly_speed } else { self.movement_speed };
                     }
@@ -1738,39 +1834,37 @@ impl SceneController for CharacterController
             }
         }
 
-        // ********** up/down **********
+        if crouch_walk && movement.x != 0.0
+        {
+            movement.x = movement.x.signum() * self.crouch_walk_speed.unwrap_or(self.movement_speed);
+        }
+
+        // ********** up/down (fly mode, same speeds as the horizontal flight) **********
+        let vertical_speed = if fast { self.fly_speed_fast } else { self.fly_speed };
+
         if io.input_manager.keyboard.is_holding(Key::C) && self.fly_mode
         {
-            if fast
-            {
-                movement.y = -self.movement_speed_fast;
-            }
-            else
-            {
-                movement.y = -self.movement_speed;
-            }
-
+            movement.y = -vertical_speed;
             has_change = true;
         }
 
         if io.input_manager.keyboard.is_holding(Key::Space) && self.fly_mode
         {
-            if fast
-            {
-                movement.y = self.movement_speed_fast;
-            }
-            else
-            {
-                movement.y = self.movement_speed;
-            }
-
+            movement.y = vertical_speed;
             has_change = true;
         }
 
         // ********** jump **********
         let mut crouching = false;
-        if io.input_manager.keyboard.is_pressed_no_wait(Key::Space) && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !io.input_manager.keyboard.is_holding(Key::C) && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode && ((self.grounded && !is_jumping) || (self.jumps > 0 && self.jumps < self.max_jumps))
+        // a press shortly before the ground is kept, the ground counts a moment after it was lost (coyote time)
+        let jump_dt = get_delta_t(frame_scale);
+        if io.input_manager.keyboard.is_pressed_no_wait(Key::Space) { self.jump_press_left = JUMP_GRACE; } else { self.jump_press_left = (self.jump_press_left - jump_dt).max(0.0); }
+        if self.grounded { self.ground_grace_left = JUMP_GRACE; } else { self.ground_grace_left = (self.ground_grace_left - jump_dt).max(0.0); }
+        let on_ground = (self.grounded || self.ground_grace_left > 0.0 && self.jumps == 0) && !is_jumping;
+        if self.jump_press_left > 0.0 && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !crouch_held && !is_rolling && !is_action && !is_landing && !self.fly_mode && (on_ground && self.max_jumps > 0 || (self.jumps > 0 && self.jumps < self.max_jumps && !self.falling))
         {
+            self.jump_press_left = 0.0;
+            self.ground_grace_left = 0.0;
             let animation_speed = self.gravity / EARTH_GRAVITY;
             self.start_animation(CharAnimationType::Jump, 0, AnimationMixing::Fade, animation_speed, false, false, true);
             self.current_y_velocity = self.jump_force;
@@ -1778,7 +1872,7 @@ impl SceneController for CharacterController
             self.jumps += 1;
         }
         // ********** crouch **********
-        else if (io.input_manager.keyboard.is_holding(Key::C) || io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
+        else if (crouch_held || self.crouch_override.is_none() && io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
         {
             self.start_animation(CharAnimationType::Crouch, 0, AnimationMixing::Fade, 1.0, false, false, false);
             crouching = true;
@@ -1814,6 +1908,9 @@ impl SceneController for CharacterController
             self.start_animation(CharAnimationType::None, 0, AnimationMixing::Stop, 1.0, false, false, false);
             has_change = true;
         }
+
+        // walking crouched keeps the low capsule
+        if crouch_walk && !approx_zero_vec3(&movement) && !is_jumping && !is_rolling { crouching = true; }
 
         // ********** refresh states **********
         is_jumping = self.is_jumping();
@@ -2188,7 +2285,7 @@ impl SceneController for CharacterController
                 {
                     if !is_rolling
                     {
-                        self.start_animation(CharAnimationType::Fall, 0, AnimationMixing::Fade, 1.0, false, false, false);
+                        self.start_animation(CharAnimationType::Fall, 0, AnimationMixing::Fade, 1.0, true, false, false);
                     }
 
                     self.falling = true;
@@ -2350,6 +2447,18 @@ impl SceneController for CharacterController
         slider(ui, "Animation Fade Speed", "s - crossfade time between two clips", &mut self.fade_speed, 0.0..=1.0, 2);
         slider(ui, "Movement Speed", "m per frame at 60 fps - 0.05 is 3 m/s", &mut self.movement_speed, 0.0..=0.5, 2);
         slider(ui, "Movement Speed Fast", "m per frame at 60 fps while sprinting", &mut self.movement_speed_fast, 0.0..=0.5, 2);
+        ui.horizontal(|ui|
+        {
+            let mut crouch_walk = self.crouch_walk_speed.is_some();
+            if ui.checkbox(&mut crouch_walk, "Crouch Walk").on_hover_text("off: holding C stops the character").changed()
+            {
+                self.crouch_walk_speed = if crouch_walk { default_crouch_walk_speed() } else { None };
+            }
+        });
+        if let Some(speed) = &mut self.crouch_walk_speed
+        {
+            slider(ui, "Crouch Walk Speed", "m per frame at 60 fps while C is held", speed, 0.0..=0.5, 3);
+        }
         slider(ui, "Fly Speed", "fly mode, m per frame at 60 fps", &mut self.fly_speed, 0.0..=0.5, 2);
         slider(ui, "Fly Speed Fast", "fly mode, m per frame at 60 fps while sprinting", &mut self.fly_speed_fast, 0.0..=0.5, 2);
         slider(ui, "Rotation Speed", "tank controls: rad per frame at 60 fps that A/D turn the character", &mut self.rotation_speed, 0.0..=0.5, 2);

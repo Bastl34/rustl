@@ -5,6 +5,8 @@ use egui::{Color32, RichText, Ui};
 use nalgebra::Vector3;
 
 use crate::console_warning;
+use crate::state::resources::texture::TextureItem;
+use crate::state::scene::components::particle_emitter::ParticleEmitter;
 use crate::helper::math::{approx_equal, extract_scale_from_transform};
 use crate::state::scene::components::transformation::Transformation;
 use crate::{component_downcast, gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{extras_list, fit_hierarchy_heading, property_row, hierarchy_button_reserve, hierarchy_eye_button, hierarchy_lock_button, hierarchy_row_spacer, layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::{sleep_millis, spawn_thread}}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem, PhysicsBodyType, PhysicsShape}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
@@ -1614,6 +1616,25 @@ pub fn match_component_filter(component_filter: &String, component: ComponentIte
     return false;
 }
 
+// (name, path relative to the scene file) of the loaded textures that come from a file
+// the loaded textures with a file (only those can be saved), by name
+fn particle_texture_choices(state: &State) -> Vec<TextureItem>
+{
+    let mut choices: Vec<(String, TextureItem)> = state.resources.textures.values().filter_map(|item|
+    {
+        let texture = item.read().unwrap();
+        if texture.delete_later_request || texture.source.is_none() || texture.tags.contains(ENGINE_INTERNAL_TAG) || texture.tags.contains(EDITOR_INTERNAL_TAG)
+        {
+            return None;
+        }
+
+        Some((texture.name.clone(), item.clone()))
+    }).collect();
+
+    choices.sort_by(|a, b| a.0.cmp(&b.0));
+    choices.into_iter().map(|(_, texture)| texture).collect()
+}
+
 pub fn create_component_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     let (node_id, instance_id) = editor_state.get_object_ids();
@@ -1673,6 +1694,9 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
         }
 
         let components_amount = all_components.len();
+
+        // the loaded textures with a file, for the texture field of the particle emitters
+        let particle_textures = if node.read().unwrap().find_components::<ParticleEmitter>().is_empty() { vec![] } else { particle_texture_choices(state) };
 
         for (component_i, component) in all_components.iter().enumerate()
         {
@@ -1821,6 +1845,10 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
                 {
                     let mut component = component.write().unwrap();
+                    if let Some(emitter) = component.as_any_mut().downcast_mut::<ParticleEmitter>()
+                    {
+                        emitter.set_texture_choices(particle_textures.clone());
+                    }
                     component.ui(ui, Some(node.clone()));
                 }
 

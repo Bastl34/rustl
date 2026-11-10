@@ -5,21 +5,10 @@
 
 
 ## current state
+<img src="history/2026-11-06.webp" width="720">
+<br><br>
+
 <img src="history/2024-09-09-2.png" width="720">
-<sub>based on own custom models</sub>
-<br><br>
-
-
-<img src="history/2023-12-31-2.webp" width="720">
-<sub>model/animation from: https://www.mixamo.com/</sub>
-<br><br>
-
-<img src="history/2023-10-05.png" width="720">
-<sub>model from: https://sketchfab.com/3d-models/cathedral-faed84a829114e378be255414a7826ca</sub>
-<br><br>
-
-<img src="history/2023-11-12.png" width="720">
-<sub>model from: https://sketchfab.com/3d-models/apocalyptic-city-a0c8f318ed6f4075a97c2e55b1272495</sub>
 <br><br>
 
 ## requirements

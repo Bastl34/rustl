@@ -451,6 +451,12 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             ui.end_row();
         });
 
+        ui.horizontal(|ui|
+        {
+            ui.checkbox(&mut state.rendering.translucent_shadows, "Translucent Shadows");
+            ui.label("ℹ").on_hover_text("particles with \"translucent shadows\" let light through by their alpha (smoke) - costs a pass per shadow view they are in, off: they cast hard shadows");
+        });
+
         ui.separator();
 
         let ssao_support = state.rendering_adapter.ssao_support;
