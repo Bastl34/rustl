@@ -2,7 +2,7 @@ use std::{f32::consts::PI, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast_mut, console_warning, helper::option_or_id::OptionOrId, state::scene::{components::{component::{Component, ComponentItem}, sound::Sound}, exporter::serialization_helper::{deserialize_component, serialize_component}}};
+use crate::{component_downcast_mut, console_warning, helper::{math::{smooth_towards, xorshift32}, option_or_id::OptionOrId}, state::scene::{components::{component::{Component, ComponentItem}, sound::Sound}, exporter::serialization_helper::{default_one, default_true, deserialize_component, serialize_component}}};
 
 // pitch range a loop may be played at before it sounds broken
 const MIN_PITCH: f32 = 0.35;
@@ -35,7 +35,6 @@ const CROSSFADE_WIDTH: f32 = 0.4;
 // crossfade curve exponent: 2 = equal gain, 1 = equal power - the loops are partly correlated, measured 2 dB low with equal gain
 const CROSSFADE_POWER: f32 = 1.4;
 
-fn default_one() -> f32 { 1.0 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct EngineSoundLayer
@@ -71,7 +70,6 @@ pub struct VehicleSoundSettings
     pub electric_fade: bool,
 }
 
-fn default_true() -> bool { true }
 
 impl Default for VehicleSoundSettings
 {
@@ -293,7 +291,7 @@ impl VehicleSoundPlayer
     // pseudo random -1..1 - no need for more here
     fn random_signed(&mut self) -> f32
     {
-        crate::helper::math::xorshift32(&mut self.random_state) * 2.0 - 1.0
+        xorshift32(&mut self.random_state) * 2.0 - 1.0
     }
 
     pub fn update(&mut self, settings: &VehicleSoundSettings, input: &VehicleSoundInput, dt: f32)
@@ -308,11 +306,11 @@ impl VehicleSoundPlayer
             self.wobble_target = self.random_signed();
         }
 
-        self.wobble += (self.wobble_target - self.wobble) * (1.0 - (-WOBBLE_SMOOTHING * dt).exp());
+        self.wobble = smooth_towards(self.wobble, self.wobble_target, WOBBLE_SMOOTHING, dt);
         self.lfo_phase = (self.lfo_phase + WOBBLE_LFO_SPEED * dt) % (PI * 2.0);
 
         // the throttle jumps, the sound of it does not
-        self.smoothed_engine_load += (input.engine_load.clamp(0.0, 1.0) - self.smoothed_engine_load) * (1.0 - (-10.0 * dt).exp());
+        self.smoothed_engine_load = smooth_towards(self.smoothed_engine_load, input.engine_load.clamp(0.0, 1.0), 10.0, dt);
         let engine_load = self.smoothed_engine_load;
 
         let load_factor = 0.4 + 0.6 * engine_load;
@@ -362,7 +360,7 @@ impl VehicleSoundPlayer
         // ********** tires **********
         let target = input.squeal.clamp(0.0, 1.0);
         let rate = if target > self.squeal_level { TIRE_ATTACK } else { TIRE_RELEASE };
-        self.squeal_level += (target - self.squeal_level) * (1.0 - (-rate * dt).exp());
+        self.squeal_level = smooth_towards(self.squeal_level, target, rate, dt);
 
         let speed = input.speed.abs();
 
@@ -376,7 +374,7 @@ impl VehicleSoundPlayer
         // ********** scraping **********
         let target = input.scrape.clamp(0.0, 1.0);
         let rate = if target > self.scrape_level { TIRE_ATTACK } else { TIRE_RELEASE };
-        self.scrape_level += (target - self.scrape_level) * (1.0 - (-rate * dt).exp());
+        self.scrape_level = smooth_towards(self.scrape_level, target, rate, dt);
 
         if let Some(component) = settings.scrape.as_ref()
         {

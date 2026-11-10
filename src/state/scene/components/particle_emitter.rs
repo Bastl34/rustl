@@ -9,7 +9,7 @@ use crate::{component_impl_default, component_impl_no_cleanup_node, console_erro
 
 use super::component::{ComponentBase, Component};
 use crate::state::state::RunMode;
-use crate::helper::math::{direction_in_cone, xorshift32};
+use crate::helper::math::{direction_in_cone, seed_from_id, xorshift32};
 
 // m off the surface after a bounce
 const BOUNCE_LIFT: f32 = 0.005;
@@ -936,7 +936,7 @@ impl ParticleEmitter
     {
         if self.runtime.random == 0
         {
-            self.runtime.random = self.base.id.wrapping_mul(2654435761) | 1; // xorshift stays at 0 forever
+            self.runtime.random = seed_from_id(self.base.id);
         }
 
         xorshift32(&mut self.runtime.random)

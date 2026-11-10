@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use nalgebra::{Matrix4, Point3, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast_mut, helper::option_or_id::OptionOrId, state::{resources::mesh_resource::MeshResource, scene::{components::{material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, node::{InstanceItemArc, Node, NodeItem}, scene::Scene}, state::ENGINE_INTERNAL_TAG}};
+use crate::{component_downcast_mut, helper::option_or_id::OptionOrId, state::{scene::exporter::serialization_helper::default_true, resources::mesh_resource::MeshResource, scene::{components::{material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, node::{InstanceItemArc, Node, NodeItem}, scene::Scene}, state::ENGINE_INTERNAL_TAG}};
 
 // below it a tire leaves no mark
 const MIN_STRENGTH: f32 = 0.05;
@@ -20,7 +20,6 @@ const FIRST_BLOCK: usize = 256;
 // size of a waiting piece - not 0, Transformation inverts its matrix
 const COLLAPSED_SCALE: f32 = 0.0001;
 
-fn default_true() -> bool { true }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct TireMarkSettings

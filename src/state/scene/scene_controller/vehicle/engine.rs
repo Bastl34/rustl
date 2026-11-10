@@ -1,5 +1,7 @@
 use std::f32::consts::PI;
 
+use crate::helper::math::smooth_towards;
+
 use serde::{Deserialize, Serialize};
 
 // rpm of the engine per rad/s at the wheel, before the gear ratio
@@ -258,7 +260,7 @@ impl EngineState
         }
 
         let rate = if target > self.rpm { RPM_RISE_RATE } else { RPM_FALL_RATE };
-        self.rpm += (target - self.rpm) * (1.0 - (-rate * dt).exp());
+        self.rpm = smooth_towards(self.rpm, target, rate, dt);
         self.rpm = self.rpm.clamp(0.0, settings.max_rpm * 1.02);
 
         if self.rpm >= settings.max_rpm && self.limiter_timer <= 0.0
@@ -274,7 +276,7 @@ impl EngineState
         let cut = self.shifting || self.limiter_timer > 0.0 || over_top_speed || over_reverse_speed;
 
         self.throttle = if cut { 0.0 } else { throttle };
-        self.load += (throttle - self.load) * (1.0 - (-8.0 * dt).exp());
+        self.load = smooth_towards(self.load, throttle, 8.0, dt);
 
         // ********** torque **********
         let ratio = settings.gear_ratio(self.gear) * settings.final_drive * settings.efficiency;

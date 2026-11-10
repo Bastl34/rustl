@@ -7,11 +7,11 @@ use rapier3d::prelude::{ColliderHandle, Pose, Rotation, SharedShape, Vector};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_warning, helper::{math::{approx_zero, extract_rotation_quat_from_transform, extract_translation_from_transform, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::{gamepad::{GamepadAxis, GamepadButton}, input_binding::{gamepad_select_ui, input_action_ui, AxisDirection, GamepadSelect, InputAction, InputSource}, keyboard::Key, mouse::MouseButton}, scene_controller_impl_default, state::{scene::{camera_controller::{camera_controller::CameraControllerBox, follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, component::ComponentItem, mesh::Mesh, transformation::Transformation}, node::NodeItem, physics::{contacts::ContactTarget, physics_world::{HitchDesc, HitchState, PhysicsWorld, VehicleChassisDesc, VehicleWheelDesc}}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput, RunMode}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_warning, helper::{math::{approx_zero, extract_rotation_quat_from_transform, extract_translation_from_transform, seed_from_id, shortest_angle_dist, smooth_factor, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::{gamepad::{GamepadAxis, GamepadButton}, input_binding::{gamepad_select_ui, input_action_ui, AxisDirection, GamepadSelect, InputAction, InputSource}, keyboard::Key, mouse::MouseButton}, scene_controller_impl_default, state::{scene::{camera_controller::{camera_controller::CameraControllerBox, follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, component::ComponentItem, mesh::Mesh, transformation::Transformation}, node::NodeItem, physics::{contacts::ContactTarget, physics_world::{HitchDesc, HitchState, PhysicsWorld, VehicleChassisDesc, VehicleWheelDesc}}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput, RunMode}}};
 
 use rapier3d::control::WheelTuning;
 
-use crate::state::scene::exporter::serialization_helper::{default_true, deserialize_node, serialize_node};
+use crate::state::scene::exporter::serialization_helper::{default_one, default_true, deserialize_node, serialize_node};
 
 use egui::{Color32, RichText};
 use crate::gui::helper::property_items::{combo, slider, vector_edit};
@@ -1106,7 +1106,6 @@ pub struct VehicleController
     pub external_torque: Vector3<f32>, // world, N·m
 }
 
-fn default_one() -> f32 { 1.0 }
 
 fn default_base() -> SceneControllerBase
 {
@@ -2599,7 +2598,7 @@ impl VehicleController
             if self.camera.follow && speed > 1.0 && self.orbit_idle_time > self.camera.follow_delay
             {
                 let yaw = controller.data.get_ref().yaw;
-                controller.data.get_mut().yaw = yaw + shortest_angle_dist(yaw, 0.0) * (1.0 - (-self.camera.follow_speed * dt).exp());
+                controller.data.get_mut().yaw = yaw + shortest_angle_dist(yaw, 0.0) * smooth_factor(self.camera.follow_speed, dt);
             }
         }
         else
@@ -2616,7 +2615,7 @@ impl VehicleController
             let wanted_up = if grounded || vehicle_up.y > CAMERA_VEHICLE_UP_MIN { vehicle_up } else { Vector3::y() };
             let camera_up = match self.camera_up
             {
-                Some(up) => (up + (wanted_up - up) * (1.0 - (-CAMERA_UP_RATE * dt).exp())).try_normalize(0.001).unwrap_or(wanted_up),
+                Some(up) => (up + (wanted_up - up) * smooth_factor(CAMERA_UP_RATE, dt)).try_normalize(0.001).unwrap_or(wanted_up),
                 None => wanted_up,
             };
             self.camera_up = Some(camera_up);
@@ -2651,7 +2650,7 @@ impl VehicleController
             {
                 let alpha = controller.data.get_ref().alpha;
                 let diff = shortest_angle_dist(alpha, behind);
-                controller.data.get_mut().alpha = alpha + diff * (1.0 - (-self.camera.follow_speed * heading_weight * dt).exp());
+                controller.data.get_mut().alpha = alpha + diff * smooth_factor(self.camera.follow_speed * heading_weight, dt);
             }
         }
 
@@ -2672,7 +2671,7 @@ impl VehicleController
 
         if self.sound_player.is_none()
         {
-            let seed = self.node_id().unwrap_or(1).wrapping_mul(2654435761);
+            let seed = seed_from_id(self.node_id().unwrap_or(1));
             self.sound_player = Some(VehicleSoundPlayer::new(seed));
         }
 

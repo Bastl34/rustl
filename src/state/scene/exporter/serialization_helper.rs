@@ -6,6 +6,7 @@ use crate::{helper::option_or_id::OptionOrId, state::{resources::{mesh_resource:
 
 
 pub fn default_true() -> bool { true }
+pub fn default_one() -> f32 { 1.0 }
 pub fn is_false(v: &bool) -> bool { !*v }
 
 

@@ -288,7 +288,7 @@ impl TargetRotationController
         };
 
         let dt = get_delta_t(frame_scale);
-        let factor = |smoothing: f32| if smoothing > 0.0 { 1.0 - (-dt / smoothing).exp() } else { 1.0 };
+        let factor = |smoothing: f32| if smoothing > 0.0 { math::smooth_factor(1.0 / smoothing, dt) } else { 1.0 };
 
         let horizontal = factor(self.follow_smoothing);
         let vertical = factor(self.follow_smoothing_vertical);

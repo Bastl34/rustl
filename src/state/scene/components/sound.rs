@@ -67,9 +67,9 @@ pub struct Sound
     player_spatial: Option<SpatialPlayer>,
 
     // set by a controller every frame on top of volume and speed - not saved
-    #[serde(skip, default = "default_one")]
+    #[serde(skip, default = "serialization_helper::default_one")]
     runtime_gain: f32,
-    #[serde(skip, default = "default_one")]
+    #[serde(skip, default = "serialization_helper::default_one")]
     runtime_pitch: f32,
     #[serde(skip, default)]
     runtime_changed: bool,
@@ -84,7 +84,6 @@ pub struct Sound
     fixed_position: Option<Point3<f32>>,
 }
 
-fn default_one() -> f32 { 1.0 }
 
 impl Sound
 {

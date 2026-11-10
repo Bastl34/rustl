@@ -238,6 +238,23 @@ pub fn xorshift32(state: &mut u32) -> f32
     *state as f32 / u32::MAX as f32
 }
 
+// xorshift32 seed from an id - never 0 (xorshift stays at 0 forever)
+pub fn seed_from_id(id: u32) -> u32
+{
+    id.wrapping_mul(2654435761) | 1
+}
+
+// share of the way to the target per frame for exponential smoothing - frame rate independent
+pub fn smooth_factor(rate: f32, dt: f32) -> f32
+{
+    1.0 - (-rate * dt).exp()
+}
+
+pub fn smooth_towards(current: f32, target: f32, rate: f32, dt: f32) -> f32
+{
+    current + (target - current) * smooth_factor(rate, dt)
+}
+
 // even direction inside the cone of this half angle around the axis - rand_a/rand_b in 0..1
 pub fn direction_in_cone(axis: &Vector3<f32>, angle: f32, rand_a: f32, rand_b: f32) -> Vector3<f32>
 {
