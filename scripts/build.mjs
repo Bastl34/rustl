@@ -171,7 +171,7 @@ function buildNative(target, name, code)
     const targetDir = path.join(ROOT, "target", "dist");
     const engineArgs = code ? engineCargoArgs(code.dir) : [];
     const packageArgs = code ? ["--manifest-path", path.join(code.dir, "Cargo.toml"), "--bin", code.crate] : [];
-    run("cargo", [...engineArgs, "build", ...packageArgs, "--no-default-features", ...(dev ? [] : ["--release"])], { CARGO_TARGET_DIR: targetDir, ...(code ? { RUSTC_BOOTSTRAP: "1" } : {}) });
+    run("cargo", [...engineArgs, "build", ...packageArgs, "--no-default-features", ...(dev ? [] : ["--release"])], { CARGO_TARGET_DIR: targetDir });
 
     const exe = code ? code.crate : "rustl";
     fs.mkdirSync(path.dirname(target.exe), { recursive: true });
@@ -317,12 +317,11 @@ function projectCode(projectFile)
 }
 
 // the code of a project is a workspace of its own - the cargo args for the config of the engine (profiles) and its lock (.cargo/Cargo.lock) - also for the shared library of the editor (--editor-library)
-// resolver.lockfile-path is unstable: without -Zlockfile-path cargo ignores it (only a warning) and resolves code/Cargo.lock with the newest versions
-// -> another engine shared library than the one of the editor, the project library does not load (dlopen: symbol not found) - needs RUSTC_BOOTSTRAP on stable
+// resolver.lockfile-path is stable since cargo 1.97 - without it cargo resolves code/Cargo.lock with the newest versions (project library does not load)
 function engineCargoArgs(dir)
 {
     const slashes = (file) => file.replaceAll("\\", "/");
-    return ["-Zlockfile-path", "--config",slashes(fs.realpathSync.native(path.join(ROOT, ".cargo", "config.toml"))), "--config", `resolver.lockfile-path='${slashes(prepareLock(dir))}'`];
+    return ["--config",slashes(fs.realpathSync.native(path.join(ROOT, ".cargo", "config.toml"))), "--config", `resolver.lockfile-path='${slashes(prepareLock(dir))}'`];
 }
 
 // .cargo/Cargo.lock of the project: the entries of the engine plus the crates only the project uses - by content, not by date: an engine update always arrives
