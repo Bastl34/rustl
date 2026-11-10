@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::{collections::HashMap, path::Path, sync::{Arc, Mutex, RwLock}};
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::{sound_source::SoundSource, texture::TextureItem}, scene::{components::{animation::Animation, material::{Material, MaterialData, MaterialItem, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::{asset_container::{AssetContainer, SceneAddResult}, gltf, wavefront}, node::Node, utilities::scene_utils::{clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::{sound_source::SoundSource, texture::TextureItem}, scene::{components::{animation::Animation, material::{Material, MaterialData, MaterialItem, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::{asset_container::{AssetContainer, SceneAddResult}, gltf, wavefront}, node::Node, utilities::{origin::Origin, scene_utils::{clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}}};
 
 pub type TextureCache = HashMap<String, TextureItem>;
 pub type MaterialCache = HashMap<String, MaterialItem>;
@@ -175,7 +175,7 @@ pub fn load_material_and_add_to_scene(path: &str, scene_id: u32, main_queue: Exe
     result_slot.lock().unwrap().take()
 }
 
-pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Option<TextureType>, scene_id: Option<u32>, material_id: Option<u32>, mipmapping: bool, max_tex_res: u32)
+pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Option<TextureType>, scene_id: Option<u32>, material_id: Option<u32>, mipmapping: bool, max_tex_res: u32, origin: Origin)
 {
     let extension = get_extension(path);
     let name = get_stem(path);
@@ -194,6 +194,11 @@ pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Op
             if tex.read().unwrap().source.is_none()
             {
                 tex.write().unwrap().source = Some(AssetPathDesciptor::new_from_path(texture_path.clone()));
+            }
+
+            if origin == Origin::Scene
+            {
+                tex.write().unwrap().origin = Origin::Scene;
             }
         }
 

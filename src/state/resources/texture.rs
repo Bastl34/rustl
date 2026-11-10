@@ -6,7 +6,7 @@ use image::{imageops, DynamicImage, GenericImageView, GrayImage, ImageFormat, Pi
 use nalgebra::Vector4;
 use serde::{Deserialize, Serialize};
 
-use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker}, state::{helper::render_item::RenderItemOption, scene::{manager::id_manager, utilities::{extras::Extras, tags::Tags}}}};
+use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker}, state::{helper::render_item::RenderItemOption, scene::{manager::id_manager, utilities::{extras::Extras, origin::Origin, tags::Tags}}}};
 
 pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 
@@ -56,6 +56,9 @@ pub struct Texture
     pub uuid: String,
     pub source: Option<AssetPathDesciptor>,
 
+    #[serde(skip, default)]
+    pub origin: Origin,
+
     pub name: String,
     pub extension: Option<String>,
     pub hash: String, // this is mainly used for initial loading and to check if there is a texture already loaded (in dynamic textires - this may does not get updates)
@@ -72,6 +75,12 @@ pub struct Texture
 
     #[serde(skip, default)]
     pub delete_later_request: bool,
+}
+
+// uuid from the image hash - stable over loads
+pub fn uuid_from_hash(hash: &str) -> String
+{
+    uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, hash.as_bytes()).to_string()
 }
 
 impl Texture
@@ -99,6 +108,7 @@ impl Texture
             id: id_manager::get_next_texture_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
             source: None,
+            origin: Origin::Runtime,
 
             name: "empty".to_string(),
             extension: None,
@@ -167,8 +177,9 @@ impl Texture
         Texture
         {
             id: id_manager::get_next_texture_id(),
-            uuid: uuid::Uuid::new_v4().to_string(),
+            uuid: uuid_from_hash(&hash),
             source: None,
+            origin: Origin::Runtime,
 
             name: name.to_string(),
             extension,
@@ -235,8 +246,9 @@ impl Texture
         Texture
         {
             id: id_manager::get_next_texture_id(),
-            uuid: uuid::Uuid::new_v4().to_string(),
+            uuid: uuid_from_hash(&hash),
             source: texture.source.clone(),
+            origin: Origin::Runtime,
 
             name: name.to_string(),
             extension: texture.extension.clone(),

@@ -551,6 +551,19 @@ impl Component for Mesh
 {
     component_impl_default!();
     component_impl_no_update!();
+
+    // keeps the skin bounds
+    fn keep_unsaved(&mut self, old: &mut dyn Component)
+    {
+        if let Some(old) = old.as_any_mut().downcast_mut::<Mesh>()
+        {
+            let old_data = old.data.get_unmarked_mut();
+            let data = self.data.get_mut();
+            data.b_box_skin = old_data.b_box_skin.take();
+            data.b_sphere_skin = old_data.b_sphere_skin.take();
+            data.skin_joint_bounds = std::mem::take(&mut old_data.skin_joint_bounds);
+        }
+    }
     component_impl_set_enabled!();
     component_impl_no_cleanup_node!();
 

@@ -104,6 +104,21 @@ impl<T: ?Sized> Observable<T>
         self.observers.clear();
     }
 
+    // ids only increase - remove_added_after removes everything added after this id
+    pub fn last_id(&self) -> ObserverId
+    {
+        ObserverId(self.next_id)
+    }
+
+    pub fn remove_added_after(&mut self, last_id: ObserverId)
+    {
+        let ids: Vec<ObserverId> = self.observers.iter().map(|e| e.id).filter(|id| id.0 > last_id.0).collect();
+        for id in ids
+        {
+            self.remove(id);
+        }
+    }
+
     pub fn has_observers(&self) -> bool
     {
         !self.observers.is_empty()

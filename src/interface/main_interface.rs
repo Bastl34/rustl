@@ -56,6 +56,7 @@ pub struct MainInterface
     // the code of the project - created when Play starts, dropped when it ends
     project_app: Option<Box<dyn App>>,
     project_app_started: bool,
+    project_app_observers: Vec<crate::helper::observable::ObserverId>, // context observer ids at app start - removes what the app added
 
     gilrs: Option<Gilrs>,
 
@@ -140,6 +141,7 @@ impl MainInterface
 
             project_app: None,
             project_app_started: false,
+            project_app_observers: vec![],
 
             gilrs,
 
@@ -218,7 +220,8 @@ impl MainInterface
 
         load_and_apply_project(state, project.as_str(), Some(Box::new(|state|
         {
-            let scene_id = state.get_active_scene_id();
+            // default environment if the scene file has none
+            let scene_id = state.get_active_scene().filter(|scene| scene.get_data().environment_texture.is_none()).map(|scene| scene.id);
             if let Some(scene_id) = scene_id
             {
                 state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
@@ -968,6 +971,7 @@ impl MainInterface
         if playing && !self.project_app_started
         {
             self.project_app_started = true;
+            self.project_app_observers = self.context.last_observer_ids();
 
             if let Some(mut app) = self.create_project_app()
             {
@@ -995,6 +999,10 @@ impl MainInterface
             {
                 app.exit(&mut self.context);
             }
+
+            // removes the app observers - they point into the app library
+            let last_ids = std::mem::take(&mut self.project_app_observers);
+            self.context.remove_observers_added_after(&last_ids);
         }
     }
 

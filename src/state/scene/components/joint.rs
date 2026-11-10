@@ -551,6 +551,15 @@ impl Component for Joint
 {
     component_impl_default!();
     component_impl_no_update_instance!();
+
+    // keeps the bind pose data
+    fn keep_unsaved(&mut self, old: &mut dyn Component)
+    {
+        if let Some(old) = old.as_any_mut().downcast_mut::<Joint>()
+        {
+            std::mem::swap(&mut self.data, &mut old.data);
+        }
+    }
     component_impl_no_cleanup_node!();
     component_impl_no_post_deserialization!();
 

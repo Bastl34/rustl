@@ -11,6 +11,7 @@ use crate::state::resources::mesh_resource::MeshResourceItem;
 use crate::state::scene::manager::id_manager;
 use crate::state::scene::node::{NodeItem, InstanceItemArc};
 use crate::state::scene::utilities::extras::Extras;
+use crate::state::scene::utilities::origin::Origin;
 use crate::state::scene::utilities::tags::Tags;
 use crate::state::state::{InputOutput, RunMode};
 
@@ -32,8 +33,8 @@ pub trait Component: Any + Send + Sync
     fn is_serializable(&self) -> bool { true }
     fn run_after_deserialize(&mut self, context: &mut DeserializationContext);
 
-    // saved in the project with its node - the others come back with the asset the node is loaded from
-    fn saved_with_node(&self) -> bool { false }
+    // takes the not serialized data (asset data, runtime handles) from the component it replaces
+    fn keep_unsaved(&mut self, _old: &mut dyn Component) {}
 
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>);
 
@@ -116,7 +117,12 @@ pub struct ComponentBase
     pub extras: Extras,
     pub tags: Tags,
 
-    pub from_file: bool,
+    // runtime: not saved, asset: saved as override, scene: saved completely
+    #[serde(skip, default = "scene_origin")]
+    pub origin: Origin,
+
+    #[serde(skip, default)]
+    pub asset_key: String, // stable key of an asset component in its node (e.g. Animation1) or asset (m3 = glTF material 3)
 
     #[serde(skip, default)]
     pub delete_later_request: bool,
@@ -125,6 +131,12 @@ pub struct ComponentBase
     pub render_item: RenderItemOption,
 
     pub export: bool
+}
+
+// deserialized components are scene components - the loader marks asset ones
+fn scene_origin() -> Origin
+{
+    Origin::Scene
 }
 
 impl ComponentBase
@@ -145,7 +157,8 @@ impl ComponentBase
             extras: Extras::new(),
             tags: Tags::new(),
 
-            from_file: false,
+            origin: Origin::Runtime,
+            asset_key: String::new(),
 
             delete_later_request: false,
 
@@ -172,7 +185,8 @@ impl ComponentBase
             extras: from.extras.clone(),
             tags: from.tags.clone(),
 
-            from_file: false,
+            origin: Origin::Runtime,
+            asset_key: String::new(),
 
             delete_later_request: false,
 

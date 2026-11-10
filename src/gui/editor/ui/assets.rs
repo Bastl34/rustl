@@ -35,7 +35,7 @@ pub fn create_asset_tree(editor_state: &mut EditorState, _state: &mut State, ui:
         {
             ui.selectable_value(&mut editor_state.asset_type, AssetType::Scene, "🎬 Scenes");
             ui.selectable_value(&mut editor_state.asset_type, AssetType::Object, "📦 Objects");
-            ui.selectable_value(&mut editor_state.asset_type, AssetType::Texture, "🖼 Textures");
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Texture, "🖼 Textures").on_hover_text("drag a texture into the editor to add it to the textures");
             ui.selectable_value(&mut editor_state.asset_type, AssetType::Material, "🎨 Materials");
             ui.selectable_value(&mut editor_state.asset_type, AssetType::Sound, "🔊 Sounds").on_hover_text("drag a sound into the editor to add it to the sound resources");
         });
@@ -48,7 +48,7 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
     {
         AssetType::Scene => Some(&editor_state.assets_scenes),
         AssetType::Object => Some(&editor_state.assets_objects),
-        AssetType::Texture => None,
+        AssetType::Texture => Some(&editor_state.assets_textures),
         AssetType::Material => Some(&editor_state.assets_materials),
         AssetType::Sound => Some(&editor_state.assets_sounds),
     };

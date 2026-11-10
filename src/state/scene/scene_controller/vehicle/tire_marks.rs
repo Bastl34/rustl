@@ -201,7 +201,6 @@ impl TireMarks
             node.set_skip_instance_update(true); // set_piece writes where each piece is drawn
 
             let settings = &mut node.settings;
-            settings.transient = true;
             settings.pickable = false;
             settings.collision = false;
             settings.camera_collision = false;

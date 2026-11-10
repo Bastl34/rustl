@@ -468,7 +468,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                         {
                             let node = scene.add_empty_node_front("Node", Some(node_arc.clone()));
-                            node.write().unwrap().settings.transient = false;
+                            node.write().unwrap().origin = Origin::Scene;
                         }));
                     }
 
@@ -501,7 +501,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                         {
                             let node = scene.add_empty_node_front("Node", parent.clone());
-                            node.write().unwrap().settings.transient = false;
+                            node.write().unwrap().origin = Origin::Scene;
                             *target_node_setter.lock().unwrap() = Some(node);
                         }));
 
@@ -542,7 +542,8 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             let node_arc = node_arc.clone();
                             execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
                             {
-                                node_arc.write().unwrap().create_default_instance(node_arc.clone());
+                                let instance = node_arc.write().unwrap().create_default_instance(node_arc.clone());
+                                instance.write().unwrap().origin = Origin::Scene;
                             }));
                         }
 
@@ -1086,7 +1087,8 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut visible;
         let mut locked: bool;
         let mut root_node: bool;
-        let mut transient: bool;
+        let mut saved: bool;
+        let origin: Origin;
         let mut render_children_first;
         let mut depth_test;
         let mut depth_write;
@@ -1109,7 +1111,8 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             visible = node.settings.visible;
             locked = node.settings.locked;
             root_node = node.root_node;
-            transient = node.settings.transient;
+            origin = node.origin;
+            saved = origin != Origin::Runtime;
             render_children_first = node.settings.render_children_first;
             depth_test = node.settings.depth_test;
             depth_write = node.settings.depth_write;
@@ -1167,7 +1170,11 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         changed = ui.checkbox(&mut visible, "visible").changed() || changed;
         changed = ui.checkbox(&mut locked, "locked").changed() || changed;
         changed = ui.checkbox(&mut root_node, "root node").changed() || changed;
-        changed = ui.checkbox(&mut transient, "transient (not saved)").changed() || changed;
+        // asset nodes are always saved (as overrides)
+        ui.add_enabled_ui(origin != Origin::Asset, |ui|
+        {
+            changed = ui.checkbox(&mut saved, "saved with the scene").on_hover_text(origin.description()).changed() || changed;
+        });
         changed = ui.checkbox(&mut render_children_first, "render children first").changed() || changed;
         changed = ui.checkbox(&mut depth_test, "depth test").changed() || changed;
         changed = ui.checkbox(&mut depth_write, "depth write").changed() || changed;
@@ -1357,7 +1364,10 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             node.settings.visible = visible;
             node.settings.locked = locked;
             node.root_node = root_node;
-            node.settings.transient = transient;
+            if node.origin != Origin::Asset
+            {
+                node.origin = if saved { Origin::Scene } else { Origin::Runtime };
+            }
             node.settings.render_children_first = render_children_first;
             node.settings.alpha_index = alpha_index;
             node.settings.depth_test = depth_test;
@@ -1468,7 +1478,8 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             if ui.button(RichText::new("Create Default Instance").heading().strong().color(Color32::LIGHT_GREEN)).clicked()
             {
-                node.write().unwrap().create_default_instance(node.clone());
+                let instance = node.write().unwrap().create_default_instance(node.clone());
+                instance.write().unwrap().origin = Origin::Scene;
             }
 
             if ui.button(RichText::new("⮈ Go to parent").heading().strong()).clicked()
@@ -1678,7 +1689,6 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             let component_tooltip;
             let is_material;
             let is_sound;
-            let from_file;
             let export;
             let duplicatable;
             {
@@ -1690,7 +1700,6 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                 component_id = component.id();
                 uuid = component.uuid().clone();
 
-                from_file = base.from_file;
                 export = base.export;
 
                 duplicatable = component.duplicatable();
@@ -1785,11 +1794,6 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         ui.label(RichText::new("ℹ").color(Color32::WHITE)).on_hover_text(info);
                     }
 
-                    if from_file
-                    {
-                        ui.label(RichText::new("⚠").color(Color32::LIGHT_RED)).on_hover_text("This component was loaded from a resource. Adjustments can not be saved.");
-                    }
-
                     if !export
                     {
                         ui.label(RichText::new("💾").color(Color32::LIGHT_RED)).on_hover_text("This component will not be saved/exported");
@@ -1835,6 +1839,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
         if let Some(duplicate_component) = duplicate_component
         {
+            duplicate_component.write().unwrap().get_base_mut().origin = Origin::Scene;
             node.write().unwrap().add_component(duplicate_component);
         }
 
@@ -1890,7 +1895,6 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     let component_title;
                     let component_tooltip;
                     let is_sound;
-                    let from_file;
                     let export;
                     let duplicatable;
                     {
@@ -1901,7 +1905,6 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         name = base.name.clone();
                         component_id = component.id();
                         uuid = component.uuid().clone();
-                        from_file = base.from_file;
                         export = base.export;
                         duplicatable = component.duplicatable();
 
@@ -1978,11 +1981,6 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                                 sound_component_id = Some(component_id);
                             }
 
-                            if from_file
-                            {
-                                ui.label(RichText::new("⚠").color(Color32::LIGHT_RED)).on_hover_text("This component was loaded from a resource. Adjustments can not be saved.");
-                            }
-
                             if !export
                             {
                                 ui.label(RichText::new("💾").color(Color32::LIGHT_RED)).on_hover_text("This component will not be saved/exported");
@@ -2030,6 +2028,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
             if let Some(duplicate_component) = duplicate_component
             {
+                duplicate_component.write().unwrap().get_base_mut().origin = Origin::Scene;
                 let mut instance = instance.write().unwrap();
                 instance.add_component(duplicate_component);
             }

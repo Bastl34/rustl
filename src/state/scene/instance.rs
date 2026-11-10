@@ -10,9 +10,11 @@ use crate::{component_downcast, component_downcast_mut, helper::{change_tracker:
 use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
 
 use crate::state::scene::exporter::serialization_helper;
+use crate::state::scene::utilities::origin::Origin;
 
 pub type InstanceItem = Box<Instance>;
 
+#[derive(Clone)]
 pub struct ComputedInstanceData
 {
     pub world_matrix: Matrix4::<f32>,
@@ -34,17 +36,39 @@ impl Default for ComputedInstanceData
 }
 
 
-#[derive(Serialize, Deserialize)]
+// saved as a whole with the instance (like NodeSettings) - missing fields fall back to Default
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct InstanceData
 {
-    #[serde(skip, default)]
+    #[serde(skip)]
     pub computed: ComputedInstanceData,
 
     pub visible: bool,
-    pub highlight: bool,
+
+    #[serde(skip)]
+    pub highlight: bool, // editor selection
+
     pub collision: bool,
     pub locked: bool,
     pub color: Vector4::<f32>
+}
+
+impl Default for InstanceData
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            computed: ComputedInstanceData::default(),
+
+            visible: true,
+            highlight: false,
+            collision: true,
+            locked: false,
+            color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -53,6 +77,12 @@ pub struct Instance
     pub id: u32,
     pub uuid: String,
     pub is_default: bool,
+
+    #[serde(skip, default)]
+    pub origin: Origin,
+
+    #[serde(skip, default)]
+    pub asset_key: String,
 
     pub name: String,
     pub pickable: bool,
@@ -90,6 +120,9 @@ impl Instance
             uuid: uuid::Uuid::new_v4().to_string(),
             is_default: false,
 
+            origin: Origin::Runtime,
+            asset_key: String::new(),
+
             name,
             pickable: true,
 
@@ -98,16 +131,7 @@ impl Instance
 
             force_update: true, // force update on creation
 
-            data: ChangeTracker::new(InstanceData
-            {
-                computed: ComputedInstanceData::default(),
-
-                visible: true,
-                highlight: false,
-                collision: true,
-                locked: false,
-                color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
-            }),
+            data: ChangeTracker::new(InstanceData::default()),
 
             on_before_update: Observable::new(),
             on_after_update: Observable::new(),
@@ -126,6 +150,9 @@ impl Instance
             uuid: uuid::Uuid::new_v4().to_string(),
             is_default: false,
 
+            origin: Origin::Runtime,
+            asset_key: String::new(),
+
             name: "default".to_string(),
             pickable: true,
 
@@ -134,16 +161,7 @@ impl Instance
 
             force_update: true, // force update on creation
 
-            data: ChangeTracker::new(InstanceData
-            {
-                computed: ComputedInstanceData::default(),
-
-                visible: true,
-                highlight: false,
-                collision: true,
-                locked: false,
-                color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
-            }),
+            data: ChangeTracker::new(InstanceData::default()),
 
             on_before_update: Observable::new(),
             on_after_update: Observable::new(),
@@ -162,6 +180,9 @@ impl Instance
             uuid: uuid::Uuid::new_v4().to_string(),
             is_default: false,
 
+            origin: Origin::Runtime,
+            asset_key: String::new(),
+
             name,
             pickable: true,
 
@@ -170,16 +191,7 @@ impl Instance
 
             force_update: true, // force update on creation
 
-            data: ChangeTracker::new(InstanceData
-            {
-                computed: ComputedInstanceData::default(),
-
-                visible: true,
-                highlight: false,
-                collision: true,
-                locked: false,
-                color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
-            }),
+            data: ChangeTracker::new(InstanceData::default()),
 
             on_before_update: Observable::new(),
             on_after_update: Observable::new(),

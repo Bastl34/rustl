@@ -2,7 +2,7 @@ use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path};
 
 use nalgebra::{Point3, Point2, Vector3};
 
-use crate::{console_error, console_log, helper::{self, asset_path_descriptor::AssetPathDesciptor, file::get_stem, option_or_id::OptionOrId}, new_component, resources::resources::{load_binary, load_string}, state::{resources::{mesh_resource::{MeshResource}, texture::TextureItem, utilities::resource_utils::load_texture_byte}, scene::{components::{component::Component, material::{Material, MaterialItem, TextureType}, mesh::Mesh}, loader::{asset_container::AssetContainer, loader::LoaderOptions}, node::Node, scene::Scene}}};
+use crate::{console_error, console_log, helper::{self, asset_path_descriptor::AssetPathDesciptor, file::get_stem, option_or_id::OptionOrId}, new_component, resources::resources::{load_binary, load_string}, state::{resources::{mesh_resource::{MeshResource}, texture::TextureItem, utilities::resource_utils::load_texture_byte}, scene::{components::{component::Component, material::{Material, MaterialItem, TextureType}, mesh::Mesh}, loader::{asset_container::AssetContainer, loader::LoaderOptions}, node::Node}}};
 
 pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
 {
@@ -208,6 +208,7 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
 
                         {
                             material.get_base_mut().name = mat.name.clone();
+                            material.get_base_mut().asset_key = format!("m{}", wavefront_mat_id);
                         }
 
                         let material_data = material.get_data_mut().get_mut();
@@ -358,6 +359,7 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
 
             {
                 let mut node = node_arc.write().unwrap();
+                node.asset_key = format!("o{}", i);
                 node.add_component(Arc::new(RwLock::new(Box::new(mesh_component))));
 
                 // add material
@@ -384,20 +386,6 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
     for scene_node in &scene_nodes
     {
         Node::add_node(root_node.clone(), scene_node.clone());
-    }
-
-    // ********** mark components **********
-    {
-        let all_nodes = Scene::list_all_child_nodes(&root_node.read().unwrap().nodes);
-
-        for node in all_nodes
-        {
-            for component in &node.read().unwrap().components
-            {
-                let mut component = component.write().unwrap();
-                component.get_base_mut().from_file = true;
-            }
-        }
     }
 
     // ********** add to scene **********

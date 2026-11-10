@@ -104,7 +104,8 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
         }
         else
         {
-            let material = load_material(&gltf_material, &loaded_textures, &mut asset_container, &mut clear_textures, options.max_texture_resolution, resource_name.clone().clone());
+            let mut material = load_material(&gltf_material, &loaded_textures, &mut asset_container, &mut clear_textures, options.max_texture_resolution, resource_name.clone().clone());
+            material.get_base_mut().asset_key = format!("m{}", gltf_material_index);
             let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
             material_arc
         };
@@ -164,23 +165,6 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
     // ********** calculate skin bounding boxes **********
     console_log!("calc bbox skin...");
     calc_bbox_skin(&nodes);
-
-    // ********** mark components **********
-    // Tag on the main thread (inside execute_on_scene_mut_and_wait) to avoid write-lock
-    // contention with the render thread which holds write locks on materials during GPU updates.
-    console_log!("tagging components...");
-    {
-        let root_node_clone = root_node.clone();
-        let all_nodes = Scene::list_all_child_nodes(&root_node_clone.read().unwrap().nodes);
-        for node in all_nodes
-        {
-            let components_snap: Vec<_> = node.read().unwrap().components.iter().map(|c| c.clone()).collect();
-            for component in components_snap
-            {
-                component.write().unwrap().get_base_mut().from_file = true;
-            }
-        }
-    }
 
     console_log!("done {}ms", stopwatch.get_time_ms());
 
@@ -605,6 +589,7 @@ fn read_node(gltf_node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_pat
             let node_arc = Node::new(name.as_str());
             {
                 let mut scene_node = node_arc.write().unwrap();
+                scene_node.asset_key = if primitives_amount > 1 { format!("n{}p{}", node_index, primitive_id) } else { format!("n{}", node_index) };
 
                 for component in &components
                 {
@@ -670,6 +655,7 @@ fn read_node(gltf_node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_pat
             let scene_node = Node::new(name);
             //scene_node.write().unwrap().joint_id = Some(node.index() as u32);
             scene_node.write().unwrap().extras.insert(INTERNAL_JSON_INDEX, node_index);
+            scene_node.write().unwrap().asset_key = format!("n{}", node_index);
 
             // add transformation
             if !approx_zero_vec3(&translate) || !approx_zero_vec3(&rotation) || !approx_one_vec3(&scale)

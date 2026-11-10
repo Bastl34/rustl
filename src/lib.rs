@@ -126,6 +126,7 @@ pub mod state
             pub mod scene_utils;
             pub mod extras;
             pub mod origin;
+            pub mod saved_state;
             pub mod tags;
         }
 

@@ -21,12 +21,18 @@ pub struct TransformationData
     pub rotation_quat: Option<Vector4<f32>>,
     pub scale: Vector3<f32>,
 
+    // written by animations - not saved
+    #[serde(skip, default)]
     pub animation_weight: f32,
+    #[serde(skip, default)]
     pub animation_update_frame: Option<u64>,
 
      // only supported with transform_vectors
+    #[serde(skip, default)]
     pub animation_position: Option<Vector3<f32>>,
+    #[serde(skip, default)]
     pub animation_rotation_quat: Option<Vector4<f32>>,
+    #[serde(skip, default)]
     pub animation_scale: Option<Vector3<f32>>,
 
     trans: Matrix4<f32>,

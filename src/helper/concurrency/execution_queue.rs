@@ -4,7 +4,7 @@ use std::{sync::{Arc, RwLock}, collections::VecDeque};
 
 use crate::state::state::State;
 
-use super::thread::sleep_millis;
+use super::thread::{is_ended_run_session, run_session, sleep_millis};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ExecutionQueueStatus
@@ -49,7 +49,8 @@ impl ExecutionQueueResult
 pub struct ExecutionItem
 {
     func: Box<dyn Fn(&mut State) + Send + Sync>,
-    status: Arc<RwLock<ExecutionQueueStatus>>
+    status: Arc<RwLock<ExecutionQueueStatus>>,
+    run_session: u64,
 }
 
 impl ExecutionItem
@@ -59,7 +60,8 @@ impl ExecutionItem
         ExecutionItem
         {
             func: func,
-            status: Arc::new(RwLock::new(ExecutionQueueStatus::Waiting))
+            status: Arc::new(RwLock::new(ExecutionQueueStatus::Waiting)),
+            run_session: run_session(),
         }
     }
 }
@@ -102,7 +104,11 @@ impl ExecutionQueue
                 *item.status.write().unwrap() = ExecutionQueueStatus::Running;
             }
 
-            (item.func)(state);
+            // skips items of an ended run - the waiting thread continues
+            if !is_ended_run_session(item.run_session)
+            {
+                (item.func)(state);
+            }
 
             {
                 *item.status.write().unwrap() = ExecutionQueueStatus::Done;

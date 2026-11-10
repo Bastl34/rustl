@@ -6,13 +6,15 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::{ensure_preview_scene, preview_scene_ready}}, helper::{concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene, load_sound}, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, RunMode, State}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::{ensure_preview_scene, preview_scene_ready}}, helper::{concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene, load_sound, load_texture}, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, RunMode, State}}};
 
 use self::math::approx_zero;
 
 use super::{box_select::{cancel_box_select, update_box_select}, editor_state::{AssetType, EditMode, EditorState, LoadingGuard, PickType, SelectionType, SettingsPanel}, gizmo::{create_grid_and_gizmo_objects, update_gizmos}, grid::{update_grid}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
 use crate::gui::editor::ui::main_frame;
 use crate::state::project::project::EDITOR_VIEW_EXTRA;
+use crate::state::scene::utilities::origin::Origin;
+use crate::state::scene::utilities::saved_state::{assign_asset_uuids, capture_asset_baseline};
 
 pub const MAX_NAME_LENGTH: usize = 24;
 
@@ -611,6 +613,7 @@ impl Editor
             if node.read().unwrap().has_component::<Mesh>()
             {
                 let new_instance = node.write().unwrap().create_default_instance(node.clone());
+                new_instance.write().unwrap().origin = Origin::Scene;
 
                 let mut pos = state.io.input_manager.mouse.point.pos;
 
@@ -1264,6 +1267,11 @@ impl Editor
                 {
                     load_sound(&path, main_queue, None);
                 });
+                return;
+            },
+            Some(AssetType::Texture) =>
+            {
+                load_texture_into_resources(state, path);
                 return;
             },
             Some(_) =>
@@ -2025,6 +2033,12 @@ impl Editor
             return;
         }
 
+        if asset_type == AssetType::Texture
+        {
+            load_texture_into_resources(state, path);
+            return;
+        }
+
         if self.editor_state.loading.read().unwrap().clone()
         {
             console_warning!("loading already in progress");
@@ -2105,13 +2119,19 @@ impl Editor
 
                     if let Some(root_node) = &root_node
                     {
-                        let mut root_node = root_node.write().unwrap();
-                        root_node.settings.transient = false;
-
-                        if reuse_material
                         {
-                            root_node.extras.insert(RESUSE_MATERIALS_TAG, reuse_material);
+                            let mut root_node = root_node.write().unwrap();
+                            root_node.origin = Origin::Scene;
+
+                            if reuse_material
+                            {
+                                root_node.extras.insert(RESUSE_MATERIALS_TAG, reuse_material);
+                            }
                         }
+
+                        // stable uuids and the baseline for the asset overrides
+                        assign_asset_uuids(root_node);
+                        capture_asset_baseline(root_node);
                     }
 
                     if let Some(pos) = pos
@@ -2183,6 +2203,11 @@ impl Editor
                 let node = node.unwrap();
                 execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
                 {
+                    // a new material is a scene material - a reused one keeps its origin
+                    if loaded_material.read().unwrap().get_base().origin == Origin::Runtime
+                    {
+                        loaded_material.write().unwrap().get_base_mut().origin = Origin::Scene;
+                    }
                     node.write().unwrap().remove_components_by_type::<Material>();
                     node.write().unwrap().add_component(loaded_material.clone());
 
@@ -2196,6 +2221,19 @@ impl Editor
             });
         }
     }
+}
+
+// loads a texture into the textures of the resources (scene texture - saved with the project)
+fn load_texture_into_resources(state: &State, path: String)
+{
+    let main_queue = state.main_thread_execution_queue.clone();
+    let mipmapping = state.rendering.create_mipmaps;
+    let max_tex_res = state.max_texture_resolution();
+
+    spawn_thread(move ||
+    {
+        load_texture(&path, main_queue, None, None, None, mipmapping, max_tex_res, Origin::Scene);
+    });
 }
 
 // the editor cameras saved with the scene file - applied once, then dropped from the extras

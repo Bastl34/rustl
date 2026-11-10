@@ -3,6 +3,7 @@ use crate::{gui::{editor::ui::{help::create_modal_help_shortcuts, helper::ui_hel
 use super::super::editor_state::EditorState;
 use super::export::create_modal_export;
 use crate::helper::console_log::LogType;
+use crate::state::scene::utilities::origin::Origin;
 
 pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
 {
@@ -426,11 +427,15 @@ pub fn create_modal_component_add(editor_state: &mut EditorState, state: &mut St
                     let node = node.read().unwrap();
                     let instance = node.find_instance_by_id(instance_id).unwrap();
                     let mut instance = instance.write().unwrap();
-                    instance.add_component(component_func(editor_state.add_component_name.as_str()));
+                    let component = component_func(editor_state.add_component_name.as_str());
+                    component.write().unwrap().get_base_mut().origin = Origin::Scene;
+                    instance.add_component(component);
                 }
                 else
                 {
-                    node.write().unwrap().add_component(component_func(editor_state.add_component_name.as_str()));
+                    let component = component_func(editor_state.add_component_name.as_str());
+                    component.write().unwrap().get_base_mut().origin = Origin::Scene;
+                    node.write().unwrap().add_component(component);
                 }
             }
 

@@ -12,6 +12,7 @@ use crate::gui::editor::ui::export::ExportDialog;
 use crate::gui::editor::project_code::ProjectCode;
 use crate::gui::editor::ui::code_editor::CodeEditor;
 use crate::helper::console_log::LogSource;
+use crate::gui::editor::editor_project::{PlaySnapshot, restore_play_snapshot, take_play_snapshot};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -20,11 +21,13 @@ const OBJECTS_DIR: &str = "objects/";
 const SCENES_DIR: &str = "scenes/";
 const MATERIALS_DIR: &str = "materials/";
 const SOUNDS_DIR: &str = "sounds/";
+const TEXTURES_DIR: &str = "textures/";
 
 const LOCAL_OBJECTS_DIR: &str = "resourcesLocal/objects/";
 const LOCAL_SCENES_DIR: &str = "resourcesLocal/scenes/";
 const LOCAL_MATERIALS_DIR: &str = "resourcesLocal/materials/";
 const LOCAL_SOUNDS_DIR: &str = "resourcesLocal/sounds/";
+const LOCAL_TEXTURES_DIR: &str = "resourcesLocal/textures/";
 
 const DEFAULT_GRID_SIZE: f32 = 0.25;
 const DEFAULT_GRID_AMOUNT: u32 = 1500;
@@ -220,6 +223,7 @@ pub struct EditorState
 
     pub project_path: Option<String>,
     pub project_session_start: Instant,
+    pub play_snapshot: Option<PlaySnapshot>, // edit state during a run
     pub project_code: ProjectCode,
     pub code_editor: CodeEditor,
 
@@ -337,6 +341,7 @@ pub struct EditorState
     pub assets_scenes: Vec<Asset>,
     pub assets_materials: Vec<Asset>,
     pub assets_sounds: Vec<Asset>,
+    pub assets_textures: Vec<Asset>,
 
     // Some(true) = re-render all (assets menu), Some(false) = only missing (startup)
     pub generate_material_thumbnails: Option<bool>,
@@ -377,6 +382,7 @@ impl EditorState
 
             project_path: None,
             project_session_start: Instant::now(),
+            play_snapshot: None,
             project_code: ProjectCode::new(),
             code_editor: CodeEditor::default(),
 
@@ -492,6 +498,7 @@ impl EditorState
             assets_scenes: vec![],
             assets_materials: vec![],
             assets_sounds: vec![],
+            assets_textures: vec![],
             generate_material_thumbnails: Some(false),
             material_thumbnails_running: Arc::new(RwLock::new(false)),
             reload_assets_requested: Arc::new(RwLock::new(false)),
@@ -517,6 +524,7 @@ impl EditorState
         state.project = ProjectData::default();
         apply_project_settings(state, &ProjectSettings::default());
         self.project_path = None;
+        self.play_snapshot = None;
         self.project_session_start = Instant::now();
     }
 
@@ -1124,7 +1132,28 @@ impl EditorState
 
         let was_running = state.run_mode.is_running();
 
+        if run_mode.is_running() && !was_running
+        {
+            // no snapshot while loading
+            if *self.loading.read().unwrap()
+            {
+                crate::console_warning!("{} has to wait: still loading", run_mode.name());
+                return;
+            }
+
+            self.play_snapshot = Some(take_play_snapshot(self, state));
+        }
+
         state.set_run_mode(run_mode);
+
+        // restores the edit state
+        if was_running && !run_mode.is_running()
+        {
+            if let Some(snapshot) = self.play_snapshot.take()
+            {
+                restore_play_snapshot(self, state, snapshot);
+            }
+        }
 
         let play_mode = run_mode == RunMode::Play;
 
@@ -1170,6 +1199,7 @@ impl EditorState
         self.load_asset_entries(OBJECTS_DIR, state, AssetType::Object, egui_context, false);
         self.load_asset_entries(MATERIALS_DIR, state, AssetType::Material, egui_context, false);
         self.load_asset_entries(SOUNDS_DIR, state, AssetType::Sound, egui_context, false);
+        self.load_asset_entries(TEXTURES_DIR, state, AssetType::Texture, egui_context, false);
 
         // local
         let local_objects_dir = env::current_dir().unwrap().join(LOCAL_OBJECTS_DIR);
@@ -1187,6 +1217,9 @@ impl EditorState
 
         let local_sounds_dir = env::current_dir().unwrap().join(LOCAL_SOUNDS_DIR);
         self.load_asset_entries(local_sounds_dir.to_string_lossy().as_ref(), state, AssetType::Sound, egui_context, true);
+
+        let local_textures_dir = env::current_dir().unwrap().join(LOCAL_TEXTURES_DIR);
+        self.load_asset_entries(local_textures_dir.to_string_lossy().as_ref(), state, AssetType::Texture, egui_context, true);
     }
 
     pub fn load_asset_entries(&mut self, path: &str, state: &State, asset_type: AssetType, egui_context: &egui::Context, append: bool)
@@ -1205,7 +1238,7 @@ impl EditorState
                 AssetType::Scene => state.supported_file_types.scenes.contains(&extension),
                 AssetType::Object => state.supported_file_types.objects.contains(&extension),
                 AssetType::Material => state.supported_file_types.materials.contains(&extension),
-                AssetType::Texture => state.supported_file_types.textures.contains(&extension),
+                AssetType::Texture => state.supported_file_types.textures.contains(&extension) && !item.ends_with(THUMB_SUFFIX_NAME),
                 AssetType::Sound => state.supported_file_types.sounds.contains(&extension),
             }
         }).map(|s| s.to_string()).collect();
@@ -1299,6 +1332,17 @@ impl EditorState
             else
             {
                 self.assets_sounds = assets;
+            }
+        }
+        else if asset_type == AssetType::Texture
+        {
+            if append
+            {
+                self.assets_textures.extend(assets);
+            }
+            else
+            {
+                self.assets_textures = assets;
             }
         }
     }

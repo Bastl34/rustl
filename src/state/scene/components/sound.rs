@@ -507,11 +507,6 @@ impl Component for Sound
         }
     }
 
-    fn saved_with_node(&self) -> bool
-    {
-        true
-    }
-
     fn instantiable() -> bool
     {
         true

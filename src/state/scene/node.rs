@@ -9,7 +9,7 @@ use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Dese
 
 use crate::{component_downcast, component_downcast_mut, console_log, console_warning, state::state::ENGINE_INTERNAL_TAG_PREFX, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::{extract_max_scale_from_transform, extract_scale_from_transform}, observable::Observable, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components, remove_components_by_type}, scene::Scene}, state::{InputOutput, RunMode}}};
 
-use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, layers::LAYER_DEFAULT, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
+use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, layers::LAYER_DEFAULT, manager::id_manager, utilities::{extras::Extras, origin::Origin, saved_state::AssetInfo, tags::Tags}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
@@ -122,9 +122,6 @@ impl Default for PhysicsSettings
 #[serde(default)]
 pub struct NodeSettings
 {
-    #[serde(skip)]
-    pub transient: bool, // node is not written to the project file
-
     pub visible: bool,
     pub locked: bool,
     pub pickable: bool,
@@ -155,7 +152,6 @@ impl Default for NodeSettings
     {
         Self
         {
-            transient: false,
             visible: true,
             locked: false,
             pickable: true,
@@ -190,6 +186,11 @@ pub struct Node
 
     pub name: String,
     pub root_node: bool,
+
+    // runtime: not saved, asset: saved as override, scene: saved completely
+    pub origin: Origin,
+    pub asset_key: String, // stable key of an asset node in its asset file (e.g. n12 = glTF node 12)
+    pub asset: Option<Box<AssetInfo>>, // only on the root of a loaded asset
 
     pub settings: NodeSettings,
 
@@ -372,8 +373,12 @@ impl Node
             name: "default".to_string(),
             root_node: false,
 
-            // a fresh node is transient until something (the loader, the editor) claims it
-            settings: NodeSettings { transient: true, ..NodeSettings::default() },
+            // loader and editor set the origin
+            origin: Origin::Runtime,
+            asset_key: String::new(),
+            asset: None,
+
+            settings: NodeSettings::default(),
 
             components: vec![],
 

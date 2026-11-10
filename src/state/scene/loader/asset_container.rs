@@ -19,6 +19,7 @@ use crate::{component_downcast_mut, helper::{change_tracker::ChangeTracker, opti
         light::LightItem,
         loader::loader::LoaderOptions,
         node::{Node, NodeItem},
+        utilities::saved_state::mark_asset,
     },
     state::State,
 }};
@@ -128,6 +129,7 @@ impl AssetContainer
 
         // *** materials — id-based dedup + name-based reuse ***
         let mut material_remap: HashMap<u32, MaterialItem> = HashMap::new();
+        let mut own_materials: Vec<MaterialItem> = vec![];
         for material in &self.materials
         {
             let old_id = material.read().unwrap().get_base().id;
@@ -151,6 +153,7 @@ impl AssetContainer
             if scene.get_material_by_id(old_id).is_none()
             {
                 scene.add_material(material);
+                own_materials.push(material.clone());
             }
             result.material_ids.push(old_id);
         }
@@ -205,6 +208,12 @@ impl AssetContainer
         for node in &self.nodes
         {
             result.node_ids.push(node.read().unwrap().id);
+        }
+
+        // marks nodes, components, instances and own materials as asset - the materials belong to the first root
+        for (index, root_node) in self.root_nodes.iter().enumerate()
+        {
+            mark_asset(root_node, if index == 0 { std::mem::take(&mut own_materials) } else { vec![] });
         }
 
         result

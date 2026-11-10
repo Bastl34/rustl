@@ -184,6 +184,14 @@ pub struct SceneFile
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sounds: Vec<SceneSound>,
 
+    // textures of scene materials and environment that are not inside an asset
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub textures: Vec<SceneTexture>,
+
+    // scene materials (serde of Material) - referenced by uuid
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub materials: Vec<serde_json::Value>,
+
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objects: Vec<SceneObject>,
 
@@ -198,11 +206,14 @@ pub struct SceneFile
     pub controller: Vec<serde_json::Value>,
 }
 
-// the scene data without the environment texture
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SceneSettings
 {
     pub max_lights: u32,
+
+    // serde of TextureState - the texture is in textures
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<serde_json::Value>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gamma: Option<f32>,
@@ -212,6 +223,14 @@ pub struct SceneSettings
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ibl_diffuse_intensity: Option<f32>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SceneTexture
+{
+    pub uuid: String,
+    pub name: String,
+    pub source: String, // like an object source: relative to the project file or "resources://..."
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -258,6 +277,21 @@ pub struct SceneObject
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub components: Vec<serde_json::Value>,
 
+    // material uuids - materials of the scene or of a loaded asset
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub materials: Vec<String>,
+
+    // scene instances - saved_state::InstanceState
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub instances: Vec<serde_json::Value>,
+
+    // changes of the loaded asset by asset key - "" is the root
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overrides: Vec<AssetOverride>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub material_overrides: Vec<MaterialOverride>,
+
     // node extras (game data of converters, ...): bool, number, string or an array of 2 to 4 numbers
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub extras: serde_json::Map<String, serde_json::Value>,
@@ -270,6 +304,49 @@ pub struct SceneObject
     pub objects: Vec<SceneObject>,
 }
 
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AssetOverride
+{
+    pub key: String,
+    pub name: String, // asset name - checked on load, fallback lookup by name
+
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub removed: bool,
+
+    // json merge patch of saved_state::NodeState
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch: Option<serde_json::Value>,
+
+    // new parent uuid of a moved node - "" is the scene top level
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+
+    // scene extras, tags, components and instances
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub extras: serde_json::Map<String, serde_json::Value>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub components: Vec<serde_json::Value>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub instances: Vec<serde_json::Value>,
+
+    // scene objects below this asset node
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub objects: Vec<SceneObject>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct MaterialOverride
+{
+    pub key: String,
+    pub name: String,
+    pub patch: serde_json::Value,
+}
 
 // ******************** loading state ********************
 

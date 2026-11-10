@@ -8,7 +8,7 @@ use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, scene_controller::scene_controller::ControllerPhase, utilities::{extras::Extras, tags::{self, Tags}}}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput, RunMode, get_delta_t}}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::{Observable, ObserverId}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, scene_controller::scene_controller::ControllerPhase, utilities::{extras::Extras, tags::{self, Tags}}}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput, RunMode, get_delta_t}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, layers::LAYER_MASK_USER, light::{Light, LightItem}, node::{Node, NodeItem}, physics::physics_world::PhysicsWorld, scene_controller::scene_controller::SceneControllerBox};
 
@@ -244,6 +244,27 @@ impl Scene
 
             on_before_update: Observable::new(),
             on_after_update: Observable::new(),
+        }
+    }
+
+    // no `..` on purpose: a new field does not compile until it is decided here whether it is an observable
+    fn observables(&mut self) -> Vec<&mut Observable<Scene>>
+    {
+        let Scene { id: _, uuid: _, source: _, name: _, visible: _, active: _, extras: _, tags: _, data: _, nodes: _, cameras: _, lights: _, materials: _, controller: _, physics: _, render_item: _, lights_render_item: _, on_before_update, on_after_update } = self;
+        vec![on_before_update, on_after_update]
+    }
+
+    pub fn last_observer_ids(&mut self) -> Vec<ObserverId>
+    {
+        self.observables().iter().map(|observable| observable.last_id()).collect()
+    }
+
+    // removes the observers added after last_observer_ids
+    pub fn remove_observers_added_after(&mut self, last_ids: &[ObserverId])
+    {
+        for (observable, last_id) in self.observables().into_iter().zip(last_ids)
+        {
+            observable.remove_added_after(*last_id);
         }
     }
 

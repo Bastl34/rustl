@@ -596,6 +596,17 @@ impl Component for Animation
     component_impl_default!();
     component_impl_no_update_instance!();
 
+    // keeps the keyframes and the play state
+    fn keep_unsaved(&mut self, old: &mut dyn Component)
+    {
+        if let Some(old) = old.as_any_mut().downcast_mut::<Animation>()
+        {
+            self.channels = std::mem::take(&mut old.channels);
+            self.start_time = old.start_time;
+            self.pause_time = old.pause_time;
+        }
+    }
+
     fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
     {
         // node
@@ -608,8 +619,8 @@ impl Component for Animation
             }
             else
             {
-                self.in_place_joint_node = OptionOrId::None;
                 console_error!("Animation: Node with id {} not found", self.in_place_joint_node.id().unwrap());
+                self.in_place_joint_node = OptionOrId::None;
             }
         }
 
@@ -624,14 +635,9 @@ impl Component for Animation
             }
             else
             {
-                self.sound_component = OptionOrId::None;
                 console_error!("Animation: sound_component with id {} not found", self.sound_component.id().unwrap());
+                self.sound_component = OptionOrId::None;
             }
-        }
-        else
-        {
-            self.sound_component = OptionOrId::None;
-            console_error!("Animation: no sound_component found");
         }
 
         // joint filter

@@ -41,6 +41,7 @@ use super::sound::{build_sound_sources_list, create_sound_settings, create_sound
 use super::statistics::{create_chart, create_statistic};
 use super::textures::{create_texture_settings, build_texture_list};
 use super::run_mode_bar::{create_run_mode_bar, RUN_MODE_BAR_HEIGHT, RUN_MODE_BAR_V_PADDING};
+use crate::state::scene::utilities::origin::Origin;
 
 const HIERARCHY_MIN_HEIGHT: f32 = 250.0;
 
@@ -1309,7 +1310,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
                     {
                         ui.close();
                         let node = scene.add_empty_node_front("Node", None);
-                        node.write().unwrap().settings.transient = false;
+                        node.write().unwrap().origin = Origin::Scene;
                     }
                 });
             });
