@@ -1002,18 +1002,19 @@ impl Component for Animation
 
                     transform.0 = Some(t.clone());
                 }
-                else if channel.transform_rotation.len() > 0
+                // a single pose may carry translation, rotation and scale at once (each one on its own)
+                if channel.transform_rotation.len() > 0
                 {
                     let r = &channel.transform_rotation[0];
                     let quaternion = UnitQuaternion::new_normalize(Quaternion::new(r.w, r.x, r.y, r.z));
                     transform.1 = Some(quaternion);
                 }
-                else if channel.transform_scale.len() > 0
+                if channel.transform_scale.len() > 0
                 {
                     let s = &channel.transform_scale[0];
                     transform.2 = Some(s.clone());
                 }
-                else if channel.transform_morph.len() > 0
+                if channel.transform_morph.len() > 0
                 {
                     let weights = &channel.transform_morph[0];
 
