@@ -188,6 +188,7 @@ function buildNative(target, name, code)
     {
         writeMacIcon(target.app);
         writeInfoPlist(target.app, name);
+        signMac(target.app);
     }
 }
 
@@ -617,6 +618,16 @@ function writeInfoPlist(app, name)
 </plist>
 `;
     fs.writeFileSync(path.join(app, "Contents", "Info.plist"), plist);
+}
+
+// ad-hoc signature over the whole bundle (Info.plist + resources) - has to run last, every later change to the bundle breaks it
+// the linker only signs the executable, the bundle around it does not match then -> after a download (quarantine) macOS calls the app "damaged"
+// ad-hoc instead of a developer id: on another mac it still has to be allowed once (Privacy & Security -> Open Anyway), but it is no longer "damaged"
+// xattr -cr: Finder info or resource forks on copied files would make codesign fail
+function signMac(app)
+{
+    run("xattr", ["-cr", app]);
+    run("codesign", ["--force", "--sign", "-", "--timestamp=none", app]);
 }
 
 function needsCopy(src, dst)
