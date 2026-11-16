@@ -2,7 +2,7 @@
 
 use std::{collections::HashSet, f32::consts::PI, sync::{Arc, RwLock}};
 
-use nalgebra::{Rotation3, Vector3, Vector4};
+use nalgebra::{Rotation3, Vector2, Vector3, Vector4};
 use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use rapier3d::prelude::{Capsule, Collider, ColliderHandle, Pose, QueryFilter, Vector};
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use crate::console_warning;
 use crate::state::scene::exporter::serialization_helper::{default_true, deserialize_node, serialize_node};
 use crate::state::scene::components::mesh::Mesh;
 use crate::gui::helper::property_items::{combo, slider, slider_widget};
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, helper::{math::{approx_equal, approx_zero, approx_zero_vec3, extract_translation_from_transform, shortest_angle_dist, smooth_factor, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::{default_max_radius, TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::{Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput, RunMode}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, helper::{math::{approx_equal, approx_zero, approx_zero_vec3, extract_translation_from_transform, shortest_angle_dist, smooth_factor, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::{gamepad::{GamepadAxis, GamepadButton}, input_binding::{gamepad_select_ui, input_action_ui, AxisDirection, GamepadSelect, InputAction, InputSource}, keyboard::{Key, Modifier}}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::{default_max_radius, TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::{Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput, RunMode}}};
 
 use super::scene_controller::SceneController;
 
@@ -61,6 +61,83 @@ const GROUND_PROBE_MARGIN: f32 = 0.2;
 const DEFAULT_CAM_RADIUS: f32 = 6.0;
 const CAM_RELATIVE_LATERAL_OFFSET: f32 = -0.5; // negative = character right of the screen center
 const TURN_SPEED: f32 = 12.0;
+
+// a stick deflection below this is no key press
+const INPUT_DEADZONE: f32 = 0.3;
+
+// which keys and gamepad walk this character - two characters with different ones make split screen (like VehicleControls)
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default)]
+pub struct CharControls
+{
+    pub gamepad: GamepadSelect,
+    pub forward: InputAction,
+    pub back: InputAction,
+    pub left: InputAction,
+    pub right: InputAction,
+    pub sprint: InputAction, // held: the other speed than the sprint lock has
+    pub sprint_lock: InputAction, // toggles running by default
+    pub jump: InputAction,
+    pub crouch: InputAction,
+    pub roll: InputAction, // moving: a roll, standing: crouch
+    pub fly: InputAction, // toggles the fly mode
+    pub stop: InputAction, // stops the clip
+    pub actions: [InputAction; 5], // the action clips
+    pub run_stick: f32, // a stick pushed this far runs (0..1)
+}
+
+impl Default for CharControls
+{
+    fn default() -> Self
+    {
+        use InputSource::{GamepadAxis as Axis, GamepadButton as Button, Key as K, Modifier as M};
+
+        Self
+        {
+            gamepad: GamepadSelect::Any,
+            forward: InputAction::new(&[K(Key::W), Axis(GamepadAxis::LeftStickY, AxisDirection::Positive)]),
+            back: InputAction::new(&[K(Key::S), Axis(GamepadAxis::LeftStickY, AxisDirection::Negative)]),
+            left: InputAction::new(&[K(Key::A), Axis(GamepadAxis::LeftStickX, AxisDirection::Negative)]),
+            right: InputAction::new(&[K(Key::D), Axis(GamepadAxis::LeftStickX, AxisDirection::Positive)]),
+            sprint: InputAction::new(&[M(Modifier::LeftShift)]),
+            sprint_lock: InputAction::new(&[K(Key::CapsLock)]),
+            jump: InputAction::new(&[K(Key::Space), Button(GamepadButton::South)]),
+            crouch: InputAction::new(&[K(Key::C), Button(GamepadButton::RightThumb)]),
+            roll: InputAction::new(&[M(Modifier::LeftCtrl)]),
+            fly: InputAction::new(&[K(Key::Y)]),
+            stop: InputAction::new(&[K(Key::Escape)]),
+            actions: [InputAction::new(&[K(Key::Key1)]), InputAction::new(&[K(Key::Key2)]), InputAction::new(&[K(Key::Key3)]), InputAction::new(&[K(Key::Key4)]), InputAction::new(&[K(Key::Key5)])],
+            run_stick: 0.8,
+        }
+    }
+}
+
+impl CharControls
+{
+    // only the gamepad parts (a player with a pad only: the keyboard belongs to another one)
+    pub fn gamepad_only(&self) -> CharControls
+    {
+        let only = |action: &InputAction| action.gamepad_only();
+        CharControls
+        {
+            gamepad: self.gamepad, forward: only(&self.forward), back: only(&self.back), left: only(&self.left), right: only(&self.right), sprint: only(&self.sprint),
+            sprint_lock: only(&self.sprint_lock), jump: only(&self.jump), crouch: only(&self.crouch), roll: only(&self.roll), fly: only(&self.fly), stop: only(&self.stop),
+            actions: self.actions.clone().map(|action| action.gamepad_only()), run_stick: self.run_stick,
+        }
+    }
+}
+
+// a movement input of the controls
+#[derive(Clone, Copy)]
+enum Hold
+{
+    Forward,
+    Back,
+    Left,
+    Right,
+    Crouch,
+    Up,
+}
 
 fn default_turn_speed() -> f32 { TURN_SPEED }
 
@@ -341,6 +418,14 @@ pub struct CharacterController
     #[serde(skip, default)]
     pub crouch_override: Option<bool>,
 
+    // which keys and gamepad walk it - a second player in split screen gets his own pad and no keys
+    #[serde(default)]
+    pub controls: CharControls,
+
+    // the character passes through these nodes (a game's falling objects that must not shove or carry it)
+    #[serde(skip, default)]
+    pub ignored_node_ids: HashSet<u32>,
+
     // capsule height factor while rolling/crouching, or still under something that leaves no room to grow - None = standing
     #[serde(skip, default)]
     low_capsule: Option<f32>,
@@ -467,6 +552,8 @@ impl CharacterController
             sprint_lock: false,
             drive_animations: true,
             crouch_override: None,
+            controls: CharControls::default(),
+            ignored_node_ids: HashSet::new(),
             low_capsule: None,
 
             rotation_follow: false,
@@ -516,6 +603,29 @@ impl CharacterController
 
             transformation: None,
         }
+    }
+
+    // a movement input held (a stick past the dead zone)
+    fn held(&self, io: &InputOutput, hold: Hold) -> bool
+    {
+        let c = &self.controls;
+        let action = match hold { Hold::Forward => &c.forward, Hold::Back => &c.back, Hold::Left => &c.left, Hold::Right => &c.right, Hold::Crouch => &c.crouch, Hold::Up => &c.jump };
+        action.value(&io.input_manager, c.gamepad).value > INPUT_DEADZONE
+    }
+
+    fn ctrl_held(&self, io: &InputOutput) -> bool
+    {
+        self.controls.roll.held(&io.input_manager, self.controls.gamepad)
+    }
+
+    // the walk of a stick (x right, y forward) - None: keys walk it (8 directions)
+    fn stick(&self, io: &InputOutput) -> Option<Vector2<f32>>
+    {
+        let c = &self.controls;
+        let value = |action: &InputAction| action.value(&io.input_manager, c.gamepad);
+        let (f, b, l, r) = (value(&c.forward), value(&c.back), value(&c.left), value(&c.right));
+        if !(f.analog || b.analog || l.analog || r.analog) { return None; }
+        Some(Vector2::new(r.value - l.value, f.value - b.value))
     }
 
     pub fn auto_setup(&mut self, scene: &mut crate::state::scene::scene::Scene, character_node: &str, cam_name: &str) -> Option<String>
@@ -1603,16 +1713,17 @@ impl SceneController for CharacterController
         let mut is_action = self.is_action();
 
         // ********** sprint lock **********
-        if io.input_manager.keyboard.is_pressed(Key::CapsLock)
+        if self.controls.sprint_lock.pressed(&mut io.input_manager, self.controls.gamepad)
         {
             self.sprint_lock = !self.sprint_lock;
         }
 
-        // shift inverts the lock, so it walks while the lock is on
-        let fast = io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift) != self.sprint_lock;
+        // a stick runs pushed far, the keys: shift inverts the lock, so it walks while the lock is on
+        let stick = self.stick(io);
+        let fast = match stick { Some(stick) => stick.norm() >= self.controls.run_stick, None => self.controls.sprint.held(&io.input_manager, self.controls.gamepad) != self.sprint_lock };
 
         // C held: no movement, unless the game lets it walk crouched
-        let crouch_held = self.crouch_override.unwrap_or_else(|| io.input_manager.keyboard.is_holding(Key::C));
+        let crouch_held = self.crouch_override.unwrap_or_else(|| self.held(io, Hold::Crouch));
         let crouch_walk = crouch_held && self.crouch_walk_speed.is_some() && !self.fly_mode;
         let movement_blocked_by_crouch = crouch_held && !crouch_walk;
 
@@ -1621,7 +1732,7 @@ impl SceneController for CharacterController
         let locomotion = |animation: CharAnimationType| if crouch_clip { CharAnimationType::CrouchWalk } else { animation };
 
         // ********** fly mode **********
-        if io.input_manager.keyboard.is_pressed(Key::Y)
+        if self.controls.fly.pressed(&mut io.input_manager, self.controls.gamepad)
         {
             self.fly_mode = !self.fly_mode;
 
@@ -1673,10 +1784,8 @@ impl SceneController for CharacterController
         let mut strafing = false;
         if camera_relative && !movement_blocked_by_crouch && !is_action && !is_landing
         {
-            let keyboard = &io.input_manager.keyboard;
-
-            let input_z = keyboard.is_holding(Key::W) as i32 - keyboard.is_holding(Key::S) as i32;
-            let input_x = keyboard.is_holding(Key::D) as i32 - keyboard.is_holding(Key::A) as i32;
+            let input_z = self.held(io, Hold::Forward) as i32 - self.held(io, Hold::Back) as i32;
+            let input_x = self.held(io, Hold::Right) as i32 - self.held(io, Hold::Left) as i32;
 
             if input_x != 0 || input_z != 0
             {
@@ -1684,7 +1793,12 @@ impl SceneController for CharacterController
                 let forward = Vector3::new(-alpha.sin(), 0.0, -alpha.cos());
                 let right = Vector3::new(alpha.cos(), 0.0, -alpha.sin());
 
-                move_dir = Some((forward * input_z as f32 + right * input_x as f32).normalize());
+                // a stick goes in its own direction, keys in the 8 of them
+                move_dir = Some(match stick
+                {
+                    Some(stick) => (forward * stick.y + right * stick.x).try_normalize(1.0e-4).unwrap_or(forward),
+                    None => (forward * input_z as f32 + right * input_x as f32).normalize(),
+                });
 
                 // strafe only straight sideways or backwards - diagonals turn and walk like without strafe
                 strafing = self.strafe && (input_z == 0 || input_x == 0);
@@ -1727,7 +1841,7 @@ impl SceneController for CharacterController
         // ********** forward/backward **********
         if !camera_relative && !movement_blocked_by_crouch && !is_action && !is_landing
         {
-            if io.input_manager.keyboard.is_holding(Key::W) && !fast
+            if self.held(io, Hold::Forward) && !fast
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
@@ -1737,7 +1851,7 @@ impl SceneController for CharacterController
                 movement.z = if self.fly_mode { self.fly_speed } else { self.movement_speed };
                 has_change = true;
             }
-            else if io.input_manager.keyboard.is_holding(Key::S) && !fast
+            else if self.held(io, Hold::Back) && !fast
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
@@ -1746,7 +1860,7 @@ impl SceneController for CharacterController
                 movement.z = if self.fly_mode { -self.fly_speed } else { -self.movement_speed };
                 has_change = true;
             }
-            else if io.input_manager.keyboard.is_holding(Key::W) && fast
+            else if self.held(io, Hold::Forward) && fast
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
@@ -1756,7 +1870,7 @@ impl SceneController for CharacterController
                 movement.z = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed_fast };
                 has_change = true;
             }
-            else if io.input_manager.keyboard.is_holding(Key::S) && fast
+            else if self.held(io, Hold::Back) && fast
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
@@ -1776,9 +1890,9 @@ impl SceneController for CharacterController
         // ********** left/right **********
         if !camera_relative && !is_landing
         {
-            if io.input_manager.keyboard.is_holding(Key::A)
+            if self.held(io, Hold::Left)
             {
-                if (!self.strafe || io.input_manager.keyboard.is_holding(Key::W) || io.input_manager.keyboard.is_holding(Key::S)) && !is_first_person
+                if (!self.strafe || self.held(io, Hold::Forward) || self.held(io, Hold::Back)) && !is_first_person
                 {
                     rotation.y = self.rotation_speed;
                 }
@@ -1804,9 +1918,9 @@ impl SceneController for CharacterController
 
                 has_change = true;
             }
-            else if io.input_manager.keyboard.is_holding(Key::D)
+            else if self.held(io, Hold::Right)
             {
-                if (!self.strafe || io.input_manager.keyboard.is_holding(Key::W) || io.input_manager.keyboard.is_holding(Key::S)) && !is_first_person
+                if (!self.strafe || self.held(io, Hold::Forward) || self.held(io, Hold::Back)) && !is_first_person
                 {
                     rotation.y = -self.rotation_speed;
                 }
@@ -1842,13 +1956,13 @@ impl SceneController for CharacterController
         // ********** up/down (fly mode, same speeds as the horizontal flight) **********
         let vertical_speed = if fast { self.fly_speed_fast } else { self.fly_speed };
 
-        if io.input_manager.keyboard.is_holding(Key::C) && self.fly_mode
+        if self.held(io, Hold::Crouch) && self.fly_mode
         {
             movement.y = -vertical_speed;
             has_change = true;
         }
 
-        if io.input_manager.keyboard.is_holding(Key::Space) && self.fly_mode
+        if self.held(io, Hold::Up) && self.fly_mode
         {
             movement.y = vertical_speed;
             has_change = true;
@@ -1858,10 +1972,11 @@ impl SceneController for CharacterController
         let mut crouching = false;
         // a press shortly before the ground is kept, the ground counts a moment after it was lost (coyote time)
         let jump_dt = get_delta_t(frame_scale);
-        if io.input_manager.keyboard.is_pressed_no_wait(Key::Space) { self.jump_press_left = JUMP_GRACE; } else { self.jump_press_left = (self.jump_press_left - jump_dt).max(0.0); }
+        let jump_pressed = self.controls.jump.pressed_now(&mut io.input_manager, self.controls.gamepad);
+        if jump_pressed { self.jump_press_left = JUMP_GRACE; } else { self.jump_press_left = (self.jump_press_left - jump_dt).max(0.0); }
         if self.grounded { self.ground_grace_left = JUMP_GRACE; } else { self.ground_grace_left = (self.ground_grace_left - jump_dt).max(0.0); }
         let on_ground = (self.grounded || self.ground_grace_left > 0.0 && self.jumps == 0) && !is_jumping;
-        if self.jump_press_left > 0.0 && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !crouch_held && !is_rolling && !is_action && !is_landing && !self.fly_mode && (on_ground && self.max_jumps > 0 || (self.jumps > 0 && self.jumps < self.max_jumps && !self.falling))
+        if self.jump_press_left > 0.0 && !self.ctrl_held(io) && !crouch_held && !is_rolling && !is_action && !is_landing && !self.fly_mode && (on_ground && self.max_jumps > 0 || (self.jumps > 0 && self.jumps < self.max_jumps && !self.falling))
         {
             self.jump_press_left = 0.0;
             self.ground_grace_left = 0.0;
@@ -1872,14 +1987,14 @@ impl SceneController for CharacterController
             self.jumps += 1;
         }
         // ********** crouch **********
-        else if (crouch_held || self.crouch_override.is_none() && io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
+        else if (crouch_held || self.crouch_override.is_none() && self.ctrl_held(io)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
         {
             self.start_animation(CharAnimationType::Crouch, 0, AnimationMixing::Fade, 1.0, false, false, false);
             crouching = true;
             has_change = true;
         }
         // ********** roll **********
-        else if io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode
+        else if self.ctrl_held(io) && !approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode
         {
             // camera relative always rolls forward - the body turns into the roll direction
             if movement.z > 0.0 || move_dir.is_some()
@@ -1896,14 +2011,13 @@ impl SceneController for CharacterController
         // ********** action **********
         else if approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
         {
-            if io.input_manager.keyboard.is_pressed_no_wait(Key::Key1) { self.start_animation(CharAnimationType::Action, 0, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
-            if io.input_manager.keyboard.is_pressed_no_wait(Key::Key2) { self.start_animation(CharAnimationType::Action, 1, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
-            if io.input_manager.keyboard.is_pressed_no_wait(Key::Key3) { self.start_animation(CharAnimationType::Action, 2, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
-            if io.input_manager.keyboard.is_pressed_no_wait(Key::Key4) { self.start_animation(CharAnimationType::Action, 3, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
-            if io.input_manager.keyboard.is_pressed_no_wait(Key::Key5) { self.start_animation(CharAnimationType::Action, 4, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
+            for index in 0..self.controls.actions.len()
+            {
+                if self.controls.actions[index].pressed_now(&mut io.input_manager, self.controls.gamepad) { self.start_animation(CharAnimationType::Action, index, AnimationMixing::Fade, 1.0, false, false, true); has_change = true; }
+            }
         }
         // ********** stop **********
-        else if io.input_manager.keyboard.is_pressed_no_wait(Key::Escape) && !self.fly_mode
+        else if self.controls.stop.pressed_now(&mut io.input_manager, self.controls.gamepad) && !self.fly_mode
         {
             self.start_animation(CharAnimationType::None, 0, AnimationMixing::Stop, 1.0, false, false, false);
             has_change = true;
@@ -1920,7 +2034,7 @@ impl SceneController for CharacterController
 
         // ********** idle **********
         let mut idle_turn_rate: Option<f32> = None; // rad/s while a turn clip plays
-        if approx_zero_vec3(&movement) && !self.falling && !is_jumping && !is_rolling && !is_action && !is_landing && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !io.input_manager.keyboard.is_holding(Key::C) && !self.fly_mode
+        if approx_zero_vec3(&movement) && !self.falling && !is_jumping && !is_rolling && !is_action && !is_landing && !self.ctrl_held(io) && !self.held(io, Hold::Crouch) && !self.fly_mode
         {
             // standing but still turning into the view (see idle_turn below) - step with the turn clips
             let mut idle_turn_diff = 0.0;
@@ -2160,9 +2274,11 @@ impl SceneController for CharacterController
 
             // out of self so the closure can borrow it while later calls need self mutably
             let excluded = std::mem::take(&mut self.excluded_node_ids);
+            let ignored = std::mem::take(&mut self.ignored_node_ids);
             let predicate = |_handle: ColliderHandle, collider: &Collider| -> bool
             {
-                !excluded.contains(&(collider.user_data as u32))
+                let id = collider.user_data as u32;
+                !excluded.contains(&id) && !ignored.contains(&id)
             };
 
             let filter = QueryFilter::default().predicate(&predicate);
@@ -2299,6 +2415,7 @@ impl SceneController for CharacterController
             }
 
             self.excluded_node_ids = excluded;
+            self.ignored_node_ids = ignored;
         }
 
         // ********** apply movement **********
@@ -2421,6 +2538,22 @@ impl SceneController for CharacterController
             if ui.button("Run Auto Setup").clicked()
             {
                 self.auto_setup(scene, self.node_name.clone().as_str(), self.cam_name.clone().as_str());
+            }
+        });
+
+        ui.collapsing("Controls", |ui|
+        {
+            let id = format!("char_controls_{}", self.node_name);
+            gamepad_select_ui(ui, &id, &mut self.controls.gamepad);
+            slider(ui, "Run Stick", "a stick pushed this far runs (0..1)", &mut self.controls.run_stick, 0.1..=1.0, 2);
+            let c = &mut self.controls;
+            for (label, action) in [("Forward", &mut c.forward), ("Back", &mut c.back), ("Left", &mut c.left), ("Right", &mut c.right), ("Sprint", &mut c.sprint), ("Sprint Lock", &mut c.sprint_lock), ("Jump", &mut c.jump), ("Crouch", &mut c.crouch), ("Roll", &mut c.roll), ("Fly", &mut c.fly), ("Stop", &mut c.stop)]
+            {
+                input_action_ui(ui, &id, label, action);
+            }
+            for (index, action) in c.actions.iter_mut().enumerate()
+            {
+                input_action_ui(ui, &id, &format!("Action {}", index + 1), action);
             }
         });
 

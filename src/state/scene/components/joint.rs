@@ -179,43 +179,32 @@ impl JointTransformationData
         }
     }
 
+    // a weight below 1 blends from what is there toward the override (toward identity / zero only where nothing is there yet)
     pub fn override_with_weight(&self, other: &JointTransformationData, weight: f32) -> Self
     {
         JointTransformationData
         {
-            translation:
+            translation: match (self.translation, other.translation)
             {
-                if let Some(new_translation) = other.translation
-                {
-                    Some(new_translation * weight)
-                }
-                else
-                {
-                    self.translation
-                }
+                (Some(self_trans), Some(other_trans)) => Some(self_trans.lerp(&other_trans, weight)),
+                (None, Some(other_trans)) => Some(other_trans * weight),
+                (self_trans, None) => self_trans,
             },
-            rotation_quat:
+            rotation_quat: match (self.rotation_quat, other.rotation_quat)
             {
-                if let Some(new_rot) = other.rotation_quat
+                (Some(self_rot), Some(other_rot)) => Some(self_rot.try_slerp(&other_rot, weight, 1.0e-6).unwrap_or(if weight < 0.5 { self_rot } else { other_rot })),
+                (None, Some(other_rot)) =>
                 {
                     let identity = nalgebra::Unit::new_normalize(Quaternion::identity());
-                    Some(identity.slerp(&new_rot, weight))
+                    Some(identity.slerp(&other_rot, weight))
                 }
-                else
-                {
-                    self.rotation_quat
-                }
+                (self_rot, None) => self_rot,
             },
-            scale:
+            scale: match (self.scale, other.scale)
             {
-                if let Some(new_scale) = other.scale
-                {
-                    Some(new_scale * weight)
-                }
-                else
-                {
-                    self.scale
-                }
+                (Some(self_scale), Some(other_scale)) => Some(self_scale.lerp(&other_scale, weight)),
+                (None, Some(other_scale)) => Some(other_scale * weight),
+                (self_scale, None) => self_scale,
             },
         }
     }

@@ -1274,7 +1274,7 @@ impl VehicleController
         }
 
         // ********** forward **********
-        let forward = self.detect_forward(&rotation, &up, &wheels);
+        let forward = self.detect_forward(&rotation, &up, &wheels, &extents);
         let frame = VehicleFrame { forward, up };
         self.frame = Some(frame);
 
@@ -1809,7 +1809,7 @@ impl VehicleController
         }
     }
 
-    fn detect_forward(&self, rotation: &UnitQuaternion<f32>, up: &Vector3<f32>, wheels: &[(NodeItem, Vector3<f32>, f32)]) -> Vector3<f32>
+    fn detect_forward(&self, rotation: &UnitQuaternion<f32>, up: &Vector3<f32>, wheels: &[(NodeItem, Vector3<f32>, f32)], extents: &[Vector3<f32>]) -> Vector3<f32>
     {
         let horizontal = |v: Vector3<f32>| -> Option<Vector3<f32>>
         {
@@ -1866,7 +1866,14 @@ impl VehicleController
         let world_forward = horizontal(rotation.inverse() * -Vector3::z()).unwrap_or(-Vector3::z());
         let model_axes: Vec<Vector3<f32>> = [Vector3::z(), Vector3::x(), Vector3::y()].into_iter().filter_map(horizontal).filter(|axis| axis.dot(up).abs() < 0.5).collect();
 
-        let axis = if wheels.len() >= 2
+        // a trailer's wheels often sit on one axle (spread sideways): it rolls along the axis its wheels are longest in
+        let rolling = |axis: &Vector3<f32>| -> f32 { extents.iter().map(|extent| extent.dot(&axis.abs())).sum() };
+
+        let axis = if self.vehicle_type == VehicleType::Trailer && !extents.is_empty()
+        {
+            model_axes.iter().cloned().max_by(|a, b| rolling(a).total_cmp(&rolling(b)))
+        }
+        else if wheels.len() >= 2
         {
             model_axes.iter().cloned().max_by(|a, b| spread(a).total_cmp(&spread(b)))
         }
@@ -5648,7 +5655,7 @@ mod tests
         for yaw in [0.0f32, 1.178, 2.5, -2.0]
         {
             let rotation = UnitQuaternion::from_axis_angle(&Vector3::y_axis(), yaw);
-            let forward = controller.detect_forward(&rotation, &Vector3::y(), &wheels);
+            let forward = controller.detect_forward(&rotation, &Vector3::y(), &wheels, &[]);
             assert!((forward - Vector3::z()).norm() < 1e-4, "yaw {}: forward {:?}", yaw, forward);
         }
 

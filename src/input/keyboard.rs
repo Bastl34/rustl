@@ -593,6 +593,12 @@ impl Keyboard
         is_pressed_by_state(state)
     }
 
+    pub fn is_pressed_modifier_no_wait(&mut self, modifier: Modifier) -> bool
+    {
+        let state = self.modifiers[modifier as usize].pressed(false, false);
+        is_pressed_by_state(state)
+    }
+
     pub fn has_input(&self) -> bool
     {
         self.is_any_key_holding()

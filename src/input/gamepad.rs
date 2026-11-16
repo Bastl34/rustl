@@ -215,6 +215,12 @@ impl Gamepad
         is_pressed_by_state(state)
     }
 
+    pub fn is_pressed_no_wait(&mut self, button: GamepadButton) -> bool
+    {
+        let state = self.buttons[button as usize].pressed(false, false);
+        is_pressed_by_state(state)
+    }
+
     pub fn is_axis_active(&self, axis: GamepadAxis) -> bool
     {
         self.axes[axis as usize].abs() > self.axis_deadzone

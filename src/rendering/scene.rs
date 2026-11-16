@@ -3163,9 +3163,20 @@ impl Scene
                 }
             }
 
-            let material_render_item = mat.get_base().render_item.as_ref();
-            let material_render_item = get_render_item::<MaterialBuffer>(material_render_item.as_ref().unwrap());
-            let material_bind_group = material_render_item.bind_group.as_ref().unwrap();
+            // a material added after the update of this frame gets its gpu data in the next one
+            let Some(material_render_item) = mat.get_base().render_item.as_ref()
+            else
+            {
+                continue;
+            };
+
+            let material_render_item = get_render_item::<MaterialBuffer>(material_render_item);
+
+            let Some(material_bind_group) = material_render_item.bind_group.as_ref()
+            else
+            {
+                continue;
+            };
             let shader_key = material_render_item.shader_key;
 
             let material_allow_xray = material_component.map(|m| m.get_data().allow_xray).unwrap_or(true);

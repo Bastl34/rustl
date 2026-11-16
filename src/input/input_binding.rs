@@ -139,14 +139,25 @@ impl InputAction
     // once per press - every source is asked, so none keeps a pending press for later
     pub fn pressed(&self, io: &mut InputManager, gamepad: GamepadSelect) -> bool
     {
+        self.pressed_with(io, gamepad, true)
+    }
+
+    // the moment it goes down (pressed waits for the release of keys and buttons) - a jump
+    pub fn pressed_now(&self, io: &mut InputManager, gamepad: GamepadSelect) -> bool
+    {
+        self.pressed_with(io, gamepad, false)
+    }
+
+    fn pressed_with(&self, io: &mut InputManager, gamepad: GamepadSelect, wait: bool) -> bool
+    {
         let mut result = false;
 
         for source in &self.sources
         {
             let pressed = match *source
             {
-                InputSource::Key(key) => io.keyboard.is_pressed(key),
-                InputSource::Modifier(modifier) => io.keyboard.is_pressed_modifier(modifier),
+                InputSource::Key(key) => if wait { io.keyboard.is_pressed(key) } else { io.keyboard.is_pressed_no_wait(key) },
+                InputSource::Modifier(modifier) => if wait { io.keyboard.is_pressed_modifier(modifier) } else { io.keyboard.is_pressed_modifier_no_wait(modifier) },
                 InputSource::Mouse(button) => io.mouse.is_pressed(button),
                 _ =>
                 {
@@ -160,7 +171,7 @@ impl InputAction
                     {
                         any |= match *source
                         {
-                            InputSource::GamepadButton(button) => pad.is_pressed(button),
+                            InputSource::GamepadButton(button) => if wait { pad.is_pressed(button) } else { pad.is_pressed_no_wait(button) },
                             InputSource::GamepadAxis(axis, direction) =>
                             {
                                 let side = (pad.axes[axis as usize] > 0.0) == (direction == AxisDirection::Positive);
@@ -183,6 +194,12 @@ impl InputAction
     pub fn uses_gamepad(&self) -> bool
     {
         self.sources.iter().any(|source| source.is_gamepad())
+    }
+
+    // only its gamepad sources (a player with a gamepad only in split screen)
+    pub fn gamepad_only(&self) -> InputAction
+    {
+        InputAction { sources: self.sources.iter().copied().filter(|source| source.is_gamepad()).collect() }
     }
 }
 
