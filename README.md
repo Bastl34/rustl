@@ -1,8 +1,8 @@
 # Rustl - a game engine written in rust
 
-* WIP (early but usable state)
+* WIP (early but usable state) - but thigns will change!
+* not production ready!
 * Rustl is a game engine
-
 
 ## Screenshots of the current state
 <img src="history/2026-11-06.webp" width="720">
@@ -12,6 +12,49 @@
 <br><br>
 
 You can find more here: [History.md](History.md)
+
+## Features
+
+  * **Platforms**
+    * Windows
+    * Linux
+    * Mac
+    * Web (wasm)
+  * **Rendering** (wgpu)
+    * materials with textures, normal maps and transparency
+    * custom material shaders (WGSL)
+    * lights and shadows
+    * SSAO
+    * fog
+    * instancing
+    * frustum and HZB occlusion culling
+    * particles
+  * **Animation**
+    * skeletal animation
+    * morph targets
+    * animation blending
+  * **Physics** (rapier)
+    * rigid bodies
+    * joints
+    * contact events
+  * **Controllers**
+    * character controller
+    * vehicles ctonroller
+    * various camera controllers
+  * **Audio** (rodio)
+    * 3D spatial sound
+  * **Input**
+    * keyboard and mouse
+    * touch
+    * gamepads
+  * **Assets**
+    * glTF / glb import
+    * OBJ import
+    * JSON scene format
+  * **Editor** (egui)
+    * easy scene editing
+    * per-project Rust code (dynamic and hot loaded)
+    * export for all platforms
 
 ## Requirements
 
