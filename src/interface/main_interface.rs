@@ -51,9 +51,6 @@ pub struct MainInterface
 {
     pub context: Context,
 
-    // the engine test app (app_dummy) - not in builds with project code
-    app: Option<Box<dyn App>>,
-
     // the code of the project - created when Play starts, dropped when it ends
     project_app: Option<Box<dyn App>>,
     project_app_started: bool,
@@ -143,8 +140,6 @@ impl MainInterface
                 on_exit: crate::helper::observable::Observable::new(),
             },
 
-            app: None,
-
             project_app: None,
             project_app_started: false,
             app_ui: false,
@@ -195,18 +190,6 @@ impl MainInterface
         {
             let state = &mut *(self.context.state.borrow_mut());
             Self::load_startup_project(state);
-        }
-
-        // the test app of the engine - builds with project code only run that
-        if project_app_factory().is_none()
-        {
-            self.app = Some(Box::new(super::app_dummy::AppDummy::new()));
-        }
-
-        // init app
-        if let Some(app) = &mut self.app
-        {
-            app.init(&mut self.context);
         }
     }
 
@@ -306,11 +289,6 @@ impl MainInterface
             state.io.input_manager.reset();
         }
 
-        if let Some(app) = &mut self.app
-        {
-            app.resize(&mut self.context);
-        }
-
         if let Some(app) = &mut self.project_app
         {
             app.resize(&mut self.context);
@@ -330,12 +308,6 @@ impl MainInterface
 
     pub fn app_update(&mut self)
     {
-        if let Some(app) = &mut self.app
-        {
-            // update app
-            app.update(&mut self.context);
-        }
-
         if let Some(app) = &mut self.project_app
         {
             app.update(&mut self.context);
@@ -344,7 +316,7 @@ impl MainInterface
 
     pub fn update(&mut self)
     {
-        if self.context.window_minimized && !self.app.as_ref().map_or(false, |a| a.allow_window_minimized_updates())
+        if self.context.window_minimized && !self.project_app.as_ref().map_or(false, |a| a.allow_window_minimized_updates())
         {
             return;
         }
@@ -996,11 +968,6 @@ impl MainInterface
             app.exit(&mut self.context);
         }
 
-        if let Some(app) = &mut self.app
-        {
-            app.exit(&mut self.context);
-        }
-
         crate::notify_observable!(&mut self.context, on_exit);
     }
 
@@ -1031,11 +998,6 @@ impl MainInterface
             }
         }
 
-        if let Some(app) = &mut self.app
-        {
-            return app.request_exit(&mut self.context);
-        }
-
         true
     }
 
@@ -1056,7 +1018,7 @@ impl MainInterface
     {
         let now = Instant::now();
         let editor_visible = self.editor_visible();
-        self.app_ui = !editor_visible && (self.app.is_some() || self.project_app.is_some());
+        self.app_ui = !editor_visible && self.project_app.is_some();
 
         #[cfg(not(feature = "editor"))]
         if !self.app_ui
@@ -1092,7 +1054,6 @@ impl MainInterface
             if app_ui
             {
                 let now = Instant::now();
-                if let Some(app) = &mut self.app { app.ui(&mut self.context, ui); }
                 if let Some(app) = &mut self.project_app { app.ui(&mut self.context, ui); }
                 app_ui_time = now.elapsed().as_micros() as f32 / 1000.0;
             }
@@ -1134,7 +1095,6 @@ impl MainInterface
         let ctx = self.context.egui.ctx.clone();
         ctx.run_ui(raw_input, |ui|
         {
-            if let Some(app) = &mut self.app { app.ui(&mut self.context, ui); }
             if let Some(app) = &mut self.project_app { app.ui(&mut self.context, ui); }
         })
     }
@@ -1183,11 +1143,6 @@ impl MainInterface
 
         for scene_id in unloaded
         {
-            if let Some(app) = &mut self.app
-            {
-                app.scene_unloaded(&mut self.context, scene_id);
-            }
-
             if let Some(app) = &mut self.project_app
             {
                 app.scene_unloaded(&mut self.context, scene_id);
@@ -1203,11 +1158,6 @@ impl MainInterface
             if let Some(scene) = self.context.state.borrow_mut().find_scene_by_id_mut(scene_id).filter(|scene| scene.cameras.is_empty())
             {
                 scene.add_default_lights_and_cam();
-            }
-
-            if let Some(app) = &mut self.app
-            {
-                app.scene_loaded(&mut self.context, scene_id);
             }
 
             if let Some(app) = &mut self.project_app

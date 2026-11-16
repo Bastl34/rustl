@@ -255,7 +255,6 @@ pub mod interface
 
     pub mod context;
     pub mod app;
-    pub mod app_dummy;
 }
 
 pub mod helper
