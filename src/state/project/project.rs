@@ -141,6 +141,8 @@ pub struct ProjectSettings
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AudioSettings
 {
+    #[serde(default)]
+    pub mute: bool,
     pub volume: f32,
 }
 
@@ -148,7 +150,11 @@ impl Default for AudioSettings
 {
     fn default() -> Self
     {
-        AudioSettings { volume: 1.0 }
+        AudioSettings
+        {
+            mute: false,
+            volume: 1.0
+        }
     }
 }
 

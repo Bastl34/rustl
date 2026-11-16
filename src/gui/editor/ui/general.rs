@@ -547,16 +547,19 @@ pub fn create_audio_settings(_editor_state: &mut EditorState, state: &mut State,
     collapse_with_title(ui, "audio_settings", true, "🔊 Audio Settings", None, |ui|
     {
         let mut volume;
+        let mut mute;
 
         {
             let audio_device = state.io.audio_device.read().unwrap();
             let audio_device_data = audio_device.data.get_ref();
 
             volume = audio_device_data.volume;
+            mute = audio_device_data.mute;
         }
 
         let mut changed = false;
 
+        changed = ui.checkbox(&mut mute, "Mute Audio").changed() || changed;
         changed = ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).text("Global Volume")).changed() || changed;
 
         if changed
@@ -565,6 +568,7 @@ pub fn create_audio_settings(_editor_state: &mut EditorState, state: &mut State,
             let audio_device_data = audio_device.data.get_mut();
 
             audio_device_data.volume = volume;
+            audio_device_data.mute = mute;
         }
     });
 }

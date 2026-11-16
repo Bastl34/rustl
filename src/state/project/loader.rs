@@ -861,7 +861,12 @@ pub fn apply_project_settings(state: &mut State, settings: &ProjectSettings)
     state.rendering.apply_settings(rendering, &state.rendering_adapter);
 
     let audio = settings.audio.clone().unwrap_or_default();
-    state.io.audio_device.write().unwrap().data.get_mut().volume = audio.volume;
+    {
+        let mut audio_device = state.io.audio_device.write().unwrap();
+        let audio_data = audio_device.data.get_mut();
+        audio_data.mute = audio.mute;
+        audio_data.volume = audio.volume;
+    }
 
     state.window = settings.window.clone().unwrap_or_default();
     state.input = settings.input.clone().unwrap_or_default();

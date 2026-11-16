@@ -9,9 +9,8 @@ pub type AudioDeviceItem = Arc<RwLock<Box<AudioDevice>>>;
 
 pub struct AudioDeviceData
 {
-    // master volume, every sound
+    pub mute: bool,
     pub volume: f32,
-    // on top of the master volume, by the category of the sound
     pub effects_volume: f32,
     pub music_volume: f32,
 
@@ -24,6 +23,11 @@ impl AudioDeviceData
     // master volume times the volume of the category
     pub fn category_volume(&self, category: SoundCategory) -> f32
     {
+        if self.mute
+        {
+            return 0.0;
+        }
+
         self.volume * match category
         {
             SoundCategory::Effects => self.effects_volume,
@@ -83,6 +87,7 @@ impl Default for AudioDevice
     {
         let data = ChangeTracker::new(AudioDeviceData
         {
+            mute: false,
             volume: 1.0,
             effects_volume: 1.0,
             music_volume: 1.0,

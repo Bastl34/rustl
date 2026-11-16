@@ -92,12 +92,20 @@ fn asset_source_path(origin: &str, path: &str) -> String
 
 fn extract_project_settings(state: &State) -> ProjectSettings
 {
-    let volume = state.io.audio_device.read().unwrap().data.get_ref().volume;
+    let audio_mute;
+    let volume;
+
+    {
+        let audio_device = state.io.audio_device.read().unwrap();
+        let audio_data = audio_device.data.get_ref();
+        audio_mute = audio_data.mute;
+        volume = audio_data.volume;
+    }
 
     ProjectSettings
     {
         rendering: to_json_value("rendering settings", "rendering", &state.rendering),
-        audio: Some(AudioSettings { volume }),
+        audio: Some(AudioSettings { mute: audio_mute, volume }),
         window: Some(state.window.clone()),
         input: Some(state.input.clone()),
     }
