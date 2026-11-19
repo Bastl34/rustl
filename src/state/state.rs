@@ -287,6 +287,47 @@ impl Default for SupportedFileTypes
     }
 }
 
+// the engine update split up (ms, all active scenes) - physics stays in physics_update_time
+#[derive(Default, Clone, Copy, Debug)]
+pub struct UpdateTimes
+{
+    pub controllers_pre: f32,
+    pub nodes: f32, // node update: components, animations
+    pub skins: f32, // skinned bounding volumes
+    pub controllers_physics: f32, // controllers after physics (vehicles, characters)
+    pub cameras: f32, // camera controllers
+    pub controllers_post: f32,
+    pub scene_other: f32, // node checks, observers, sound listeners, deletes
+    pub render_state: f32, // global render data
+    pub render_materials: f32, // textures, materials, pipelines
+    pub render_nodes: f32, // node render items: transforms, instance buffers
+    pub render_particles: f32,
+    pub render_other: f32, // debug volumes, image saving, the rest of the render items update
+}
+
+impl UpdateTimes
+{
+    // the scene's part and the render items' part
+    pub fn scene(&self) -> f32
+    {
+        self.controllers_pre + self.nodes + self.skins + self.controllers_physics + self.cameras + self.controllers_post + self.scene_other
+    }
+
+    pub fn render(&self) -> f32
+    {
+        self.render_state + self.render_materials + self.render_nodes + self.render_particles + self.render_other
+    }
+}
+
+// ms since start, start moves on to now
+pub fn take_elapsed_ms(start: &mut Instant) -> f32
+{
+    let now = Instant::now();
+    let ms = now.duration_since(*start).as_secs_f32() * 1000.0;
+    *start = now;
+    ms
+}
+
 pub struct Statistics
 {
     pub draw_calls: u32,
@@ -310,6 +351,7 @@ pub struct Statistics
 
     pub engine_update_time: f32,
     pub engine_render_time: f32,
+    pub update_times: UpdateTimes,
 
     pub physics_update_time: f32,
 
@@ -687,6 +729,7 @@ impl State
 
                 engine_update_time: 0.0,
                 engine_render_time: 0.0,
+                update_times: UpdateTimes::default(),
 
                 physics_update_time: 0.0,
 
@@ -1515,7 +1558,7 @@ impl State
                 continue;
             }
 
-            physics_update_time += scene.update(&mut self.io, time, time_delta, frame, run_mode);
+            physics_update_time += scene.update(&mut self.io, time, time_delta, frame, run_mode, &mut self.stats.update_times);
         }
 
         // ********** textures **********

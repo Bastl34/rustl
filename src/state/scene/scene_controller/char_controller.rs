@@ -57,6 +57,7 @@ const STAND_UP_GROUND_MARGIN: f32 = 0.1;
 
 // extra reach of the downwards probe that looks for the collider the character stands on
 const GROUND_PROBE_MARGIN: f32 = 0.2;
+const PLATFORM_TELEPORT: f32 = 0.25; // m the node moved without this controller: the old platform no longer carries it
 
 const DEFAULT_CAM_RADIUS: f32 = 6.0;
 const CAM_RELATIVE_LATERAL_OFFSET: f32 = -0.5; // negative = character right of the screen center
@@ -469,6 +470,10 @@ pub struct CharacterController
     #[serde(skip, default)]
     ground_collider: Option<(ColliderHandle, Vector3<f32>)>,
 
+    // where the move left the character (world): moved from outside since (teleport, disabled) = the platform no longer carries it
+    #[serde(skip, default)]
+    ground_left_at: Option<Vector3<f32>>,
+
     // one report per cause, so an intermittent hop can be traced without flooding the console
     #[serde(skip, default)]
     reported_platform_hop: bool,
@@ -573,6 +578,7 @@ impl CharacterController
             capsule_setup_pending: false,
             root_joint_name: None,
             ground_collider: None,
+            ground_left_at: None,
             reported_platform_hop: false,
             reported_ground_loss: false,
 
@@ -2218,6 +2224,10 @@ impl SceneController for CharacterController
             // ***** moving platform *****
             // ride whatever the character was standing on last frame
             let mut platform_delta = Vector3::<f32>::zeros();
+            if self.ground_left_at.is_some_and(|left| (left - world_pos).norm() > PLATFORM_TELEPORT)
+            {
+                self.ground_collider = None;
+            }
             if let Some((handle, last_translation)) = self.ground_collider
             {
                 if let Some(current) = scene.physics.collider_translation(handle)
@@ -2386,6 +2396,7 @@ impl SceneController for CharacterController
 
                 let probe_distance = self.collision.capsule_center_offset + self.collision.capsule_radius + GROUND_PROBE_MARGIN;
                 self.ground_collider = scene.physics.ground_collider_below(feet, probe_distance, QueryFilter::default().predicate(&predicate));
+                self.ground_left_at = Some(world_pos + Vector3::new(movement_res.translation.x, movement_res.translation.y, movement_res.translation.z));
             }
             else
             {

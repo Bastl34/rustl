@@ -1985,6 +1985,8 @@ impl PhysicsWorld
     // Reconciles the objects with the scene. Returns (added, removed) colliders.
     pub fn scan_nodes(&mut self, nodes: &Vec<NodeItem>) -> (usize, usize)
     {
+        self.drop_detached_vehicles(nodes);
+
         let all_nodes = Scene::list_all_child_nodes_with_mesh(nodes);
 
         // everything that should exist right now, by anchor: a mesh below a combining node
@@ -2040,6 +2042,50 @@ impl PhysicsWorld
         }
 
         self.reconcile(requests)
+    }
+
+    // A vehicle whose node is no longer in the scene tree loses its body and hitches. The weak node check in sync_vehicles
+    // only catches a freed node - a node with children is never freed (they hold their parent), so a vehicle removed with
+    // its load / parts still attached stayed behind as an invisible car.
+    fn drop_detached_vehicles(&mut self, nodes: &Vec<NodeItem>)
+    {
+        if self.vehicles.is_empty()
+        {
+            return;
+        }
+
+        let roots: HashSet<u32> = nodes.iter().map(|node| node.read().unwrap().id).collect();
+
+        let gone: Vec<u32> = self.vehicles.iter().filter(|(_, vehicle)| match vehicle.node.upgrade()
+        {
+            None => true,
+            Some(node) => Self::scene_root_of(&node).is_some_and(|root| !roots.contains(&root)),
+        }).map(|(id, _)| *id).collect();
+
+        for id in gone
+        {
+            self.remove_hitches_of(id);
+            self.remove_hitch(id);
+            self.remove_vehicle(id);
+        }
+    }
+
+    // The id of the top node above a node (itself without a parent) - None when a parent is only known by its id (not resolved yet).
+    fn scene_root_of(node: &NodeItem) -> Option<u32>
+    {
+        let mut current = node.clone();
+
+        loop
+        {
+            let parent = match &current.read().unwrap().parent
+            {
+                crate::helper::option_or_id::OptionOrId::Some(parent) => parent.clone(),
+                crate::helper::option_or_id::OptionOrId::None => return Some(current.read().unwrap().id),
+                crate::helper::option_or_id::OptionOrId::Id(_) => return None,
+            };
+
+            current = parent;
+        }
     }
 
     // True on the first call, then every NODE_SCAN_INTERVAL_FRAMES calls.
@@ -4970,6 +5016,34 @@ mod tests
     use crate::state::scene::node::Node;
 
     use super::*;
+
+    // a vehicle removed from the scene with a child still attached (the child holds its parent, the node is never freed):
+    // the next scan drops its body
+    #[test]
+    fn vehicle_removed_from_the_scene_loses_its_body()
+    {
+        let mut world = PhysicsWorld::new();
+        let car = Node::new("car");
+        car.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::identity("Transform")))));
+        let load = Node::new("load");
+        load.write().unwrap().parent = OptionOrId::Some(car.clone());
+        car.write().unwrap().nodes.push(load);
+        let chassis = VehicleChassisDesc
+        {
+            shape: SharedShape::cuboid(1.0, 0.5, 2.0), mass: 1000.0, center_of_mass: Vector3::zeros(), principal_inertia: Vector3::new(1000.0, 1000.0, 1000.0),
+            friction: 0.5, restitution: 0.0, linear_damping: 0.1, angular_damping: 0.1, bumpers: vec![], forward: Vector3::z(), up: Vector3::y(),
+        };
+        world.set_vehicle(&car, chassis, &[]);
+        let car_id = car.read().unwrap().id;
+        assert!(world.vehicle(car_id).is_some());
+
+        world.scan_nodes(&vec![car.clone()]);
+        assert!(world.vehicle(car_id).is_some(), "a vehicle in the scene keeps its body");
+
+        // the game takes the node out of the scene, but its child keeps it alive
+        world.scan_nodes(&vec![]);
+        assert!(world.vehicle(car_id).is_none(), "the removed vehicle must not stay behind as an invisible body");
+    }
 
     // a 20x20 ground plane at y = 0
     fn ground_node(y: f32) -> NodeItem

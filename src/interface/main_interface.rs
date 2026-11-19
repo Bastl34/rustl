@@ -34,7 +34,7 @@ use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::project::loader::load_and_apply_project;
 use crate::state::scene::scene::SceneLoadState;
-use crate::state::state::{State, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
+use crate::state::state::{State, UpdateTimes, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
 use super::app::{App, project_app_factory};
 use super::context::Context;
@@ -545,21 +545,40 @@ impl MainInterface
         {
             let engine_update_time = Instant::now();
 
-            let state = &mut *(self.context.state.borrow_mut());
-
-            // msaa - clamped to what the adapter supports: the game sets its own count (8x by default)
-            let (_, msaa_changed) = state.rendering.msaa.consume_clone();
-            let msaa_samples = state.msaa_samples();
-
-            if msaa_changed
+            let (msaa_changed, msaa_samples) =
             {
-                self.context.wgpu.create_msaa_texture(msaa_samples);
+                let state = &mut *(self.context.state.borrow_mut());
+
+                // msaa - clamped to what the adapter supports: the game sets its own count (8x by default)
+                let (_, msaa_changed) = state.rendering.msaa.consume_clone();
+                let msaa_samples = state.msaa_samples();
+
+                if msaa_changed
+                {
+                    self.context.wgpu.create_msaa_texture(msaa_samples);
+                }
+
+                state.stats.update_times = UpdateTimes::default();
+                let physics_update_time = state.update(state.stats.frame_update_time, state.stats.frame_scale, state.stats.frame);
+                state.stats.physics_update_time = physics_update_time / 1000.0; // physic times are based on micros
+
+                (msaa_changed, msaa_samples)
+            };
+
+            // the app after the scene update: its scene changes still get their render items below
+            let app_post_update_time = Instant::now();
+            if let Some(app) = &mut self.project_app
+            {
+                app.post_update(&mut self.context);
             }
+            let app_post_update_time = app_post_update_time.elapsed().as_micros() as f32 / 1000.0;
 
-            let physics_update_time = state.update(state.stats.frame_update_time, state.stats.frame_scale, state.stats.frame);
-            state.stats.physics_update_time = physics_update_time / 1000.0; // physic times are based on micros
+            let state = &mut *(self.context.state.borrow_mut());
+            state.stats.app_update_time += app_post_update_time;
 
+            let render_state_time = Instant::now();
             rendering::state::update(&mut self.context.wgpu, state);
+            state.stats.update_times.render_state = render_state_time.elapsed().as_secs_f32() * 1000.0;
 
             // move out scenes from state to prevent using multiple mut borrows
             let mut scenes = vec![];
@@ -609,7 +628,7 @@ impl MainInterface
             swap(&mut scenes, &mut state.scenes);
 
             state.stats.engine_update_time = engine_update_time.elapsed().as_micros() as f32 / 1000.0;
-            state.stats.engine_update_time -= state.stats.physics_update_time; // get raw update time without physics
+            state.stats.engine_update_time -= state.stats.physics_update_time + app_post_update_time; // get raw update time without physics and the app
         }
 
         if !editor_ui

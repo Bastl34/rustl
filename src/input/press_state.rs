@@ -125,9 +125,18 @@ impl PressState
 
     pub fn update_float(&mut self, value: f32, frame: u64)
     {
+        // the same state: only the value - gilrs sends ButtonChanged right after ButtonPressed, the holding time going back to 0
+        // there swallowed the press for pressed_now (a gamepad jump)
+        let status = value >= self.threshold || value <= -self.threshold;
+        if self.holding_state == status
+        {
+            self.holding_value = value;
+            return;
+        }
+
         self.determine_holding_time();
 
-        if value >= self.threshold || value <= -self.threshold
+        if status
         {
             self.holding_state = true;
             self.holding_value = value;

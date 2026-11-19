@@ -26,8 +26,14 @@ impl App for Game
         }
     }
 
+    // every frame before the scene update - input, game logic, moving nodes
     fn update(&mut self, _context: &mut Context)
     {
         self.frames += 1;
+    }
+
+    // every frame after physics, controllers and animations - things that follow a moving node (a lamp on a car, a marker on a bone)
+    fn post_update(&mut self, _context: &mut Context)
+    {
     }
 }

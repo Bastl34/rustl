@@ -15,6 +15,12 @@ pub trait App
         let _ = context;
     }
 
+    // after the scene update (physics, controllers, animations, cameras), before rendering: world positions of this frame
+    fn post_update(&mut self, context: &mut Context)
+    {
+        let _ = context;
+    }
+
     // the ui of the game: every frame while it runs and the editor ui is hidden (Play, exports) - a HUD, menus, ...
     fn ui(&mut self, context: &mut Context, ui: &mut egui::Ui)
     {

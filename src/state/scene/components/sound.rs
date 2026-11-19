@@ -3,7 +3,7 @@
 use std::{sync::{Arc, RwLock}};
 
 use egui::RichText;
-use nalgebra::{distance, Point3};
+use nalgebra::{distance, Point3, Vector3};
 use rodio::{Player, Source, SpatialPlayer};
 use serde::{Deserialize, Serialize};
 use web_time::Duration;
@@ -13,6 +13,9 @@ use crate::state::resources::sound_source::Decodable;
 use crate::state::scene::exporter::serialization_helper;
 
 use super::component::{Component, ComponentBase, ComponentItem};
+
+// split_pan: the ear of the other half of the screen is this far away (m) - silent on that channel
+const SPLIT_FAR_EAR: f32 = 1000.0;
 
 // which volume of the audio device a sound follows besides the master volume - games set them from their options
 #[derive(PartialEq, Copy, Clone, Debug, Default, Serialize, Deserialize)]
@@ -490,8 +493,21 @@ impl Sound
             };
 
             // split screen: the camera nearest to the sound hears it
-            if let Some((position, (left_pos, right_pos))) = position.and_then(|position| Some((position, audio_device_data.nearest_listener(&position)?)))
+            if let Some((position, ((left_pos, right_pos), side))) = position.and_then(|position| Some((position, audio_device_data.nearest_listener_side(&position)?)))
             {
+                // split screen with split_pan: the half of the screen this listener has is the only channel - its own ear in the
+                // middle of the head, the other one far away (silent there)
+                let (left_pos, right_pos) = if side != 0.0
+                {
+                    let head = nalgebra::center(&left_pos, &right_pos);
+                    let far = head + Vector3::new(0.0, SPLIT_FAR_EAR, 0.0);
+                    if side < 0.0 { (head, far) } else { (far, head) }
+                }
+                else
+                {
+                    (left_pos, right_pos)
+                };
+
                 let dist_left = distance(&left_pos, &position);
                 let dist_right = distance(&right_pos, &position);
 

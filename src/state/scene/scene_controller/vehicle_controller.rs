@@ -218,6 +218,7 @@ pub enum SteeringAxis
     #[default]
     Column, // a steering wheel - turns around its column
     Handlebar, // turns around the vehicle up axis, like the front wheel
+    Fork, // a raked fork: turns around the steering node's own up axis through its origin, the steered wheels with it
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug, Default)]
@@ -1391,6 +1392,48 @@ impl VehicleController
         None
     }
 
+    // Who sits where, while it runs: the seated nodes are carried by the physics write back (no frame behind, the full chassis rotation).
+    pub fn set_seats(&mut self, scene: &mut Scene, seats: Vec<VehicleSeat>)
+    {
+        self.seats = seats;
+        let Some(node) = self.node.as_ref().cloned() else { return; };
+        self.setup_seats(scene, &node);
+        let riders = self.riders(&node);
+        let node_id = node.read().unwrap().id;
+        if scene.physics.has_vehicle(node_id) { scene.physics.set_vehicle_riders(node_id, riders); }
+    }
+
+    // the seat nodes and the collider exclusions of the vehicle + its riders
+    fn setup_seats(&mut self, scene: &mut Scene, node: &NodeItem)
+    {
+        // ********** seats **********
+        let seat_nodes = self.find_seat_nodes(scene);
+        self.seat_runtime = seat_nodes.into_iter().zip(self.seats.iter()).map(|(node, seat)|
+        {
+            if node.is_none() && !seat.node_name.is_empty()
+            {
+                console_warning!("vehicle: seat node '{}' not found", seat.node_name);
+            }
+
+            node.map(|node| SeatRuntime { animation: Self::find_sit_animation(&node, &seat.animation), node })
+        }).collect();
+
+        // ********** colliders **********
+        let mut ids = Self::subtree_ids(node);
+        for rider in self.seated_nodes()
+        {
+            ids.extend(Self::subtree_ids(rider));
+        }
+
+        // what an earlier setup excluded and no longer belongs to the vehicle - e.g. a former driver - collides again
+        let released: HashSet<u32> = self.excluded_node_ids.difference(&ids).copied().collect();
+        scene.physics.include_nodes(&released);
+
+        let new_ids: HashSet<u32> = ids.into_iter().filter(|id| !scene.physics.is_excluded(*id) || self.excluded_node_ids.contains(id)).collect();
+        scene.physics.exclude_nodes(&new_ids);
+        self.excluded_node_ids = new_ids;
+    }
+
     // The camera follows this vehicle from now on (watching another car) - the vehicle that had it gets camera.enabled = false.
     pub fn attach_camera(&mut self, scene: &mut Scene, cam_name: &str) -> Option<String>
     {
@@ -1515,44 +1558,21 @@ impl VehicleController
             {
                 self.steering.node_uuid = steering_node.read().unwrap().uuid.clone();
 
-                let center = Self::subtree_bounds(&steering_node, &to_chassis).map(|(min, max)| (min + max) * 0.5).unwrap_or_else(|| (to_chassis * steering_node.read().unwrap().get_full_transform().column(3)).xyz());
+                let origin = (to_chassis * steering_node.read().unwrap().get_full_transform().column(3)).xyz();
+                let center = if self.steering.axis == SteeringAxis::Fork { origin } else { Self::subtree_bounds(&steering_node, &to_chassis).map(|(min, max)| (min + max) * 0.5).unwrap_or(origin) };
 
                 let axis = match self.steering.axis
                 {
                     SteeringAxis::Handlebar => frame.up,
                     SteeringAxis::Column => Self::column_axis(&steering_node, &world, &frame),
+                    SteeringAxis::Fork => Self::fork_axis(&steering_node, &world, &frame),
                 };
 
                 self.steering_runtime = Self::pivot_runtime(&steering_node, &chassis_world, &center, axis);
             }
         }
 
-        // ********** seats **********
-        let seat_nodes = self.find_seat_nodes(scene);
-        self.seat_runtime = seat_nodes.into_iter().zip(self.seats.iter()).map(|(node, seat)|
-        {
-            if node.is_none() && !seat.node_name.is_empty()
-            {
-                console_warning!("vehicle: seat node '{}' not found", seat.node_name);
-            }
-
-            node.map(|node| SeatRuntime { animation: Self::find_sit_animation(&node, &seat.animation), node })
-        }).collect();
-
-        // ********** colliders **********
-        let mut ids = Self::subtree_ids(&node);
-        for rider in self.seated_nodes()
-        {
-            ids.extend(Self::subtree_ids(rider));
-        }
-
-        // what an earlier setup excluded and no longer belongs to the vehicle - e.g. a former driver - collides again
-        let released: HashSet<u32> = self.excluded_node_ids.difference(&ids).copied().collect();
-        scene.physics.include_nodes(&released);
-
-        let new_ids: HashSet<u32> = ids.into_iter().filter(|id| !scene.physics.is_excluded(*id) || self.excluded_node_ids.contains(id)).collect();
-        scene.physics.exclude_nodes(&new_ids);
-        self.excluded_node_ids = new_ids;
+        self.setup_seats(scene, &node);
 
         // the chassis points are not saved - measured again from the rest pose
         if self.chassis_points.is_empty()
@@ -1618,6 +1638,21 @@ impl VehicleController
         let axis = axes.iter().max_by(|a, b| a.dot(&frame.forward).abs().total_cmp(&b.dot(&frame.forward).abs())).copied().unwrap_or(-frame.forward);
 
         if axis.dot(&frame.forward) > 0.0 { -axis } else { axis }
+    }
+
+    // how far a raked fork turns around its axis so the wheel points steer_angle to the side on the ground
+    fn fork_angle(steer_angle: f32, upright: f32) -> f32
+    {
+        (steer_angle.tan() / upright).atan()
+    }
+
+    // the up axis of a fork node (its local y) in chassis space
+    fn fork_axis(steering_node: &NodeItem, vehicle_world: &Matrix4<f32>, frame: &VehicleFrame) -> Vector3<f32>
+    {
+        let steering_world = steering_node.read().unwrap().get_full_transform();
+        let axis = extract_rotation_quat_from_transform(vehicle_world).inverse() * extract_rotation_quat_from_transform(&steering_world) * Vector3::y();
+
+        if axis.dot(&frame.up) < 0.0 { -axis } else { axis }
     }
 
     // ********** geometry helpers **********
@@ -3087,6 +3122,9 @@ impl SceneController for VehicleController
         let DriveState { speed, lateral_left, steer_angle, brake, wheelspin, lean, lean_target: _, mut telemetry_wheels } = state;
 
         // ********** visuals **********
+        // a raked fork: its axis and how upright it stands (chassis space)
+        let fork = self.steering_runtime.as_ref().filter(|_| self.steering.axis == SteeringAxis::Fork).map(|runtime| (runtime.axis, runtime.axis.dot(&frame.up).abs().max(0.3)));
+
         for (index, wheel) in self.wheels.iter().enumerate()
         {
             let Some(runtime) = wheel.runtime.as_ref() else { continue; };
@@ -3094,10 +3132,22 @@ impl SceneController for VehicleController
 
             let compression = if visual.contact { self.suspension.rest_length - self.sag - visual.suspension_length } else { -self.sag };
 
-            let steer_rotation = Rotation3::from_axis_angle(&Unit::new_normalize(frame.up), visual.steering);
             let spin_rotation = Rotation3::from_axis_angle(&Unit::new_normalize(frame.right()), -visual.spin);
 
-            runtime.apply(frame.up * compression, &(steer_rotation * spin_rotation));
+            // in a raked fork the wheel turns around the fork axis and slides along it
+            match fork.filter(|_| wheel.steer != 0.0)
+            {
+                Some((axis, upright)) =>
+                {
+                    let steer_rotation = Rotation3::from_axis_angle(&Unit::new_normalize(axis), Self::fork_angle(visual.steering, upright));
+                    runtime.apply(axis * (compression / upright), &(steer_rotation * spin_rotation));
+                }
+                None =>
+                {
+                    let steer_rotation = Rotation3::from_axis_angle(&Unit::new_normalize(frame.up), visual.steering);
+                    runtime.apply(frame.up * compression, &(steer_rotation * spin_rotation));
+                }
+            }
 
             if let Some(telemetry) = telemetry_wheels.get_mut(index)
             {
@@ -3107,8 +3157,13 @@ impl SceneController for VehicleController
 
         if let Some(runtime) = self.steering_runtime.as_ref()
         {
-            let ratio = if self.steering.axis == SteeringAxis::Handlebar { 1.0 } else { self.steering.ratio };
-            runtime.apply(Vector3::zeros(), &Rotation3::from_axis_angle(&Unit::new_normalize(runtime.axis), steer_angle * ratio));
+            let angle = match self.steering.axis
+            {
+                SteeringAxis::Handlebar => steer_angle,
+                SteeringAxis::Column => steer_angle * self.steering.ratio,
+                SteeringAxis::Fork => Self::fork_angle(steer_angle, runtime.axis.dot(&frame.up).abs().max(0.3)),
+            };
+            runtime.apply(Vector3::zeros(), &Rotation3::from_axis_angle(&Unit::new_normalize(runtime.axis), angle));
         }
 
         self.start_sit_animations();
@@ -3967,7 +4022,7 @@ impl VehicleController
                     runtime_dirty |= part_combo(ui, "vehicle_steering_node", &mut self.steering.node_name, &mut self.steering.node_uuid, &parts);
                 });
 
-                runtime_dirty |= combo(ui, "vehicle_steering_axis", "Steering Axis", "Column: a steering wheel, Handlebar: turns around the vehicle up axis", &mut self.steering.axis, &[SteeringAxis::Column, SteeringAxis::Handlebar]);
+                runtime_dirty |= combo(ui, "vehicle_steering_axis", "Steering Axis", "Column: a steering wheel, Handlebar: turns around the vehicle up axis, Fork: turns around the steering node's own up axis (a raked fork, its wheel with it)", &mut self.steering.axis, &[SteeringAxis::Column, SteeringAxis::Handlebar, SteeringAxis::Fork]);
 
                 if self.steering.axis == SteeringAxis::Column
                 {

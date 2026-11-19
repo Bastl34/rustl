@@ -21,12 +21,13 @@ You can find more here: [History.md](History.md)
     * Mac
     * Web (wasm)
   * **Rendering** (wgpu)
-    * materials with textures, normal maps and transparency
+    * phong based (materials with textures, normal maps and transparency)
+      * (PBR in the future)
     * custom material shaders (WGSL)
-    * lights and shadows
+    * lights and cascaded shadows
     * SSAO
     * fog
-    * instancing
+    * object instancing
     * frustum and HZB occlusion culling
     * particles
   * **Animation**

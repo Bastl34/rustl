@@ -8,7 +8,7 @@ use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, scene_controller::scene_controller::ControllerPhase, utilities::{extras::Extras, tags::{self, Tags}}}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput, RunMode, get_delta_t}}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, scene_controller::scene_controller::ControllerPhase, utilities::{extras::Extras, tags::{self, Tags}}}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput, RunMode, UpdateTimes, get_delta_t, take_elapsed_ms}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh, particle_emitter::ParticleEmitter}, layers::LAYER_MASK_USER, light::{Light, LightItem}, node::{Node, NodeItem}, physics::physics_world::PhysicsWorld, scene_controller::scene_controller::SceneControllerBox};
 
@@ -442,8 +442,9 @@ impl Scene
         self.controller = controller;
     }
 
-    pub fn update(&mut self, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> f32
+    pub fn update(&mut self, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode, times: &mut UpdateTimes) -> f32
     {
+        let mut start_time = Instant::now();
         crate::notify_observable!(self, on_before_update);
 
         // check moved nodes (if a node has a parent -> remove it from scene nodes)
@@ -480,9 +481,11 @@ impl Scene
 
             physics_update_time += physics_time.elapsed().as_micros();
         }
+        times.scene_other += take_elapsed_ms(&mut start_time) - physics_update_time as f32 / 1000.0;
 
         // ********** update pre controller **********
         self.update_controller(ControllerPhase::Pre, io, frame_scale, run_mode);
+        times.controllers_pre += take_elapsed_ms(&mut start_time);
 
         // ********** update nodes **********
         let mut delete_nodes = vec![];
@@ -501,6 +504,8 @@ impl Scene
                 skinned_nodes.append(&mut update_result.skinned_nodes);
             }
         }
+
+        times.nodes += take_elapsed_ms(&mut start_time);
 
         // ********** skinned bounding volumes **********
         // cache the joint matrices for the same skeleton (the matrices are shared by all meshes of a skeleton)
@@ -542,6 +547,8 @@ impl Scene
             }
         }
 
+        times.skins += take_elapsed_ms(&mut start_time);
+
         // ********** physics colliders (transforms) **********
         // after the node update on purpose - animations move nodes there
         if !self.physics.is_empty()
@@ -563,29 +570,42 @@ impl Scene
             physics_update_time += physics_time.elapsed().as_micros();
         }
 
+        start_time = Instant::now();
+
         // ********** controllers after physics **********
         self.update_controller_after_physics(io, frame_scale, run_mode);
+        times.controllers_physics += take_elapsed_ms(&mut start_time);
 
         // ********** spatial sound listeners (one per active camera, split screen has several) **********
         // internal scenes (e.g. the editor preview) must not move the global listeners
         if !self.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
         {
             // every frame - the ears can follow the target node without the camera data changing
-            let listeners: Vec<_> = self.cameras.iter()
-                .filter(|cam| self.is_camera_active(cam, run_mode))
-                .map(|cam| cam.get_left_right_ear_positions())
-                .collect();
+            let active: Vec<_> = self.cameras.iter().filter(|cam| self.is_camera_active(cam, run_mode)).collect();
+            let listeners: Vec<_> = active.iter().map(|cam| cam.get_left_right_ear_positions()).collect();
+
+            // the side of the screen by the middle of the viewport (a top / bottom split has none)
+            let sides: Vec<f32> = active.iter().map(|cam|
+            {
+                let viewport = cam.get_data().get_viewport();
+                let middle = viewport.x + viewport.width * 0.5;
+                if middle < 0.49 { -1.0 } else if middle > 0.51 { 1.0 } else { 0.0 }
+            }).collect();
 
             if !listeners.is_empty()
             {
                 let mut audio_device = io.audio_device.write().unwrap();
 
-                if audio_device.data.get_ref().listeners != listeners
+                if audio_device.data.get_ref().listeners != listeners || audio_device.data.get_ref().listener_sides != sides
                 {
-                    audio_device.data.get_mut().listeners = listeners;
+                    let data = audio_device.data.get_mut();
+                    data.listeners = listeners;
+                    data.listener_sides = sides;
                 }
             }
         }
+
+        times.scene_other += take_elapsed_ms(&mut start_time);
 
         // ********** cameras **********
         // after physics, so a camera follows what the solver moved this frame
@@ -597,9 +617,11 @@ impl Scene
         }
 
         swap(&mut cameras, &mut self.cameras);
+        times.cameras += take_elapsed_ms(&mut start_time);
 
         // ********** update post controller **********
         self.update_controller(ControllerPhase::Post, io, frame_scale, run_mode);
+        times.controllers_post += take_elapsed_ms(&mut start_time);
 
         // ********** delete requested "delete_later" nodes **********
         for node_id in delete_nodes
@@ -608,6 +630,7 @@ impl Scene
         }
 
         crate::notify_observable!(self, on_after_update);
+        times.scene_other += take_elapsed_ms(&mut start_time);
 
         physics_update_time as f32
     }

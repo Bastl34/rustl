@@ -6,7 +6,7 @@ use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
 use crate::rendering::particles::ParticleRenderer;
-use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BOUNDING_BOX_FLAG_OCCLUSION_TEST, BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, debug_volumes::{BOUNDING_BOX_COLOR, BOUNDING_SPHERE_COLOR, DebugVolume, DebugVolumeList, DebugVolumesBuffer}, draw_slots::{DRAW_INDEXED_ARGS_SIZE, DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::{BlendMode, TextureType}, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX, RunMode, State}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BOUNDING_BOX_FLAG_OCCLUSION_TEST, BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, debug_volumes::{BOUNDING_BOX_COLOR, BOUNDING_SPHERE_COLOR, DebugVolume, DebugVolumeList, DebugVolumesBuffer}, draw_slots::{DRAW_INDEXED_ARGS_SIZE, DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::{BlendMode, TextureType}, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX, RunMode, State, take_elapsed_ms}}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, custom_shader, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -1633,6 +1633,8 @@ impl Scene
 
     pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene)
     {
+        let mut start_time = web_time::Instant::now();
+
         // ********** clear color **********
         // every frame, not only on a change - a scene loaded later (on demand) would miss the change another scene consumed
         let (clear_color, _) = state.rendering.clear_color.consume_borrow();
@@ -1668,13 +1670,17 @@ impl Scene
             self.create_pipelines(wgpu, scene, true);
         }
 
+        state.stats.update_times.render_materials += take_elapsed_ms(&mut start_time);
+
         self.update_nodes(wgpu, &mut all_nodes, state.rendering.occlusion_culling);
         Self::consume_changed_joints(&all_nodes);
+        state.stats.update_times.render_nodes += take_elapsed_ms(&mut start_time);
 
         // ********** particles **********
         self.particles.remove_unused_cameras(scene);
         let particle_cameras: Vec<u32> = scene.cameras.iter().filter(|cam| scene.is_camera_active(cam, self.run_mode)).map(|cam| cam.id).collect();
         self.particles.update(wgpu, scene, &all_nodes, &particle_cameras, &self.fog, self.reverse_z);
+        state.stats.update_times.render_particles += take_elapsed_ms(&mut start_time);
 
         // ********** debug volumes (bounding boxes / spheres, physics colliders) **********
         self.draw_bounding_boxes = state.rendering.debug.draw_bounding_boxes && self.debug_volumes_supported;
@@ -1902,6 +1908,8 @@ impl Scene
 
             state.debug.save_hzb_image = false;
         }
+
+        state.stats.update_times.render_other += take_elapsed_ms(&mut start_time);
     }
 
     pub fn wireframe_mode_update(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, wireframe_mode: bool)

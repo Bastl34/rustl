@@ -318,6 +318,26 @@ pub fn create_chart(_editor_state: &mut EditorState, state: &mut State, ui: &mut
     );
 }
 
+// a line of the statistics, its sub lines folded under it
+struct StatItem
+{
+    text: String,
+    children: Vec<String>,
+}
+
+impl From<String> for StatItem
+{
+    fn from(text: String) -> Self
+    {
+        StatItem { text, children: vec![] }
+    }
+}
+
+fn items(lines: Vec<String>) -> Vec<StatItem>
+{
+    lines.into_iter().map(StatItem::from).collect()
+}
+
 pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     let mut materials = 0;
@@ -327,7 +347,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     }
 
     // (category, icon, items, separator before the section)
-    let mut stats: Vec<(String, String, Vec<String>, bool)> = vec![];
+    let mut stats: Vec<(String, String, Vec<StatItem>, bool)> = vec![];
 
     // info
     let mut info = vec![];
@@ -336,7 +356,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     info.push(format!("absolute cpu fps: {}", state.stats.fps_cpu_absolute));
     if let Some(fps) = state.stats.fps_gpu_absolute { info.push(format!("absolute gpu fps: {}", fps)); }
     info.push(format!("frame time: {:.3} ms", state.stats.frame_time));
-    stats.push(("Info".to_string(), "ℹ".to_string(), info, false));
+    stats.push(("Info".to_string(), "ℹ".to_string(), items(info), false));
 
     // engine
     let mut engine: Vec<_> = vec![];
@@ -350,7 +370,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     engine.push(format!("sounds: {}", state.resources.sound_sources.len()));
     engine.push(format!("materials: {}", materials));
     engine.push(format!("meshes: {}", state.resources.mesh_resources.len()));
-    stats.push(("Engine".to_string(), "⚙".to_string(), engine, false));
+    stats.push(("Engine".to_string(), "⚙".to_string(), items(engine), false));
 
     // cpu times (frame loop - these run sequentially on the cpu and add up to the frame time)
     // wait = rest of the frame time (waiting for gpu/vsync) - if it is small, the frame is cpu bound
@@ -358,8 +378,11 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     let cpu_total = state.stats.engine_update_time + state.stats.engine_render_time + state.stats.editor_update_time + state.stats.egui_update_time + state.stats.egui_render_time + state.stats.app_update_time + state.stats.physics_update_time;
     let cpu_wait = (state.stats.frame_time - cpu_total).max(0.0);
 
-    let mut cpu_times: Vec<_> = vec![];
-    cpu_times.push(format!("engine update: {:.3} ms", state.stats.engine_update_time));
+    let mut cpu_times: Vec<String> = vec![];
+    let u = &state.stats.update_times;
+    let update_parts = [("controllers pre", u.controllers_pre), ("nodes / animations", u.nodes), ("skin bounds", u.skins), ("controllers after physics", u.controllers_physics), ("cameras", u.cameras), ("controllers post", u.controllers_post), ("scene other", u.scene_other),
+        ("render state", u.render_state), ("render materials", u.render_materials), ("render nodes", u.render_nodes), ("render particles", u.render_particles), ("render other", u.render_other)];
+    let engine_update = StatItem { text: format!("engine update: {:.3} ms", state.stats.engine_update_time), children: update_parts.iter().map(|(name, ms)| format!("{}: {:.3} ms", name, ms)).collect() };
     cpu_times.push(format!("engine encode: {:.3} ms", state.stats.engine_render_time));
     cpu_times.push(format!("editor update: {:.3} ms", state.stats.editor_update_time));
     cpu_times.push(format!("ui update: {:.3} ms", state.stats.egui_update_time));
@@ -370,7 +393,9 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     cpu_times.push(format!("physics update: {:.3} ms", state.stats.physics_update_time));
     cpu_times.push(format!("total: {:.3} ms", cpu_total));
     cpu_times.push(format!("wait: {:.3} ms", cpu_wait));
-    stats.push(("CPU times".to_string(), "⏱".to_string(), cpu_times, true));
+    let mut cpu_items = vec![engine_update];
+    cpu_items.extend(items(cpu_times));
+    stats.push(("CPU times".to_string(), "⏱".to_string(), cpu_items, true));
 
     // gpu times (per pass block - the gpu runs in parallel to the cpu and pass windows can overlap,
     // so these do not add up to the frame time)
@@ -387,7 +412,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     if !gpu_times.is_empty()
     {
         gpu_times.push(format!("total: {:.3} ms", gpu_total));
-        stats.push(("GPU times".to_string(), "💻".to_string(), gpu_times, true));
+        stats.push(("GPU times".to_string(), "💻".to_string(), items(gpu_times), true));
     }
 
     for (stat_category, stat_icon, stat_items, separator) in &stats
@@ -401,7 +426,20 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
 
         for stat_item in stat_items
         {
-            ui.label(format!(" ⚫ {}", stat_item));
+            if stat_item.children.is_empty()
+            {
+                ui.label(format!(" ⚫ {}", stat_item.text));
+                continue;
+            }
+
+            // the id without the changing numbers: the fold stays as it is
+            egui::CollapsingHeader::new(stat_item.text.as_str()).id_salt(("statistics fold", stat_category)).default_open(false).show(ui, |ui|
+            {
+                for child in &stat_item.children
+                {
+                    ui.label(format!(" ⚫ {}", child));
+                }
+            });
         }
     }
 
@@ -418,7 +456,12 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
 
                 for stat_item in stat_items
                 {
-                    console_debug!(format!(" - {}", stat_item));
+                    console_debug!(format!(" - {}", stat_item.text));
+
+                    for child in stat_item.children
+                    {
+                        console_debug!(format!("   - {}", child));
+                    }
                 }
             }
         }
