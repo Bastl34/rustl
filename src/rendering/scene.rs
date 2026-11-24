@@ -20,8 +20,8 @@ pub struct RenderData<'a>
     meshes: &'a Vec<RwLockReadGuard<'a, ComponentBox>>,
 
     has_transparency: bool,
-    // mask material: solid, but kept out of the depth pre-pass (no alpha test there)
-    alpha_test: bool,
+    // solid, but kept out of the depth pre-pass: mask materials (no alpha test there) and no_depth_prepass ones
+    no_depth_prepass: bool,
     alpha_index: i64,
     middle: Option<Point3::<f32>>,
     radius: Option<f32>,
@@ -2224,12 +2224,12 @@ impl Scene
             }
 
             let has_transparency;
-            let alpha_test;
+            let no_depth_prepass;
             {
                 let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
                 let material_buffer = mat.get_base().render_item.as_ref().map(|render_item| get_render_item::<MaterialBuffer>(render_item));
                 has_transparency = mat.has_transparency() || material_buffer.as_ref().is_some_and(|buffer| buffer.shader_transparent);
-                alpha_test = mat.is_alpha_tested() || material_buffer.as_ref().is_some_and(|buffer| buffer.shader_alpha_tested);
+                no_depth_prepass = mat.is_alpha_tested() || material_buffer.as_ref().is_some_and(|buffer| buffer.shader_alpha_tested) || mat.get_data().no_depth_prepass;
             }
 
             let node = nodes_read.get(i).unwrap();
@@ -2242,7 +2242,7 @@ impl Scene
                 meshes: meshes,
 
                 has_transparency: has_transparency,
-                alpha_test,
+                no_depth_prepass,
                 alpha_index: node.settings.alpha_index,
                 middle: bounding_sphere.map(|(center, _)| center),
                 radius: bounding_sphere.map(|(_, radius)| radius),
@@ -2474,7 +2474,7 @@ impl Scene
                 let mut split_groups: Vec<(Vec<RenderData>, Vec<RenderData>, Vec<RenderData>)> = vec![];
                 for (solid_objects, transparent_objects) in &render_groups_frustum_culled
                 {
-                    let (occluders, other): (Vec<_>, Vec<_>) = solid_objects.iter().copied().partition(|item| item.node.settings.depth_test && item.node.settings.depth_write && !item.alpha_test);
+                    let (occluders, other): (Vec<_>, Vec<_>) = solid_objects.iter().copied().partition(|item| item.node.settings.depth_test && item.node.settings.depth_write && !item.no_depth_prepass);
                     split_groups.push((occluders, other, transparent_objects.clone()));
                 }
 
@@ -2536,7 +2536,7 @@ impl Scene
                 }
 
                 // mask materials would fill their holes in the depth (no alpha test in the pre-pass)
-                let depth_data: Vec<RenderData> = solid_data.iter().copied().filter(|item| !item.alpha_test).collect();
+                let depth_data: Vec<RenderData> = solid_data.iter().copied().filter(|item| !item.no_depth_prepass).collect();
                 let depth_batches: [(&Vec<RenderData>, Option<&wgpu::Buffer>); 1] = [(&depth_data, None)];
 
                 render_result.draw_calls += self.render_depth(wgpu, view, encoder, &depth_batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());

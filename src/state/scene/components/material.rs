@@ -294,6 +294,9 @@ pub struct MaterialData
     #[serde(default)]
     pub no_fog: bool, // when true, this material is excluded from the distance fog (sky spheres, editor helpers, etc.)
 
+    #[serde(default)]
+    pub no_depth_prepass: bool, // when true, kept out of the depth pre-pass (no occluder, no ssao from it) - e.g. thin grass blades: much cost there, hide little
+
     #[serde(default = "default_vertex_colors")]
     pub vertex_colors: bool, // multiply the base color with the mesh vertex colors (COLOR_0)
 
@@ -376,6 +379,7 @@ impl Material
 
             allow_xray: true,
             no_fog: false,
+            no_depth_prepass: false,
 
             vertex_colors: true,
 
