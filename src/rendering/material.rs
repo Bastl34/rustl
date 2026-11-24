@@ -254,6 +254,8 @@ pub struct MaterialBuffer
     pub shader_key: u64, // 0 = builtin color pipelines
     pub shader_transparent: bool, // material shader with a "// @transparent" line
     pub shader_alpha_tested: bool, // material shader which discards
+    shader_uses_time: bool, // the material shader reads get_time(): the time goes in every frame
+    written_params: Option<[f32; MAX_CUSTOM_PARAMS]>, // the params in the buffer - only a change is written
 }
 
 crate::render_item_send_sync!(MaterialBuffer);
@@ -294,6 +296,8 @@ impl MaterialBuffer
             shader_key: 0,
             shader_transparent: false,
             shader_alpha_tested: false,
+            shader_uses_time: false,
+            written_params: None,
         };
 
         buffer.to_buffers(wgpu, material, default_env_map.clone(), additional_textures);
@@ -308,6 +312,8 @@ impl MaterialBuffer
         self.shader_key = super::custom_shader::shader_key(material);
         self.shader_transparent = material.get_data().shader_source_code.contains("// @transparent");
         self.shader_alpha_tested = material.get_data().shader_source_code.contains("discard") || (!material.get_data().shader_source_code.is_empty() && material.get_data().blend_mode == BlendMode::Mask);
+        self.shader_uses_time = material.get_data().shader_source_code.contains("get_time");
+        self.written_params = None;
 
         if let Some(additional_textures) = additional_textures
         {
@@ -329,14 +335,21 @@ impl MaterialBuffer
         );
     }
 
-    // time + params of a material shader - every frame, so param changes need no rebuild of the material
-    pub fn write_shader_values(&self, wgpu: &mut WGpu, time: f32, params: &[f32; MAX_CUSTOM_PARAMS])
+    // time + params of a material shader - looked at every frame, so param changes need no rebuild of the material; only what changed is written
+    pub fn write_shader_values(&mut self, wgpu: &mut WGpu, time: f32, params: &[f32; MAX_CUSTOM_PARAMS])
     {
-        let time_offset = std::mem::offset_of!(MaterialUniform, time);
-        let params_offset = std::mem::offset_of!(MaterialUniform, custom_params);
+        if self.shader_uses_time
+        {
+            let time_offset = std::mem::offset_of!(MaterialUniform, time);
+            wgpu.queue_mut().write_buffer(&self.buffer, time_offset as u64, bytemuck::bytes_of(&time));
+        }
 
-        wgpu.queue_mut().write_buffer(&self.buffer, time_offset as u64, bytemuck::bytes_of(&time));
-        wgpu.queue_mut().write_buffer(&self.buffer, params_offset as u64, bytemuck::cast_slice(params));
+        if self.written_params.as_ref() != Some(params)
+        {
+            let params_offset = std::mem::offset_of!(MaterialUniform, custom_params);
+            wgpu.queue_mut().write_buffer(&self.buffer, params_offset as u64, bytemuck::cast_slice(params));
+            self.written_params = Some(*params);
+        }
     }
 
     /*

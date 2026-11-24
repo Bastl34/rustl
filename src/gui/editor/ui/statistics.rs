@@ -383,17 +383,21 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     let update_parts = [("controllers pre", u.controllers_pre), ("nodes / animations", u.nodes), ("skin bounds", u.skins), ("controllers after physics", u.controllers_physics), ("cameras", u.cameras), ("controllers post", u.controllers_post), ("scene other", u.scene_other),
         ("render state", u.render_state), ("render materials", u.render_materials), ("render nodes", u.render_nodes), ("render particles", u.render_particles), ("render other", u.render_other)];
     let engine_update = StatItem { text: format!("engine update: {:.3} ms", state.stats.engine_update_time), children: update_parts.iter().map(|(name, ms)| format!("{}: {:.3} ms", name, ms)).collect() };
-    cpu_times.push(format!("engine encode: {:.3} ms", state.stats.engine_render_time));
+    let r = &state.stats.render_times;
+    let render_parts = [("prepare", r.prep), ("shadows", r.shadows), ("culling", r.cull), ("passes", r.passes), ("observers", r.notify), ("results", r.results)];
+    let engine_encode = StatItem { text: format!("engine encode: {:.3} ms", state.stats.engine_render_time), children: render_parts.iter().map(|(name, ms)| format!("{}: {:.3} ms", name, ms)).collect() };
+    let physics_parts = [("sync", u.physics_sync), ("step", u.physics_step), ("apply", u.physics_apply)];
+    let physics_update = StatItem { text: format!("physics update: {:.3} ms", state.stats.physics_update_time), children: physics_parts.iter().map(|(name, ms)| format!("{}: {:.3} ms", name, ms)).collect() };
     cpu_times.push(format!("editor update: {:.3} ms", state.stats.editor_update_time));
     cpu_times.push(format!("ui update: {:.3} ms", state.stats.egui_update_time));
     cpu_times.push(format!("  editor ui: {:.3} ms", state.stats.editor_ui_time));
     cpu_times.push(format!("  app ui: {:.3} ms", state.stats.app_ui_time));
     cpu_times.push(format!("ui encode: {:.3} ms", state.stats.egui_render_time));
     cpu_times.push(format!("app update: {:.3} ms", state.stats.app_update_time));
-    cpu_times.push(format!("physics update: {:.3} ms", state.stats.physics_update_time));
     cpu_times.push(format!("total: {:.3} ms", cpu_total));
     cpu_times.push(format!("wait: {:.3} ms", cpu_wait));
-    let mut cpu_items = vec![engine_update];
+    // the folded ones first, then the plain lines (total and wait last)
+    let mut cpu_items = vec![engine_update, engine_encode, physics_update];
     cpu_items.extend(items(cpu_times));
     stats.push(("CPU times".to_string(), "⏱".to_string(), cpu_items, true));
 
@@ -433,7 +437,8 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
             }
 
             // the id without the changing numbers: the fold stays as it is
-            egui::CollapsingHeader::new(stat_item.text.as_str()).id_salt(("statistics fold", stat_category)).default_open(false).show(ui, |ui|
+            let key = stat_item.text.split(':').next().unwrap_or_default();
+            egui::CollapsingHeader::new(stat_item.text.as_str()).id_salt(("statistics fold", stat_category, key)).default_open(false).show(ui, |ui|
             {
                 for child in &stat_item.children
                 {

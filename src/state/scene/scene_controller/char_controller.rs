@@ -2,7 +2,7 @@
 
 use std::{collections::HashSet, f32::consts::PI, sync::{Arc, RwLock}};
 
-use nalgebra::{Rotation3, Vector2, Vector3, Vector4};
+use nalgebra::{Matrix4, Rotation3, Vector2, Vector3, Vector4};
 use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use rapier3d::prelude::{Capsule, Collider, ColliderHandle, Pose, QueryFilter, Vector};
 use serde::{Deserialize, Serialize};
@@ -58,6 +58,7 @@ const STAND_UP_GROUND_MARGIN: f32 = 0.1;
 // extra reach of the downwards probe that looks for the collider the character stands on
 const GROUND_PROBE_MARGIN: f32 = 0.2;
 const PLATFORM_TELEPORT: f32 = 0.25; // m the node moved without this controller: the old platform no longer carries it
+const PLATFORM_GRACE: f32 = 0.3; // s a moving platform still carries after the feet lost it (it bounced away under them) - not after a jump
 
 const DEFAULT_CAM_RADIUS: f32 = 6.0;
 const CAM_RELATIVE_LATERAL_OFFSET: f32 = -0.5; // negative = character right of the screen center
@@ -468,11 +469,19 @@ pub struct CharacterController
 
     // collider under the feet + its last position, so moving platforms carry the character
     #[serde(skip, default)]
-    ground_collider: Option<(ColliderHandle, Vector3<f32>)>,
+    ground_collider: Option<(ColliderHandle, Matrix4<f32>)>,
 
     // where the move left the character (world): moved from outside since (teleport, disabled) = the platform no longer carries it
     #[serde(skip, default)]
     ground_left_at: Option<Vector3<f32>>,
+
+    // on a vehicle: drawn where the vehicle is drawn (between its steps) - the shift and the position written with it, taken back before the next move
+    #[serde(skip, default)]
+    shown_shift: Option<(Vector3<f32>, Vector3<f32>)>,
+
+    // s the platform under the feet still carries after losing the ground (PLATFORM_GRACE)
+    #[serde(skip, default)]
+    platform_grace: f32,
 
     // one report per cause, so an intermittent hop can be traced without flooding the console
     #[serde(skip, default)]
@@ -579,6 +588,8 @@ impl CharacterController
             root_joint_name: None,
             ground_collider: None,
             ground_left_at: None,
+            shown_shift: None,
+            platform_grace: 0.0,
             reported_platform_hop: false,
             reported_ground_loss: false,
 
@@ -1539,6 +1550,33 @@ impl SceneController for CharacterController
         run_mode.runs_game_logic()
     }
 
+    // standing on a vehicle: the move carried the character by the vehicle's solver steps, the vehicle is drawn between them - drawn on it
+    // there (a frame's shift, taken back before the next move); else it twitches on a moving trailer
+    fn update_after_physics(&mut self, scene: &mut crate::state::scene::scene::Scene, _io: &mut InputOutput, _frame_scale: f32)
+    {
+        let Some(node) = self.node.as_ref() else { return; };
+        if node.read().unwrap().parent.is_some() { return; }
+        let Some((handle, carried_from)) = self.ground_collider else { return; };
+        let Some(shown) = scene.physics.vehicle_collider_shown(handle) else { return; };
+        let Some(inverse) = carried_from.try_inverse() else { return; };
+        let Some(transformation) = self.transformation.as_ref() else { return; };
+        let now = { component_downcast!(transformation, Transformation); transformation.get_data().position };
+        // where on the platform the move left him, there on the platform as drawn
+        let drawn = shown * inverse * Vector4::new(now.x, now.y, now.z, 1.0);
+        let shift = Vector3::new(drawn.x, drawn.y, drawn.z) - now;
+        if shift.norm() < 1e-5 || shift.norm() > 2.0 { return; }
+        let at =
+        {
+            component_downcast_mut!(transformation, Transformation);
+            let at = transformation.get_data().position + shift;
+            transformation.set_translation(at);
+            at
+        };
+        // the scene's caches were refreshed before the physics: the meshes (skin) would stay where the move left him
+        crate::state::scene::physics::physics_world::PhysicsWorld::refresh_instance_cache_below(node);
+        self.shown_shift = Some((shift, at));
+    }
+
     fn on_run_mode_changed(&mut self, _scene: &mut crate::state::scene::scene::Scene, old: RunMode, new: RunMode)
     {
         // update no longer runs, so whatever clip was playing (e.g. a strafe) would keep looping in the editor
@@ -1682,6 +1720,14 @@ impl SceneController for CharacterController
         let node = self.node.clone().unwrap();
 
         let mut has_change = false;
+
+        // drawn on a vehicle last frame: the shift goes off again (unless something else moved the character since)
+        if let (Some((shift, at)), Some(transformation)) = (self.shown_shift.take(), self.transformation.as_ref())
+        {
+            component_downcast_mut!(transformation, Transformation);
+            let now = transformation.get_data().position;
+            if (now - at).norm() < 1e-4 { transformation.set_translation(now - shift); }
+        }
 
         // ********** deferred capsule measurement **********
         // the bind pose is a T-pose, so measure once the idle animation is actually posing
@@ -2228,11 +2274,13 @@ impl SceneController for CharacterController
             {
                 self.ground_collider = None;
             }
-            if let Some((handle, last_translation)) = self.ground_collider
+            if let Some((handle, last)) = self.ground_collider
             {
-                if let Some(current) = scene.physics.collider_translation(handle)
+                if let Some(current) = scene.physics.collider_matrix(handle)
                 {
-                    platform_delta = current - last_translation;
+                    // the platform's whole change carries the feet - a turning trailer turns them with it (else they slide off its edge)
+                    let carried = last.try_inverse().map(|inverse| current * inverse * Vector4::new(world_pos.x, world_pos.y, world_pos.z, 1.0));
+                    platform_delta = match carried { Some(p) => Vector3::new(p.x, p.y, p.z) - world_pos, None => extract_translation_from_transform(&current) - extract_translation_from_transform(&last) };
                 }
                 else
                 {
@@ -2395,8 +2443,9 @@ impl SceneController for CharacterController
                 );
 
                 let probe_distance = self.collision.capsule_center_offset + self.collision.capsule_radius + GROUND_PROBE_MARGIN;
-                self.ground_collider = scene.physics.ground_collider_below(feet, probe_distance, QueryFilter::default().predicate(&predicate));
+                self.ground_collider = scene.physics.ground_collider_below(feet, probe_distance, QueryFilter::default().predicate(&predicate)).and_then(|(handle, _)| scene.physics.collider_matrix(handle).map(|m| (handle, m)));
                 self.ground_left_at = Some(world_pos + Vector3::new(movement_res.translation.x, movement_res.translation.y, movement_res.translation.z));
+                self.platform_grace = PLATFORM_GRACE;
             }
             else
             {
@@ -2406,7 +2455,14 @@ impl SceneController for CharacterController
                     console_warning!("character: lost the ground for a frame while standing, y velocity {:.4} - snap_to_ground is not reaching far enough", y_velocity_before);
                 }
 
-                self.ground_collider = None;
+                // a moment off a moving platform still rides it (else every lost frame leaves him a frame's way behind - off a trailer's end)
+                self.platform_grace -= delta_t;
+                if is_jumping || self.platform_grace <= 0.0 { self.ground_collider = None; }
+                else
+                {
+                    self.ground_collider = self.ground_collider.and_then(|(handle, _)| scene.physics.collider_matrix(handle).map(|m| (handle, m)));
+                    self.ground_left_at = Some(world_pos + Vector3::new(movement_res.translation.x, movement_res.translation.y, movement_res.translation.z));
+                }
 
                 if !is_jumping && (y_velocity_before < -self.fall_velocity || self.falling)
                 {

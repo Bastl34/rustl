@@ -6,7 +6,7 @@ use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
 use crate::rendering::particles::ParticleRenderer;
-use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BOUNDING_BOX_FLAG_OCCLUSION_TEST, BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, debug_volumes::{BOUNDING_BOX_COLOR, BOUNDING_SPHERE_COLOR, DebugVolume, DebugVolumeList, DebugVolumesBuffer}, draw_slots::{DRAW_INDEXED_ARGS_SIZE, DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::{BlendMode, TextureType}, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX, RunMode, State, take_elapsed_ms}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BOUNDING_BOX_FLAG_OCCLUSION_TEST, BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, debug_volumes::{BOUNDING_BOX_COLOR, BOUNDING_SPHERE_COLOR, DebugVolume, DebugVolumeList, DebugVolumesBuffer}, draw_slots::{DRAW_INDEXED_ARGS_SIZE, DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::{BlendMode, TextureType}, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX, RenderTimes, RunMode, State, take_elapsed_ms}}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, custom_shader, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -301,6 +301,8 @@ pub struct Scene
     // hash over the culling-relevant node state without own change tracking
     // (settings, mesh counts, instance counts) - triggers the culling buffer rebuild
     culling_state_hash: u64,
+    bounding_boxes_cpu: Vec<BoundingBox>, // what the bounding boxes buffer holds (by node index) - moved nodes are written alone
+    pub render_times: RenderTimes, // the last render() split up (prep, shadows, cull, passes)
 
     hzb_cull_buffer: HZBCullBuffer,
 
@@ -437,6 +439,8 @@ impl Scene
 
             draw_slots: DrawSlotsBuffer::new(wgpu),
             culling_state_hash: 0,
+            bounding_boxes_cpu: vec![],
+            render_times: RenderTimes::default(),
 
             hzb_cull_buffer: HZBCullBuffer::new(wgpu),
 
@@ -703,7 +707,7 @@ impl Scene
         }
 
         // ********** particles pass **********
-        self.particles.create_pipelines(wgpu, self.samples, self.reverse_z);
+        self.particles.create_pipelines(wgpu, self.samples, self.reverse_z, max_lights);
     }
 
     pub fn update_textures(&mut self, _wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
@@ -775,9 +779,10 @@ impl Scene
             // custom material shaders get the time and their params every frame
             if !material.get_data().shader_source_code.is_empty()
             {
-                if let Some(render_item) = material.get_base().render_item.as_ref()
+                let params = material.get_data().custom_params;
+                if let Some(render_item) = material.get_base_mut().render_item.as_mut()
                 {
-                    get_render_item::<MaterialBuffer>(render_item).write_shader_values(wgpu, time, &material.get_data().custom_params);
+                    get_render_item_mut::<MaterialBuffer>(render_item).write_shader_values(wgpu, time, &params);
                 }
             }
         }
@@ -904,6 +909,12 @@ impl Scene
 
         // ********** shadow atlas **********
         let shadow_atlas_recreated = self.shadow.ensure_for_lights(wgpu, lights, max_lights as usize, shadow_map_size, self.shadow_enabled, self.particles.translucent_shadows);
+
+        // ********** particles: the lights and shadows they are lit by **********
+        if let Some(lights_buffer) = scene.lights_render_item.as_ref().map(|item| get_render_item::<LightBuffer>(item))
+        {
+            self.particles.update_lights(wgpu, &self.buffer, lights_buffer.get_amount_buffer(), lights_buffer.get_lights_buffer(), &self.shadow);
+        }
 
         // ********** lights and cameras **********
         for cam in &mut scene.cameras
@@ -1102,10 +1113,17 @@ impl Scene
         let mut instance_buffers_updated = false;
         let mut vertex_buffers_updated = false;
         let mut skeleton_cache: HashMap<Vec<u32>, Option<Vec<Matrix4<f32>>>> = HashMap::new();
+        let mut moved: Vec<usize> = vec![]; // node indices whose instances changed this frame
 
         // go in reverse to find parent transformations for child nodes
         for node_id in (0..nodes.len()).rev()
         {
+            // a hidden node is not drawn: its changes stay pending (the trackers are not consumed) until it is shown again
+            if !nodes[node_id].read().unwrap().settings.visible
+            {
+                continue;
+            }
+
             let mut create_new_skeleton_morph_target_bind_group = false;
 
             // ********** vertex buffer and morph target/s **********
@@ -1348,6 +1366,8 @@ impl Scene
             // ********** mark instances as updated **********
             if all_instances_changed
             {
+                moved.push(node_id);
+
                 {
                     let node = nodes.get(node_id).unwrap();
                     let node = node.read().unwrap();
@@ -1406,6 +1426,11 @@ impl Scene
                         }
                     }
 
+                    if !changed.is_empty()
+                    {
+                        moved.push(node_id);
+                    }
+
                     if let Some(render_item) = render_item.as_mut()
                     {
                         get_render_item_mut::<InstanceBuffer>(render_item).update_bounding_sphere(node.get_local_bounds(), false, &changed);
@@ -1443,15 +1468,50 @@ impl Scene
                     | ((settings.depth_test as u64) << 2)
                     | ((settings.depth_write as u64) << 1)
                     | (settings.visible as u64));
-                culling_hash = fnv(culling_hash, node.get_meshes_with_mesh_resource().len() as u64);
+                culling_hash = fnv(culling_hash, node.mesh_resources_key());
                 culling_hash = fnv(culling_hash, node.instances.get_ref().len() as u64);
             }
 
             let culling_state_changed = culling_hash != self.culling_state_hash;
             self.culling_state_hash = culling_hash;
 
-            // rebuild when transforms/geometry changed or the culling-relevant state hash moved
-            if instance_buffers_updated || vertex_buffers_updated || culling_state_changed
+            // all again when the geometry or the culling-relevant state changed - moved nodes alone write only their boxes
+            let full = vertex_buffers_updated || culling_state_changed || self.bounding_boxes_cpu.len() != nodes.len();
+            if !full && instance_buffers_updated && !moved.is_empty()
+            {
+                for &node_id in &moved
+                {
+                    let mut node = nodes[node_id].write().unwrap();
+                    let old = self.bounding_boxes_cpu[node_id];
+
+                    let mut flags = 0;
+                    if node.settings.occlusion_culling && node.settings.depth_test && node.settings.visible
+                    {
+                        flags |= BOUNDING_BOX_FLAG_OCCLUSION_TEST;
+                    }
+
+                    let bbox = if flags & BOUNDING_BOX_FLAG_OCCLUSION_TEST != 0 { Self::cached_instances_box(&mut node) } else { None };
+                    let entry = match bbox
+                    {
+                        Some((min, max)) => BoundingBox::new(node.id, &min, &max, flags, old.slot_start, old.slot_count),
+                        None => BoundingBox::new(node.id, &Point3::origin(), &Point3::origin(), 0, old.slot_start, old.slot_count),
+                    };
+                    self.bounding_boxes_cpu[node_id] = entry;
+
+                    if moved.len() <= 64
+                    {
+                        self.bounding_boxes_buffer.write_entry(wgpu, node_id, &entry);
+                    }
+                }
+
+                // many moved: one write of the whole table
+                if moved.len() > 64
+                {
+                    self.bounding_boxes_buffer.update(wgpu, &self.bounding_boxes_cpu);
+                }
+            }
+
+            if full
             {
                 let mut buffer_data: Vec<BoundingBox> = Vec::with_capacity(nodes.len());
                 let mut slots: Vec<DrawSlot> = vec![];
@@ -1522,6 +1582,7 @@ impl Scene
                 }
 
                 self.update_result.bounding_boxes_buffer_recreated = self.bounding_boxes_buffer.update(wgpu, &buffer_data);
+                self.bounding_boxes_cpu = buffer_data;
 
                 // the bounding boxes change on every transform update, but the slot table only
                 // changes on topology changes (nodes/meshes/instance counts). only a real slot
@@ -1819,6 +1880,8 @@ impl Scene
         let shadow_enabled_changed = shadow_enabled != self.shadow_enabled;
         self.shadow_enabled = shadow_enabled;
         self.particles.translucent_shadows = state.rendering.translucent_shadows;
+        self.particles.lighting = state.rendering.particle_lighting;
+        self.particles.shadows = state.rendering.particle_shadows;
 
         self.update_light_cameras_shadows(wgpu, scene, *state.rendering.shadow_map_resolution.get_ref(), shadow_enabled_changed, ssao_params_changed);
 
@@ -2068,6 +2131,9 @@ impl Scene
 
     pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>) -> Vec<RenderResultForCamera>
     {
+        let mut start_time = web_time::Instant::now();
+        let mut times = RenderTimes::default();
+
         let all_nodes = Scene::list_all_child_nodes(&scene.nodes, true);
 
         let mut nodes_read = vec![];
@@ -2249,9 +2315,12 @@ impl Scene
         // take out the gpu timer to keep self borrowable for the render functions
         let mut gpu_timer = self.gpu_timer.take();
 
+        times.prep += take_elapsed_ms(&mut start_time);
+
         // ********** shadow maps **********
         // render all shadow views (directional cascades, spot, point faces) into the shadow atlas
         let (shadow_views, shadow_draw_calls) = self.render_shadows(wgpu, encoder, scene, &render_groups, gpu_timer.as_mut());
+        times.shadows += take_elapsed_ms(&mut start_time);
 
         self.shadow_views = shadow_views;
         self.shadow_draw_calls = shadow_draw_calls;
@@ -2372,6 +2441,8 @@ impl Scene
                     });
                 }
             }
+
+            times.cull += take_elapsed_ms(&mut start_time);
 
             let clear;
             if i == 0 { clear = true; } else { clear = false; }
@@ -2510,12 +2581,14 @@ impl Scene
                 }
             }
 
+            times.passes += take_elapsed_ms(&mut start_time);
             i += 1;
         }
 
         // resolve the gpu timestamps into the readback buffer (read back in the next frame)
         if let Some(gpu_timer) = gpu_timer.as_mut() { gpu_timer.resolve(encoder); }
         self.gpu_timer = gpu_timer;
+        self.render_times = times;
 
         render_results
     }
@@ -2667,10 +2740,10 @@ impl Scene
         let max_lights = scene.get_data().max_lights as usize;
         let lights = scene.lights.get_ref();
 
-        // directional cascades are fitted to the first active camera
-        let cam_data = scene.cameras.iter().find(|cam| scene.is_camera_active(cam, self.run_mode)).map(|cam| cam.get_data());
+        // directional cascades are fitted around every active camera (split screen: all players)
+        let cams: Vec<&crate::state::scene::camera::CameraData> = scene.cameras.iter().filter(|cam| scene.is_camera_active(cam, self.run_mode)).map(|cam| cam.get_data()).collect();
 
-        let shadow_views = shadow::compute_shadow_views(lights, max_lights, cam_data, self.shadow.size(), self.shadow_max_distance);
+        let shadow_views = shadow::compute_shadow_views(lights, max_lights, &cams, self.shadow.size(), self.shadow_max_distance);
 
         if shadow_views.is_empty()
         {

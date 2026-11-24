@@ -3382,7 +3382,9 @@ impl VehicleController
 
             if behind > 0.0 && height > 0.0
             {
-                drive_force = drive_force.min(self.chassis.mass * gravity * behind / height * WHEELIE_MARGIN);
+                // the trailers' share of the pull runs through the low ball, only the vehicle's own share lifts its front
+                let towed = physics.towed_mass(node_id);
+                drive_force = drive_force.min((self.chassis.mass + towed) * gravity * behind / height * WHEELIE_MARGIN);
             }
         }
 

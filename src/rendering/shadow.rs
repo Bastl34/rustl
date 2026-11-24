@@ -6,7 +6,7 @@
 // samples the atlas with a comparison sampler (hardware PCF) - see shader/base.wgsl.
 //
 // Layer assignment per light (in light order, capped by MAX_SHADOW_VIEWS):
-// - directional: SHADOW_CASCADES layers (cascaded shadow maps, fitted to the first enabled camera)
+// - directional: SHADOW_CASCADES layers (cascaded shadow maps, fitted around all enabled cameras)
 // - spot: 1 layer
 // - point: 6 layers (cube faces +X, -X, +Y, -Y, +Z, -Z)
 // - hemispheric: no shadow
@@ -56,6 +56,9 @@ pub enum ShadowCull
     // directional cascade: infinite beam along dir with the cascade radius
     Beam { center: Point3<f32>, radius: f32, dir: Vector3<f32> },
 
+    // a cube face of a point light: within radius and in front of the face (dir = its axis, side_a / side_b = the other two axes)
+    Face { center: Point3<f32>, radius: f32, dir: Vector3<f32>, side_a: Vector3<f32>, side_b: Vector3<f32> },
+
     // no culling possible - render everything
     None,
 }
@@ -85,6 +88,19 @@ impl ShadowViewData
                 let perpendicular = to_center - dir * along;
 
                 perpendicular.norm_squared() <= (r + radius) * (r + radius)
+            },
+            ShadowCull::Face { center: c, radius: r, dir, side_a, side_b } =>
+            {
+                let v = center - c;
+                if v.norm_squared() > (r + radius) * (r + radius)
+                {
+                    return false;
+                }
+
+                // the face's pyramid: along >= |across| for both other axes (45 deg planes, widened for the 1.02 fov and the sphere)
+                let along = v.dot(dir) * 1.05;
+                let reach = radius * std::f32::consts::SQRT_2 * 1.05;
+                along + reach >= v.dot(side_a).abs() && along + reach >= v.dot(side_b).abs()
             },
             ShadowCull::None => true,
         }
@@ -194,38 +210,19 @@ fn point_views(light: &Light, first_layer: u32, shadow_max_distance: f32, out: &
         let target = light.pos + dir;
         let view = Isometry3::look_at_rh(&light.pos, &target, up).to_homogeneous();
 
+        // only the casters in front of this face - a sphere alone drew everything around the light into all 6
         out.push(ShadowViewData
         {
             layer: first_layer + face as u32,
             view_proj: OPENGL_TO_WGPU_MATRIX * projection * view,
-            cull: ShadowCull::Sphere { center: light.pos, radius: far },
+            cull: ShadowCull::Face { center: light.pos, radius: far, dir: *dir, side_a: *up, side_b: dir.cross(up) },
         });
     }
 }
 
-fn directional_views(light: &Light, cam_data: Option<&CameraData>, first_layer: u32, shadow_map_size: u32, shadow_max_distance: f32, out: &mut Vec<ShadowViewData>)
+// the enclosing sphere of every cascade's slice of one camera's frustum (stable fit: independent of the camera's rotation)
+fn cascade_spheres(cam_data: &CameraData, shadow_max_distance: f32) -> Vec<(Point3<f32>, f32)>
 {
-    let dir = light.dir_normalized();
-
-    let cam_data = match cam_data
-    {
-        Some(cam_data) => cam_data,
-        None =>
-        {
-            // no active camera to fit the cascades to -> degenerate views (shader treats them as "not shadowed")
-            for cascade in 0..SHADOW_CASCADES
-            {
-                out.push(ShadowViewData
-                {
-                    layer: first_layer + cascade,
-                    view_proj: Matrix4::zeros(),
-                    cull: ShadowCull::None,
-                });
-            }
-            return;
-        }
-    };
-
     let near = cam_data.clipping_near.max(0.001);
     let far_full = cam_data.clipping_far.max(near + 0.01);
     let far = far_full.min(shadow_max_distance).max(near + 0.01);
@@ -257,8 +254,7 @@ fn directional_views(light: &Light, cam_data: Option<&CameraData>, first_layer: 
         splits.push(SHADOW_CSM_SPLIT_LAMBDA * log_split + (1.0 - SHADOW_CSM_SPLIT_LAMBDA) * uniform_split);
     }
 
-    let up = up_vector_for_direction(&dir);
-
+    let mut spheres = vec![];
     for cascade in 0..SHADOW_CASCADES as usize
     {
         // frustum slice corners (lerp along the frustum edge rays)
@@ -273,7 +269,6 @@ fn directional_views(light: &Light, cam_data: Option<&CameraData>, first_layer: 
             corners[i + 4] = near_corners[i] + edge * t1;
         }
 
-        // enclosing sphere (stable fit: independent of camera rotation)
         let mut center = Vector3::zeros();
         for corner in &corners
         {
@@ -287,8 +282,55 @@ fn directional_views(light: &Light, cam_data: Option<&CameraData>, first_layer: 
         {
             radius = radius.max((corner - center).norm());
         }
-        radius = radius.max(0.01);
+        spheres.push((center, radius.max(0.01)));
+    }
+    spheres
+}
 
+// the smallest sphere around two spheres
+fn merge_spheres(a: (Point3<f32>, f32), b: (Point3<f32>, f32)) -> (Point3<f32>, f32)
+{
+    let d = (b.0 - a.0).norm();
+    if d + b.1 <= a.1 { return a; }
+    if d + a.1 <= b.1 { return b; }
+    let radius = (d + a.1 + b.1) * 0.5;
+    let center = a.0 + (b.0 - a.0) * ((radius - a.1) / d.max(1e-6));
+    (center, radius)
+}
+
+// the cascades around every active camera (split screen: one sphere around the slices of all of them - between the players)
+fn directional_views(light: &Light, cams: &[&CameraData], first_layer: u32, shadow_map_size: u32, shadow_max_distance: f32, out: &mut Vec<ShadowViewData>)
+{
+    let dir = light.dir_normalized();
+
+    if cams.is_empty()
+    {
+        // no active camera to fit the cascades to -> degenerate views (shader treats them as "not shadowed")
+        for cascade in 0..SHADOW_CASCADES
+        {
+            out.push(ShadowViewData
+            {
+                layer: first_layer + cascade,
+                view_proj: Matrix4::zeros(),
+                cull: ShadowCull::None,
+            });
+        }
+        return;
+    }
+
+    let mut spheres = cascade_spheres(cams[0], shadow_max_distance);
+    for cam_data in &cams[1..]
+    {
+        for (sphere, other) in spheres.iter_mut().zip(cascade_spheres(cam_data, shadow_max_distance))
+        {
+            *sphere = merge_spheres(*sphere, other);
+        }
+    }
+
+    let up = up_vector_for_direction(&dir);
+
+    for (cascade, (center, radius)) in spheres.into_iter().enumerate()
+    {
         // light view + ortho projection around the sphere, z-range extended backwards for casters behind the slice
         let z_extension = radius * SHADOW_CSM_Z_EXTENSION;
         let eye = center - dir * z_extension;
@@ -319,7 +361,7 @@ fn directional_views(light: &Light, cam_data: Option<&CameraData>, first_layer: 
     }
 }
 
-pub fn compute_shadow_views(lights: &Vec<RefCell<ChangeTracker<LightItem>>>, max_lights: usize, cam_data: Option<&CameraData>, shadow_map_size: u32, shadow_max_distance: f32) -> Vec<ShadowViewData>
+pub fn compute_shadow_views(lights: &Vec<RefCell<ChangeTracker<LightItem>>>, max_lights: usize, cams: &[&CameraData], shadow_map_size: u32, shadow_max_distance: f32) -> Vec<ShadowViewData>
 {
     let assignments = assign_shadow_views(lights, max_lights);
 
@@ -340,7 +382,7 @@ pub fn compute_shadow_views(lights: &Vec<RefCell<ChangeTracker<LightItem>>>, max
 
         match light.light_type
         {
-            LightType::Directional | LightType::Sun => directional_views(light, cam_data, first_layer, shadow_map_size, shadow_max_distance, &mut views),
+            LightType::Directional | LightType::Sun => directional_views(light, cams, first_layer, shadow_map_size, shadow_max_distance, &mut views),
             LightType::Spot => views.push(spot_view(light, first_layer, shadow_max_distance)),
             LightType::Point => point_views(light, first_layer, shadow_max_distance, &mut views),
             LightType::Hemispheric => {},

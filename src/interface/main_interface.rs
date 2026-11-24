@@ -34,7 +34,7 @@ use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::project::loader::load_and_apply_project;
 use crate::state::scene::scene::SceneLoadState;
-use crate::state::state::{State, UpdateTimes, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
+use crate::state::state::{RenderTimes, State, UpdateTimes, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES, take_elapsed_ms};
 
 use super::app::{App, project_app_factory};
 use super::context::Context;
@@ -59,6 +59,10 @@ pub struct MainInterface
     app_ui: bool,
 
     gilrs: Option<Gilrs>,
+
+    // the gamepad rumbles still playing (dropped when their time is up)
+    #[cfg(not(target_arch = "wasm32"))]
+    rumbles: Vec<(gilrs::ff::Effect, std::time::Instant)>,
 
     // the game releases the mouse on Esc or focus loss, a click captures it again
     #[cfg(not(feature = "editor"))]
@@ -145,6 +149,9 @@ impl MainInterface
             app_ui: false,
 
             gilrs,
+
+            #[cfg(not(target_arch = "wasm32"))]
+            rumbles: vec![],
 
             // the browser only grants the pointer lock on a click
             #[cfg(not(feature = "editor"))]
@@ -342,6 +349,14 @@ impl MainInterface
             if let Some(gilrs) = &mut self.gilrs
             {
                 gilrs_event(state, gilrs, state.stats.frame);
+
+                #[cfg(not(target_arch = "wasm32"))]
+                super::gilrs::gilrs_rumble(state, gilrs, &mut self.rumbles);
+            }
+
+            for gamepad in state.io.input_manager.gamepads.values_mut()
+            {
+                gamepad.rumble = None;
             }
         }
 
@@ -651,6 +666,7 @@ impl MainInterface
                 {
                     let engine_render_time = Instant::now();
 
+                    state.stats.render_times = RenderTimes::default();
                     state.stats.draw_calls = 0;
                     state.stats.occlusion_culled_objects = 0;
                     state.stats.frustum_culled_objects = 0;
@@ -687,16 +703,26 @@ impl MainInterface
                         render_scene.occlusion_culling = state.rendering.occlusion_culling;
                         render_scene.run_mode = effective_run_mode;
 
+                        let mut start_time = Instant::now();
                         scene.notify_before_render_all();
+                        state.stats.render_times.notify += take_elapsed_ms(&mut start_time);
 
                         // render scene
                         let render_results =  render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
+                        let parts = render_scene.render_times;
+                        let times = &mut state.stats.render_times;
+                        times.prep += parts.prep;
+                        times.shadows += parts.shadows;
+                        times.cull += parts.cull;
+                        times.passes += parts.passes;
+                        start_time = Instant::now();
 
                         let (particles, particle_emitters) = render_scene.particle_stats();
                         state.stats.particles += particles;
                         state.stats.particle_emitters += particle_emitters;
 
                         scene.notify_after_render_all();
+                        state.stats.render_times.notify += take_elapsed_ms(&mut start_time);
 
                         // update visibility info for cameras
                         for render_result in &render_results
@@ -737,6 +763,8 @@ impl MainInterface
                             highlight_and_unhighlight_scene_meshes(scene, &all_highlighted);
                             console_debug!("Highlighted {} visible occluded objects", all_highlighted.len());
                         }
+
+                        state.stats.render_times.results += take_elapsed_ms(&mut start_time);
 
                         scene.render_item = render_item;
                     }

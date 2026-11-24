@@ -99,6 +99,14 @@ impl BoundingBoxesBuffer
         recreated
     }
 
+    // one entry again (the buffer is big enough: update() wrote all of them before)
+    pub fn write_entry(&mut self, wgpu: &mut WGpu, index: usize, entry: &BoundingBox)
+    {
+        if index >= self.buffer_size { return; }
+        let offset = (index * std::mem::size_of::<BoundingBox>()) as u64;
+        wgpu.queue_mut().write_buffer(&self.buffer, offset, bytemuck::bytes_of(entry));
+    }
+
     pub fn get_buffer(&self) -> &wgpu::Buffer
     {
         &self.buffer

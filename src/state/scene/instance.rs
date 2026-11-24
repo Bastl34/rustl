@@ -109,10 +109,10 @@ impl Instance
                 color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
             }),
 
-            on_before_update: Observable::new(),
-            on_after_update: Observable::new(),
-            on_before_render: Observable::new(),
-            on_after_render: Observable::new(),
+            on_before_update: Observable::counted(&crate::helper::observable::UPDATE_OBSERVERS),
+            on_after_update: Observable::counted(&crate::helper::observable::UPDATE_OBSERVERS),
+            on_before_render: Observable::counted(&crate::helper::observable::RENDER_OBSERVERS),
+            on_after_render: Observable::counted(&crate::helper::observable::RENDER_OBSERVERS),
         };
 
         instance
@@ -145,10 +145,10 @@ impl Instance
                 color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
             }),
 
-            on_before_update: Observable::new(),
-            on_after_update: Observable::new(),
-            on_before_render: Observable::new(),
-            on_after_render: Observable::new(),
+            on_before_update: Observable::counted(&crate::helper::observable::UPDATE_OBSERVERS),
+            on_after_update: Observable::counted(&crate::helper::observable::UPDATE_OBSERVERS),
+            on_before_render: Observable::counted(&crate::helper::observable::RENDER_OBSERVERS),
+            on_after_render: Observable::counted(&crate::helper::observable::RENDER_OBSERVERS),
         };
 
         instance
@@ -181,10 +181,10 @@ impl Instance
                 color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
             }),
 
-            on_before_update: Observable::new(),
-            on_after_update: Observable::new(),
-            on_before_render: Observable::new(),
-            on_after_render: Observable::new(),
+            on_before_update: Observable::counted(&crate::helper::observable::UPDATE_OBSERVERS),
+            on_after_update: Observable::counted(&crate::helper::observable::UPDATE_OBSERVERS),
+            on_before_render: Observable::counted(&crate::helper::observable::RENDER_OBSERVERS),
+            on_after_render: Observable::counted(&crate::helper::observable::RENDER_OBSERVERS),
         };
 
         instance.add_component(Arc::new(RwLock::new(Box::new(transform))));
@@ -299,7 +299,13 @@ impl Instance
 
     pub fn update(instance: &InstanceItemArc, io: &mut InputOutput, physics: &PhysicsWorld, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> bool
     {
-        crate::notify_observable_arc!(instance, on_before_update);
+        Self::update_in_chain(instance, io, physics, time, frame_scale, frame, run_mode, None)
+    }
+
+    // chain: (a node from its own up changed this frame, one is locked) when the caller knows it - else each instance walks up itself
+    pub fn update_in_chain(instance: &InstanceItemArc, io: &mut InputOutput, physics: &PhysicsWorld, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode, chain: Option<(bool, bool)>) -> bool
+    {
+        if crate::helper::observable::anyone(&crate::helper::observable::UPDATE_OBSERVERS) { crate::notify_observable_arc!(instance, on_before_update); }
 
         let node;
         {
@@ -308,10 +314,16 @@ impl Instance
         }
 
         // ***** copy all components *****
-        let mut all_components;
+        // only components with an update (or a delete request) need the take-out below
+        let mut all_components = vec![];
         {
             let instance = instance.read().unwrap();
-            all_components = instance.components.clone();
+            let busy = instance.components.iter().any(|component|
+            {
+                let component = component.read().unwrap();
+                component.has_update() || component.get_base().delete_later_request
+            });
+            if busy { all_components = instance.components.clone(); }
         }
 
         let mut delete_components = vec![];
@@ -321,15 +333,15 @@ impl Instance
         {
             let component = all_components[component_id].clone();
 
-            if component.read().unwrap().get_base().delete_later_request
-            {
-                delete_components.push(component.read().unwrap().id());
-            }
-
             {
                 let component_read = component.read().unwrap();
 
-                if !component_read.is_enabled() || !component_read.runs_in_mode(run_mode)
+                if component_read.get_base().delete_later_request
+                {
+                    delete_components.push(component_read.id());
+                }
+
+                if !component_read.has_update() || !component_read.is_enabled() || !component_read.runs_in_mode(run_mode)
                 {
                     continue;
                 }
@@ -372,12 +384,14 @@ impl Instance
         }
 
         // ***** reassign components *****
+        if all_components_len > 0
         {
             let mut instance = instance.write().unwrap();
             instance.components = all_components;
         }
 
         // ***** delete components *****
+        if !delete_components.is_empty()
         {
             let mut instance = instance.write().unwrap();
             instance.remove_components_by_ids(&delete_components);
@@ -387,7 +401,7 @@ impl Instance
         let has_changed_data;
         {
             let instance = instance.read().unwrap();
-            has_changed_data = instance.find_changed_data() || instance.force_update;
+            has_changed_data = instance.find_changed_data_in_chain(chain) || instance.force_update;
         }
 
         if has_changed_data
@@ -396,7 +410,7 @@ impl Instance
 
             let world_matrix = instance.calculate_transform();
             let alpha = instance.calculate_alpha();
-            let locked = instance.accumulate_locked();
+            let locked = match chain { Some((_, chain_locked)) => instance.get_data().locked || chain_locked, None => instance.accumulate_locked() };
 
             let data = instance.get_data_mut().get_mut();
             data.computed.world_matrix = world_matrix;
@@ -409,49 +423,66 @@ impl Instance
             instance.force_update = false;
         }
 
-        crate::notify_observable_arc!(instance, on_after_update);
+        if crate::helper::observable::anyone(&crate::helper::observable::UPDATE_OBSERVERS) { crate::notify_observable_arc!(instance, on_after_update); }
 
         has_changed_data
     }
 
     pub fn find_changed_data(&self) -> bool
     {
+        self.find_changed_data_in_chain(None)
+    }
+
+    pub fn find_changed_data_in_chain(&self, chain: Option<(bool, bool)>) -> bool
+    {
         let mut changed = false;
 
-        // ********** check self **********
-        // transformation check
-        let trans_component = self.find_component::<Transformation>();
-        if let Some(trans_component) = trans_component
+        // the instance's own components (most have none)
+        if !self.components.is_empty()
         {
-            component_downcast_mut!(trans_component, Transformation);
-            if trans_component.get_data_mut().consume_change()
+            // ********** check self **********
+            // transformation check
+            let trans_component = self.find_component::<Transformation>();
+            if let Some(trans_component) = trans_component
             {
-                changed = true;
+                component_downcast_mut!(trans_component, Transformation);
+                if trans_component.get_data_mut().consume_change()
+                {
+                    changed = true;
+                }
             }
-        }
 
-        // alpha check
-        let alpha_components = self.find_components::<Alpha>();
-        for alpha_component in alpha_components
-        {
-            component_downcast_mut!(alpha_component, Alpha);
-
-            if alpha_component.get_data_mut().consume_change()
+            // alpha check
+            let alpha_components = self.find_components::<Alpha>();
+            for alpha_component in alpha_components
             {
-                changed = true;
+                component_downcast_mut!(alpha_component, Alpha);
+
+                if alpha_component.get_data_mut().consume_change()
+                {
+                    changed = true;
+                }
             }
         }
 
         // locked check
-        if self.accumulate_locked() != self.get_data().computed.locked
+        let locked = match chain { Some((_, chain_locked)) => self.get_data().locked || chain_locked, None => self.accumulate_locked() };
+        if locked != self.get_data().computed.locked
         {
             changed = true;
         }
 
         // ********** check node and parents **********
-        if let Some (node) = self.node.as_ref()
+        match chain
         {
-            changed = Instance::find_changed_parent_data(node.clone()) || changed;
+            Some((chain_changed, _)) => changed = chain_changed || changed,
+            None =>
+            {
+                if let Some (node) = self.node.as_ref()
+                {
+                    changed = Instance::find_changed_parent_data(node.clone()) || changed;
+                }
+            }
         }
 
         changed

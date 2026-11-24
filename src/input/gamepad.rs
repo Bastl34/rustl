@@ -63,6 +63,15 @@ pub enum GamepadPowerInfo
     Unknown
 }
 
+// a rumble asked for: the strong (low) and weak (high) motor 0..1, how long (s)
+#[derive(Debug, Copy, Clone)]
+pub struct Rumble
+{
+    pub strong: f32,
+    pub weak: f32,
+    pub seconds: f32,
+}
+
 pub struct Gamepad
 {
     pub name: String,
@@ -81,6 +90,8 @@ pub struct Gamepad
     pub axis_deadzone: f32,
 
     pub last_update: u64,
+
+    pub rumble: Option<Rumble>, // asked for this frame - the interface plays it (gilrs force feedback)
 }
 
 impl Gamepad
@@ -111,8 +122,27 @@ impl Gamepad
 
             axis_deadzone: DEFAULT_DEADZONE,
 
-            last_update: get_secs()
+            last_update: get_secs(),
+
+            rumble: None,
         }
+    }
+
+    // shakes it: the strong (low) and the weak (high) motor 0..1 for some seconds - several in a frame: the strongest of each
+    pub fn rumble(&mut self, strong: f32, weak: f32, seconds: f32)
+    {
+        if !self.connected || !self.has_force_feedback || seconds <= 0.0 || (strong <= 0.0 && weak <= 0.0)
+        {
+            return;
+        }
+
+        let (strong, weak) = (strong.clamp(0.0, 1.0), weak.clamp(0.0, 1.0));
+        let rumble = match self.rumble
+        {
+            Some(r) => Rumble { strong: r.strong.max(strong), weak: r.weak.max(weak), seconds: r.seconds.max(seconds) },
+            None => Rumble { strong, weak, seconds },
+        };
+        self.rumble = Some(rumble);
     }
 
     pub fn can_be_deleted(&self) -> bool

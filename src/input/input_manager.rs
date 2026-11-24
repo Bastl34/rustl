@@ -19,7 +19,7 @@ pub struct InputManager
     pub gamepads: BTreeMap<usize, Gamepad>, // by player id 1.., which stays while the gamepad is known
     pub touch: Touch,
 
-    pub last_input_device: InputType
+    pub last_input_device: InputType,
 }
 
 impl InputManager
@@ -33,7 +33,7 @@ impl InputManager
             gamepads: BTreeMap::new(),
             touch: Touch::new(),
 
-            last_input_device: InputType::Unkown
+            last_input_device: InputType::Unkown,
         }
     }
 
@@ -86,6 +86,15 @@ impl InputManager
     pub fn gamepad_mut(&mut self, id: usize) -> Option<&mut Gamepad>
     {
         self.gamepads.get_mut(&id)
+    }
+
+    // shakes a gamepad (player id), see Gamepad::rumble
+    pub fn rumble(&mut self, id: usize, strong: f32, weak: f32, seconds: f32)
+    {
+        if let Some(gamepad) = self.gamepads.get_mut(&id)
+        {
+            gamepad.rumble(strong, weak, seconds);
+        }
     }
 
     // the gamepad gilrs knows by this uid

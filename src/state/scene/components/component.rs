@@ -39,6 +39,8 @@ pub trait Component: Any + Send + Sync
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>);
 
     fn update(&mut self, node: NodeItem, io: &mut InputOutput, physics: &PhysicsWorld, time: u128, frame_scale: f32, frame: u64);
+    // false: update and update_instance do nothing (the node update skips it)
+    fn has_update(&self) -> bool { true }
     fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, io: &mut InputOutput, physics: &PhysicsWorld, time: u128, frame_scale: f32, frame: u64);
 
     fn runs_in_mode(&self, run_mode: RunMode) -> bool
@@ -240,6 +242,8 @@ macro_rules! component_impl_no_update
         fn update(&mut self, _node: NodeItem, _io: &mut crate::state::state::InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
+
+        fn has_update(&self) -> bool { false }
 
         fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &crate::state::scene::node::InstanceItemArc, _io: &mut crate::state::state::InputOutput, _physics: &crate::state::scene::physics::physics_world::PhysicsWorld, _time: u128, _frame_scale: f32, _frame: u64)
         {

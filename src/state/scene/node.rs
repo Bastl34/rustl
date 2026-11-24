@@ -400,10 +400,10 @@ impl Node
             skeleton_render_item: None,
             skeleton_morph_target_bind_group_render_item: None,
 
-            on_before_update: Observable::new(),
-            on_after_update: Observable::new(),
-            on_before_render: Observable::new(),
-            on_after_render: Observable::new(),
+            on_before_update: Observable::counted(&crate::helper::observable::UPDATE_OBSERVERS),
+            on_after_update: Observable::counted(&crate::helper::observable::UPDATE_OBSERVERS),
+            on_before_render: Observable::counted(&crate::helper::observable::RENDER_OBSERVERS),
+            on_after_render: Observable::counted(&crate::helper::observable::RENDER_OBSERVERS),
 
             delete_later_request: false,
             skip_instance_update: false,
@@ -744,6 +744,18 @@ impl Node
     pub fn get_meshes(&self) -> Vec<ComponentItem>
     {
         self.find_components::<Mesh>()
+    }
+
+    // the ids of the mesh resources of the meshes as one number, without collecting them (per node and frame): a swapped resource (lod) changes it
+    pub fn mesh_resources_key(&self) -> u64
+    {
+        self.components.iter().fold(0u64, |key, component|
+        {
+            let Ok(guard) = component.read() else { return key; };
+            let Some(resource) = guard.as_any().downcast_ref::<Mesh>().and_then(|mesh| mesh.mesh_resource.as_ref()) else { return key; };
+            let id = resource.read().map(|resource| resource.id as u64).unwrap_or(0);
+            key.wrapping_mul(0x100000001b3) ^ (id + 1)
+        })
     }
 
     pub fn get_meshes_with_mesh_resource(&self) -> Vec<ComponentItem>
@@ -1227,6 +1239,31 @@ impl Node
         }
 
         self.has_parent_id(node_id)
+    }
+
+    // its own transformation, joint or alpha changed this frame (not consumed) - what find_changed_parent_data checks per level
+    pub fn own_data_changed(&self) -> bool
+    {
+        for component in &self.components
+        {
+            let component = component.read().unwrap();
+            let any = component.as_any();
+
+            if let Some(transformation) = any.downcast_ref::<Transformation>()
+            {
+                if transformation.get_data_tracker().changed() { return true; }
+            }
+            else if let Some(joint) = any.downcast_ref::<Joint>()
+            {
+                if joint.get_data_tracker().changed() { return true; }
+            }
+            else if let Some(alpha) = any.downcast_ref::<Alpha>()
+            {
+                if alpha.get_data_tracker().changed() { return true; }
+            }
+        }
+
+        false
     }
 
     pub fn is_locked(&self) -> bool
@@ -2267,13 +2304,30 @@ impl Node
 
     pub fn update(node: NodeItem, io: &mut InputOutput, physics: &PhysicsWorld, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> NodeUpdateResult
     {
-        crate::notify_observable_arc!(&node, on_before_update);
+        // what the nodes above say: changed this frame, locked
+        let parent = node.read().unwrap().parent.clone();
+        let parent_changed = parent.as_ref().is_some_and(|parent| Instance::find_changed_parent_data(parent.clone()));
+        let parent_locked = parent.as_ref().is_some_and(|parent| parent.read().unwrap().is_locked());
+
+        Self::update_tree(node, io, physics, time, frame_scale, frame, run_mode, parent_changed, parent_locked)
+    }
+
+    // the node and its children - parent_changed / parent_locked: a node above changed this frame / is locked, so no instance walks up the chain itself
+    fn update_tree(node: NodeItem, io: &mut InputOutput, physics: &PhysicsWorld, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode, parent_changed: bool, parent_locked: bool) -> NodeUpdateResult
+    {
+        if crate::helper::observable::anyone(&crate::helper::observable::UPDATE_OBSERVERS) { crate::notify_observable_arc!(&node, on_before_update); }
 
         // ***** copy all components *****
-        let mut all_components;
+        // most nodes only have components without an update (mesh, material, transformation ...): nothing to take out then
+        let mut all_components = vec![];
         {
-            let node = node.write().unwrap();
-            all_components = node.components.clone();
+            let node = node.read().unwrap();
+            let busy = node.components.iter().any(|component|
+            {
+                let component = component.read().unwrap();
+                component.has_update() || component.get_base().delete_later_request
+            });
+            if busy { all_components = node.components.clone(); }
         }
 
         let mut delete_components = vec![];
@@ -2283,15 +2337,15 @@ impl Node
         {
             let component = all_components[component_id].clone();
 
-            if component.read().unwrap().get_base().delete_later_request
-            {
-                delete_components.push(component.read().unwrap().id());
-            }
-
             {
                 let component_read = component.read().unwrap();
 
-                if !component_read.is_enabled() || !component_read.runs_in_mode(run_mode)
+                if component_read.get_base().delete_later_request
+                {
+                    delete_components.push(component_read.id());
+                }
+
+                if !component_read.has_update() || !component_read.is_enabled() || !component_read.runs_in_mode(run_mode)
                 {
                     continue;
                 }
@@ -2335,16 +2389,25 @@ impl Node
         }
 
         // ***** reassign components *****
+        if all_components_len > 0
         {
             let mut node = node.write().unwrap();
             node.components = all_components;
         }
 
         // ***** delete components *****
+        if !delete_components.is_empty()
         {
             let mut node = node.write().unwrap();
             node.remove_components_by_ids(&delete_components);
         }
+
+        // ***** the chain down to here: changed this frame (after the components ran), locked *****
+        let (chain_changed, chain_locked) =
+        {
+            let node_read = node.read().unwrap();
+            (parent_changed || node_read.own_data_changed(), parent_locked || node_read.settings.locked)
+        };
 
         // ***** update instances *****
         {
@@ -2362,7 +2425,7 @@ impl Node
                         continue;
                     }
 
-                    if Instance::update(&instance, io, physics, time, frame_scale, frame, run_mode)
+                    if Instance::update_in_chain(&instance, io, physics, time, frame_scale, frame, run_mode, Some((chain_changed, chain_locked)))
                     {
                         updates += 1;
                     }
@@ -2399,7 +2462,7 @@ impl Node
             let node_read = node.read().unwrap();
             for child_node in &node_read.nodes
             {
-                let mut update_result = Self::update(child_node.clone(), io, physics, time, frame_scale, frame, run_mode);
+                let mut update_result = Self::update_tree(child_node.clone(), io, physics, time, frame_scale, frame, run_mode, chain_changed, chain_locked);
 
                 if update_result.delete_nodes.len() > 0
                 {
@@ -2413,7 +2476,7 @@ impl Node
             }
         }
 
-        crate::notify_observable_arc!(&node, on_after_update);
+        if crate::helper::observable::anyone(&crate::helper::observable::UPDATE_OBSERVERS) { crate::notify_observable_arc!(&node, on_after_update); }
 
         NodeUpdateResult { delete_nodes: delete_nodes, skinned_nodes: skinned_nodes }
     }

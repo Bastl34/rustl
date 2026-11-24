@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashMap};
 use nalgebra::{Matrix4, Point3, Vector3};
 use wgpu::{BindGroup, BindGroupLayout, CommandEncoder, TextureView};
 
-use crate::{rendering::{bind_groups::uniform, camera::CameraBuffer, scene::FogUniform, shadow::{self, ShadowBuffer, ShadowViewData}, texture::{Texture, TextureFormat}, wgpu::WGpu}, state::{helper::render_item::get_render_item, resources::texture::TextureItem, scene::{camera::CameraData, components::particle_emitter::{ParticleAlign, ParticleBlend, ParticleEmitter}, node::{Node, NodeItem}, scene::Scene}}};
+use crate::{rendering::{bind_groups::uniform, camera::CameraBuffer, scene::FogUniform, shadow::{self, ShadowBuffer, ShadowViewData, MAX_SHADOW_VIEWS}, texture::{Texture, TextureFormat}, wgpu::WGpu}, state::{helper::render_item::get_render_item, resources::texture::TextureItem, scene::{camera::CameraData, components::particle_emitter::{ParticleAlign, ParticleBlend, ParticleEmitter}, node::{Node, NodeItem}, scene::Scene}}};
 
 const MIN_INSTANCES: usize = 256; // per emitter, the buffer grows on demand
 
@@ -11,6 +11,8 @@ const MIN_INSTANCES: usize = 256; // per emitter, the buffer grows on demand
 const FLAG_TEXTURED: u32 = 1;
 const FLAG_FOG: u32 = 2;
 const FLAG_ADDITIVE: u32 = 4;
+const FLAG_LIT: u32 = 8;
+const FLAG_SHADOWED: u32 = 16;
 const ALIGN_SHIFT: u32 = 4; // 0 billboard, 1 velocity, 2 node
 
 #[repr(C)]
@@ -67,6 +69,18 @@ struct InstanceBuffer
     capacity: usize,
 }
 
+// what the light bind group was made of
+#[derive(PartialEq)]
+struct LightKey
+{
+    scene: wgpu::Buffer,
+    amount: wgpu::Buffer,
+    lights: wgpu::Buffer,
+    views: wgpu::Buffer,
+    atlas: wgpu::TextureView,
+    sampler: wgpu::Sampler,
+}
+
 // the particles of one emitter
 struct ParticleBatch
 {
@@ -95,6 +109,7 @@ pub struct ParticleRenderer
 
     camera_layout: BindGroupLayout,
     texture_layout: BindGroupLayout,
+    light_layout: BindGroupLayout,
     sampler: wgpu::Sampler,
     fog_buffer: wgpu::Buffer,
 
@@ -102,6 +117,11 @@ pub struct ParticleRenderer
     shadow_pipeline: Option<wgpu::RenderPipeline>,
     translucent_pipeline: Option<wgpu::RenderPipeline>,
     pub translucent_shadows: bool, // the rendering setting
+    pub lighting: bool, // the rendering setting: lit emitters take the light of the scene
+    pub shadows: bool, // the rendering setting: lit emitters with receive_shadows get darker in shadows
+
+    // the scene, its lights and the shadow atlas (read in the vertex shader) + the resources it was made for
+    light_bind_group: Option<(BindGroup, LightKey)>,
 
     camera_bind_groups: HashMap<u32, (BindGroup, wgpu::Buffer)>, // + depth uniform
     scene_depth: Option<wgpu::Texture>, // the depth pre-pass the bind groups were made for
@@ -171,6 +191,38 @@ impl ParticleRenderer
             label: Some("particles texture bind group layout"),
         });
 
+        // the lighting is done per particle in the vertex shader - the scene uniform is read by the fragment shader too (tone mapping)
+        let light_layout = wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        {
+            entries:
+            &[
+                uniform::uniform_bind_group_layout_entry(0, true, true),
+                uniform::uniform_bind_group_layout_entry(1, true, false),
+                uniform::uniform_bind_group_layout_entry(2, true, false),
+                uniform::uniform_bind_group_layout_entry(3, true, false),
+                wgpu::BindGroupLayoutEntry
+                {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Texture
+                    {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        sample_type: wgpu::TextureSampleType::Depth,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry
+                {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
+            ],
+            label: Some("particles light bind group layout"),
+        });
+
         let sampler = wgpu.device().create_sampler(&wgpu::SamplerDescriptor
         {
             label: Some("particles sampler"),
@@ -201,6 +253,7 @@ impl ParticleRenderer
 
             camera_layout,
             texture_layout,
+            light_layout,
             sampler,
             fog_buffer,
 
@@ -208,6 +261,10 @@ impl ParticleRenderer
             shadow_pipeline: None,
             translucent_pipeline: None,
             translucent_shadows: false,
+            lighting: true,
+            shadows: true,
+
+            light_bind_group: None,
 
             camera_bind_groups: HashMap::new(),
             scene_depth: None,
@@ -238,21 +295,23 @@ impl ParticleRenderer
 
     // ********** pipelines **********
 
-    pub fn create_pipelines(&mut self, wgpu: &mut WGpu, samples: u32, reverse_z: bool)
+    // max_lights: the size of the scene's light array (the light buffer is made for it)
+    pub fn create_pipelines(&mut self, wgpu: &mut WGpu, samples: u32, reverse_z: bool, max_lights: u32)
     {
         let device = wgpu.device();
         let surface_format = wgpu.surface_config().format;
 
+        let source = self.shader.replace("[MAX_LIGHTS]", &max_lights.max(1).to_string()).replace("[MAX_SHADOW_VIEWS]", &MAX_SHADOW_VIEWS.to_string());
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor
         {
             label: Some("particles"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&self.shader)),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(source)),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
             label: Some("particles layout"),
-            bind_group_layouts: &[Some(&self.camera_layout), Some(&self.texture_layout)],
+            bind_group_layouts: &[Some(&self.camera_layout), Some(&self.texture_layout), Some(&self.light_layout)],
             ..Default::default()
         });
 
@@ -485,6 +544,42 @@ impl ParticleRenderer
         self.camera_bind_groups.insert(camera_id, (bind_group, depth_buffer));
     }
 
+    // the scene uniform, the lights and the shadow atlas of the scene - a new bind group when one of them was made again
+    pub fn update_lights(&mut self, wgpu: &mut WGpu, scene_uniform: &wgpu::Buffer, light_amount: &wgpu::Buffer, lights: &wgpu::Buffer, shadow: &ShadowBuffer)
+    {
+        let key = LightKey
+        {
+            scene: scene_uniform.clone(),
+            amount: light_amount.clone(),
+            lights: lights.clone(),
+            views: shadow.get_views_buffer().clone(),
+            atlas: shadow.get_atlas_view().clone(),
+            sampler: shadow.get_sampler().clone(),
+        };
+
+        if self.light_bind_group.as_ref().is_some_and(|(_, old)| *old == key)
+        {
+            return;
+        }
+
+        let bind_group = wgpu.device().create_bind_group(&wgpu::BindGroupDescriptor
+        {
+            layout: &self.light_layout,
+            entries:
+            &[
+                wgpu::BindGroupEntry { binding: 0, resource: key.scene.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: key.amount.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: key.lights.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 3, resource: key.views.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&key.atlas) },
+                wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&key.sampler) },
+            ],
+            label: Some("particles light bind group"),
+        });
+
+        self.light_bind_group = Some((bind_group, key));
+    }
+
     pub fn remove_unused_cameras(&mut self, scene: &Scene)
     {
         self.camera_bind_groups.retain(|id, _| scene.cameras.iter().any(|cam| cam.id == *id));
@@ -586,6 +681,13 @@ impl ParticleRenderer
                 if texture.is_some() { flags |= FLAG_TEXTURED; }
                 if data.fog { flags |= FLAG_FOG; }
                 if data.blend == ParticleBlend::Additive { flags |= FLAG_ADDITIVE; }
+
+                // additive particles glow by themselves
+                if self.lighting && data.lit && data.blend == ParticleBlend::Alpha
+                {
+                    flags |= FLAG_LIT;
+                    if self.shadows && data.receive_shadows { flags |= FLAG_SHADOWED; }
+                }
 
                 let flipbook = data.flipbook[0].clamp(1, 0xffff) | (data.flipbook[1].clamp(1, 0xffff) << 16);
                 let node_normal = node_transform.transform_vector(&Vector3::y()).try_normalize(1e-6).unwrap_or(Vector3::y());
@@ -768,6 +870,7 @@ impl ParticleRenderer
     {
         let Some((alpha_blend, additive)) = self.pipelines.as_ref() else { return 0; };
         let Some((camera_bind_group, _)) = self.camera_bind_groups.get(&camera_id) else { return 0; };
+        let Some((light_bind_group, _)) = self.light_bind_group.as_ref() else { return 0; };
 
         let (render_pass_view, resolve_target) = match msaa_view
         {
@@ -802,6 +905,7 @@ impl ParticleRenderer
         let [x, y, width, height] = cam_data.viewport_px();
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
         render_pass.set_bind_group(0, camera_bind_group, &[]);
+        render_pass.set_bind_group(2, light_bind_group, &[]);
 
         let mut draw_calls = 0;
 

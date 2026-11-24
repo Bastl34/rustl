@@ -127,10 +127,13 @@ pub struct ParticleEmitterData
     pub trail_width: f32, // share of the size
     pub cast_shadows: bool, // alpha tested quads in the shadow maps
     pub translucent_shadows: bool, // the alpha lets light through (rendering setting), else hard
+    pub lit: bool, // takes the light of the scene (ambient, sun, lamps) - additive ones always glow by themselves
+    pub receive_shadows: bool, // lit: darker in the shadows of the lights
     #[serde(serialize_with = "serialize_texture", deserialize_with = "deserialize_texture")]
     pub texture: OptionOrId<TextureItem>, // a texture of the resources, saved by uuid (the scene file lists the file)
     pub flipbook: [u32; 2], // columns, rows
     pub flipbook_fps: f32, // 0: once over the life
+    pub flipbook_random: bool, // each particle starts on a random tile (fps 0: keeps it - chunks, grass blades)
 
     // collision
     pub collide: bool,
@@ -218,9 +221,12 @@ impl Default for ParticleEmitterData
             trail_width: 1.0,
             cast_shadows: false,
             translucent_shadows: false,
+            lit: true,
+            receive_shadows: true,
             texture: OptionOrId::None,
             flipbook: [1, 1],
             flipbook_fps: 0.0,
+            flipbook_random: false,
 
             collide: false,
             bounce: 0.3,
@@ -259,6 +265,7 @@ pub struct Particle
     pub rotation: f32, // rad
     pub spin: f32, // rad/s
     pub hue_shift: f32, // rad on the color wheel (random_hue)
+    pub first_frame: u32, // flipbook_random: its tile
     pub trail: Vec<(Vector3<f32>, f32)>, // older positions and the age there, oldest first (trail on)
 }
 
@@ -488,7 +495,8 @@ impl ParticleEmitter
     {
         let data = self.data.get_ref();
         let frames = data.flipbook[0].max(1) * data.flipbook[1].max(1);
-        let frame = if data.flipbook_fps > 0.0 { (particle.age * data.flipbook_fps) as u32 % frames } else { (particle.progress() * frames as f32) as u32 };
+        let frame = if data.flipbook_fps > 0.0 { (particle.first_frame + (particle.age * data.flipbook_fps) as u32) % frames }
+            else if data.flipbook_random { particle.first_frame } else { (particle.progress() * frames as f32) as u32 };
         frame.min(frames - 1)
     }
 
@@ -768,6 +776,7 @@ impl ParticleEmitter
             rotation: if data.random_rotation { self.random() * std::f32::consts::TAU } else { 0.0 },
             spin: (data.spin + self.random_signed() * data.spin_var).to_radians(),
             hue_shift: self.random_signed() * data.random_hue * std::f32::consts::PI,
+            first_frame: if data.flipbook_random { (self.random() * (data.flipbook[0].max(1) * data.flipbook[1].max(1)) as f32) as u32 } else { 0 },
             trail: vec![],
         }
     }
@@ -1357,6 +1366,14 @@ impl Component for ParticleEmitter
             {
                 changed = ui.checkbox(&mut data.translucent_shadows, "translucent shadows").on_hover_text("the alpha lets light through (smoke) - needs \"Translucent Shadows\" in the rendering settings, else hard").changed() || changed;
             });
+            ui.add_enabled_ui(data.blend == ParticleBlend::Alpha, |ui|
+            {
+                changed = ui.checkbox(&mut data.lit, "lit").on_hover_text("takes the light of the scene: ambient, sun / moon, lamps (per particle) - off: its own color as it is. Additive particles always glow by themselves. Needs \"Particle Lighting\" in the rendering settings").changed() || changed;
+                ui.add_enabled_ui(data.lit, |ui|
+                {
+                    changed = ui.checkbox(&mut data.receive_shadows, "receive shadows").on_hover_text("darker in the shadows of the lights (one shadow lookup per particle) - needs \"Particle Shadows\" in the rendering settings").changed() || changed;
+                });
+            });
 
             ui.horizontal(|ui|
             {
@@ -1390,6 +1407,7 @@ impl Component for ParticleEmitter
                 changed = ui.add(egui::DragValue::new(&mut data.flipbook[1]).range(1..=64).prefix("rows: ")).changed() || changed;
             });
             changed = ui.add(egui::Slider::new(&mut data.flipbook_fps, 0.0..=60.0).text("flipbook fps")).on_hover_text("0: plays once over the life").changed() || changed;
+            changed = ui.checkbox(&mut data.flipbook_random, "random tile").on_hover_text("each particle starts on a random tile - with fps 0 it keeps it (chunks, grass blades)").changed() || changed;
         });
 
         ui.collapsing("Collision", |ui|

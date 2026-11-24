@@ -457,6 +457,17 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             ui.label("ℹ").on_hover_text("particles with \"translucent shadows\" let light through by their alpha (smoke) - costs a pass per shadow view they are in, off: they cast hard shadows");
         });
 
+        ui.horizontal(|ui|
+        {
+            ui.checkbox(&mut state.rendering.particle_lighting, "Particle Lighting");
+            ui.label("ℹ").on_hover_text("particles of \"lit\" emitters take the light of the scene (ambient, sun / moon, lamps) per particle - off: all of them show their own color (bright in the dark)");
+            ui.add_enabled_ui(state.rendering.particle_lighting, |ui|
+            {
+                ui.checkbox(&mut state.rendering.particle_shadows, "Particle Shadows");
+                ui.label("ℹ").on_hover_text("lit particles with \"receive shadows\" get darker in the shadows of the lights - one shadow lookup per particle");
+            });
+        });
+
         ui.separator();
 
         let ssao_support = state.rendering_adapter.ssao_support;

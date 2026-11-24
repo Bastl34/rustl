@@ -81,6 +81,8 @@ pub struct Rendering
     pub shadow_map_resolution: ChangeTracker<u32>,
     pub shadow_max_distance: f32,
     pub translucent_shadows: bool, // particles with translucent shadows - off: they cast hard ones
+    pub particle_lighting: bool, // particles (emitter "lit") take the light of the scene - off: all unlit
+    pub particle_shadows: bool, // lit particles get darker in the shadows (emitter "receive shadows")
 
     pub ssao: bool,
     pub ssao_half_res: bool,
@@ -168,6 +170,8 @@ impl Default for Rendering
             shadow_map_resolution: ChangeTracker::new(DEFAULT_SHADOW_MAP_SIZE),
             shadow_max_distance: DEFAULT_SHADOW_MAX_DISTANCE,
             translucent_shadows: true,
+            particle_lighting: true,
+            particle_shadows: true,
 
             ssao: true,
             ssao_half_res: false,
@@ -215,6 +219,8 @@ impl Rendering
         set_changed(&mut self.shadow_map_resolution, (*settings.shadow_map_resolution.get_ref()).min(adapter.max_texture_resolution));
         self.shadow_max_distance = settings.shadow_max_distance;
         self.translucent_shadows = settings.translucent_shadows;
+        self.particle_lighting = settings.particle_lighting;
+        self.particle_shadows = settings.particle_shadows;
 
         self.ssao = settings.ssao;
         self.ssao_half_res = settings.ssao_half_res;
@@ -303,6 +309,21 @@ pub struct UpdateTimes
     pub render_nodes: f32, // node render items: transforms, instance buffers
     pub render_particles: f32,
     pub render_other: f32, // debug volumes, image saving, the rest of the render items update
+    pub physics_sync: f32, // physics (part of physics_update_time): scene -> physics world
+    pub physics_step: f32, // the solver steps
+    pub physics_apply: f32, // dynamic bodies -> scene
+}
+
+// the engine render (cpu: encoding the passes) split up (ms, all scenes)
+#[derive(Default, Clone, Copy, Debug)]
+pub struct RenderTimes
+{
+    pub notify: f32, // before / after render observers of all nodes
+    pub prep: f32, // the render items of all nodes: materials, meshes, groups
+    pub shadows: f32, // all shadow views
+    pub cull: f32, // per camera: layer + frustum culling, sorting
+    pub passes: f32, // per camera: depth, hzb, ssao, color, particles
+    pub results: f32, // visibility results, stats
 }
 
 impl UpdateTimes
@@ -352,6 +373,7 @@ pub struct Statistics
     pub engine_update_time: f32,
     pub engine_render_time: f32,
     pub update_times: UpdateTimes,
+    pub render_times: RenderTimes,
 
     pub physics_update_time: f32,
 
@@ -730,6 +752,7 @@ impl State
                 engine_update_time: 0.0,
                 engine_render_time: 0.0,
                 update_times: UpdateTimes::default(),
+                render_times: RenderTimes::default(),
 
                 physics_update_time: 0.0,
 

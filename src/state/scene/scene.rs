@@ -560,12 +560,15 @@ impl Scene
 
             // sync transforms from scene to physics world
             self.physics.sync_transformations(frozen);
+            times.physics_sync += take_elapsed_ms(&mut start_time);
 
             // run physics
             self.physics.step(get_delta_t(frame_scale), frozen);
+            times.physics_step += take_elapsed_ms(&mut start_time);
 
             // apply the physics world transforms back to the scene nodes
             self.physics.apply_dynamic_bodies(frozen);
+            times.physics_apply += take_elapsed_ms(&mut start_time);
 
             physics_update_time += physics_time.elapsed().as_micros();
         }
@@ -637,6 +640,12 @@ impl Scene
 
     pub fn notify_before_render_all(&self)
     {
+        // nobody listens (the usual case): no walk over every node and instance
+        if crate::helper::observable::RENDER_OBSERVERS.load(std::sync::atomic::Ordering::Relaxed) == 0
+        {
+            return;
+        }
+
         let all_nodes = Scene::list_all_child_nodes(&self.nodes);
         for node in &all_nodes
         {
@@ -657,6 +666,11 @@ impl Scene
 
     pub fn notify_after_render_all(&self)
     {
+        if crate::helper::observable::RENDER_OBSERVERS.load(std::sync::atomic::Ordering::Relaxed) == 0
+        {
+            return;
+        }
+
         let all_nodes = Scene::list_all_child_nodes(&self.nodes);
         for node in &all_nodes
         {

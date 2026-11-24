@@ -805,9 +805,16 @@ pub struct PhysicsWorld
     body_amount: usize,
     run_steps: u32, // since the run started - hits only count after a short grace
 
+    // nodes an app has standing on a vehicle / trailer (no seat, upright): node id -> the node, the vehicle's node id, its pose in vehicle space
+    carried_nodes: HashMap<u32, (Weak<RwLock<Box<Node>>>, u32, Pose)>,
+
     // kinematic bodies the scene moved this frame - rapier reports no velocity for a
     // position driven kinematic body after the step, so this is what "moving" means here
     moved_kinematics: HashSet<RigidBodyHandle>,
+
+    // a body or collider was added / removed or a body changed its type since the last solver step - the next one may not be skipped
+    structure_changed: bool,
+    kinematic_poses: HashMap<RigidBodyHandle, Pose>, // where the kinematic bodies were at the last solver step (they never sleep)
 
     // The speed of every dynamic body before this frame's steps. A hit is judged by how
     // fast the hitter arrived, not by the impulse the solver applied: a resting contact's
@@ -902,7 +909,10 @@ impl PhysicsWorld
             time_accumulator: 0.0,
             body_amount: 0,
             run_steps: 0,
+            carried_nodes: HashMap::new(),
             moved_kinematics: HashSet::new(),
+            structure_changed: true,
+            kinematic_poses: HashMap::new(),
             pre_step_speed: HashMap::new(),
             supports: vec![],
             running: true, // the editor turns this off, a game build just runs
@@ -1299,7 +1309,7 @@ impl PhysicsWorld
     // Recomputes the cached world matrix of every instance below a node, the node's own
     // included, and marks them for the renderer. Only for a node the solver moved after
     // the scene update ran - everything else is refreshed by Node::update.
-    fn refresh_instance_cache_below(node: &NodeItem)
+    pub(crate) fn refresh_instance_cache_below(node: &NodeItem)
     {
         let (instances, children) =
         {
@@ -1601,6 +1611,7 @@ impl PhysicsWorld
         };
 
         let handle = self.bodies.insert(builder.pose(pose).build());
+        self.structure_changed = true;
 
         let (linear, angular, time_until_sleep) = self.configured_sleep();
 
@@ -1946,6 +1957,7 @@ impl PhysicsWorld
     fn remove_collider(&mut self, handle: ColliderHandle)
     {
         self.colliders.remove(handle, &mut self.islands, &mut self.bodies, &mut self.soft_bodies, false);
+        self.structure_changed = true;
     }
 
     fn remove_bodies(&mut self, bodies: &Vec<RigidBodyHandle>)
@@ -1954,6 +1966,7 @@ impl PhysicsWorld
         {
             self.bodies.remove(*body, &mut self.islands, &mut self.colliders, &mut self.impulse_joints, &mut self.multibody_joints, &mut self.soft_bodies, true);
             self.body_amount = self.body_amount.saturating_sub(1);
+            self.structure_changed = true;
         }
     }
 
@@ -2330,6 +2343,7 @@ impl PhysicsWorld
         body.set_body_type(body_type, true);
         body.set_linvel(Vector::ZERO, true);
         body.set_angvel(Vector::ZERO, true);
+        self.structure_changed = true;
 
         if !held
         {
@@ -3480,10 +3494,37 @@ impl PhysicsWorld
             self.thaw_ahead_of_movers(pending_steps * self.settings.fixed_timestep);
         }
 
+        // a quiet world (dynamic bodies asleep, kinematic ones unmoved, nothing synced / added / removed): a step changes nothing, it is only counted
+        let quiet = !self.structure_changed && self.last_synced == 0 && self.moved_kinematics.is_empty()
+            && self.bodies.iter().all(|(handle, body)|
+            {
+                if body.is_dynamic() { body.is_sleeping() }
+                else if body.is_kinematic() { self.kinematic_poses.get(&handle) == Some(body.position()) && body.next_position() == body.position() }
+                else { true }
+            });
+        if quiet
+        {
+            while self.time_accumulator >= self.settings.fixed_timestep
+            {
+                self.time_accumulator -= self.settings.fixed_timestep;
+                self.run_steps = self.run_steps.saturating_add(1);
+            }
+
+            self.report_contacts();
+            return 0;
+        }
+
         let hooks = ContactHooks
         {
             center: self.vehicles.values().filter(|vehicle| vehicle.center_hits).map(|vehicle| vehicle.body).collect(),
             one_sided: self.entries.iter().filter(|entry| entry.one_sided_meshes).filter_map(|entry| entry.body).collect(),
+        };
+
+        // a kinematic body sent somewhere this frame goes there over all of the frame's steps (else it stands still in all but the first)
+        let planned = (self.time_accumulator / self.settings.fixed_timestep).floor().max(1.0);
+        let glides: Vec<(RigidBodyHandle, Pose, Pose)> = if planned < 2.0 { vec![] } else
+        {
+            self.bodies.iter().filter(|(_, body)| body.body_type() == RigidBodyType::KinematicPositionBased && body.next_position() != body.position()).map(|(handle, body)| (handle, *body.position(), *body.next_position())).collect()
         };
 
         while self.time_accumulator >= self.settings.fixed_timestep
@@ -3491,12 +3532,17 @@ impl PhysicsWorld
             self.time_accumulator -= self.settings.fixed_timestep;
             steps += 1;
 
-            // only the last step of the frame is shown in between
+            for (handle, from, to) in &glides
+            {
+                if let Some(body) = self.bodies.get_mut(*handle) { body.set_next_kinematic_position(Self::interpolate(from, to, (steps as f32 / planned).min(1.0))); }
+            }
+
+            // only the last step of the frame is shown in between (kinematic ones too: a body moved by an app / the network)
             if self.time_accumulator < self.settings.fixed_timestep
             {
                 for entry in &mut self.entries
                 {
-                    entry.step_pose = entry.body.and_then(|handle| self.bodies.get(handle)).filter(|body| body.is_dynamic() && !body.is_sleeping()).map(|body| (*body.position(), *body.position()));
+                    entry.step_pose = entry.body.and_then(|handle| self.bodies.get(handle)).filter(|body| body.is_dynamic() && !body.is_sleeping() || body.body_type() == RigidBodyType::KinematicPositionBased).map(|body| (*body.position(), *body.position()));
                 }
             }
 
@@ -3521,6 +3567,12 @@ impl PhysicsWorld
             );
 
             self.check_hitches(self.settings.fixed_timestep);
+            self.structure_changed = false;
+        }
+
+        if steps > 0
+        {
+            self.kinematic_poses = self.bodies.iter().filter(|(_, body)| body.is_kinematic()).map(|(handle, body)| (handle, *body.position())).collect();
         }
 
         self.report_contacts();
@@ -4034,6 +4086,12 @@ impl PhysicsWorld
 
     // Writes the vehicle poses back, interpolated between the last two steps - the steps do not line up with the frames.
     // how far the frame is into the step after the last one - the scene shows the bodies that far between their last two poses
+    // s of frame time not stepped yet: the bodies are this far behind the frames (an app stamps poses with it)
+    pub fn step_backlog(&self) -> f32
+    {
+        self.time_accumulator
+    }
+
     fn interpolation_alpha(&self) -> f32
     {
         if self.settings.fixed_timestep > 0.0 { (self.time_accumulator / self.settings.fixed_timestep).clamp(0.0, 1.0) } else { 1.0 }
@@ -4059,7 +4117,10 @@ impl PhysicsWorld
         let alpha = self.interpolation_alpha();
         let mut applied = 0;
 
-        for vehicle in self.vehicles.values_mut()
+        // the carried nodes whose node is gone
+        self.carried_nodes.retain(|_, (node, _, _)| node.strong_count() > 0);
+
+        for (vehicle_id, vehicle) in self.vehicles.iter_mut()
         {
             let Some(node) = vehicle.node.upgrade() else { continue; };
             let Some(body) = self.bodies.get(vehicle.body) else { continue; };
@@ -4080,11 +4141,42 @@ impl PhysicsWorld
 
             vehicle.place_riders(&pose);
 
+            for (carried, on, local) in self.carried_nodes.values()
+            {
+                if on != vehicle_id { continue; }
+                let Some(carried) = carried.upgrade() else { continue; };
+                Self::place_upright(&carried, &pose, local);
+            }
+
             vehicle.shown = shown;
             applied += 1;
         }
 
         applied
+    }
+
+    // where the vehicle is drawn, the node standing on it at its pose there - upright (it tilts nothing but its own yaw)
+    fn place_upright(node: &NodeItem, pose: &Pose, local: &Pose)
+    {
+        let world = *pose * *local;
+        let forward = world.rotation * Vector::NEG_Z;
+        let yaw = (-forward.x).atan2(-forward.z);
+        let anchor = Anchor::Node { node: node.clone() };
+        anchor.ensure_transformation();
+        anchor.write_back(&Pose::from_parts(world.translation, Rotation::from_rotation_y(yaw)));
+    }
+
+    // a node standing on a vehicle / trailer (vehicle node id + its pose in vehicle space): placed where the vehicle is drawn, every frame after
+    // the physics - an app moving it itself before would trail it by a frame (None: no longer)
+    pub fn carry_node(&mut self, node: &NodeItem, on: Option<(u32, Pose)>)
+    {
+        let node_id = node.read().unwrap().id;
+
+        match on
+        {
+            Some((vehicle_id, local)) => { self.carried_nodes.insert(node_id, (Arc::downgrade(node), vehicle_id, local)); },
+            None => { self.carried_nodes.remove(&node_id); },
+        }
     }
 
     // Writes the solver result back into the scene. This is the one place where the
@@ -4330,6 +4422,35 @@ impl PhysicsWorld
         self.broad_phase_bvh.as_query_pipeline_mut(&self.dispatcher, &mut self.bodies, &mut self.colliders, filter)
     }
 
+    // where a collider of a vehicle / trailer is drawn this frame: between the body's last two steps like the vehicle (None: not on one)
+    pub fn vehicle_collider_shown(&self, handle: ColliderHandle) -> Option<Matrix4<f32>>
+    {
+        let collider = self.colliders.get(handle)?;
+        let parent = collider.parent()?;
+        let vehicle = self.vehicles.values().find(|vehicle| vehicle.body == parent)?;
+        let body = self.bodies.get(parent)?;
+        let pose = Self::interpolate(&vehicle.previous, body.position(), self.interpolation_alpha()) * *collider.position_wrt_parent()?;
+        Some(Self::pose_matrix(&pose))
+    }
+
+    // a collider's world pose (a moving platform carries what stands on it by its change - turns included)
+    pub fn collider_matrix(&self, handle: ColliderHandle) -> Option<Matrix4<f32>>
+    {
+        Some(Self::pose_matrix(self.colliders.get(handle)?.position()))
+    }
+
+    fn pose_matrix(pose: &Pose) -> Matrix4<f32>
+    {
+        let m = pose.to_mat4();
+        Matrix4::new
+        (
+            m.x_axis.x, m.y_axis.x, m.z_axis.x, m.w_axis.x,
+            m.x_axis.y, m.y_axis.y, m.z_axis.y, m.w_axis.y,
+            m.x_axis.z, m.y_axis.z, m.z_axis.z, m.w_axis.z,
+            m.x_axis.w, m.y_axis.w, m.z_axis.w, m.w_axis.w
+        )
+    }
+
     pub fn collider_translation(&self, handle: ColliderHandle) -> Option<Vector3<f32>>
     {
         let collider = self.colliders.get(handle)?;
@@ -4395,6 +4516,7 @@ impl PhysicsWorld
         for collider in old_colliders
         {
             self.colliders.remove(collider, &mut self.islands, &mut self.bodies, &mut self.soft_bodies, true);
+            self.structure_changed = true;
         }
 
         let com = Vector::new(chassis.center_of_mass.x, chassis.center_of_mass.y, chassis.center_of_mass.z);
@@ -4535,6 +4657,7 @@ impl PhysicsWorld
         if let Some(vehicle) = self.vehicles.remove(&node_id)
         {
             self.bodies.remove(vehicle.body, &mut self.islands, &mut self.colliders, &mut self.impulse_joints, &mut self.multibody_joints, &mut self.soft_bodies, true);
+            self.structure_changed = true;
         }
     }
 
@@ -4705,6 +4828,22 @@ impl PhysicsWorld
     pub fn hitch_from(&self, tow_id: u32) -> Option<(u32, &HitchEntry)>
     {
         self.hitches.iter().find(|(_, hitch)| hitch.tow == tow_id).map(|(trailer, hitch)| (*trailer, hitch))
+    }
+
+    // kg of the coupled trailers behind a vehicle, with their own trailers
+    pub fn towed_mass(&self, tow_id: u32) -> f32
+    {
+        self.towed_mass_from(tow_id, 0)
+    }
+
+    fn towed_mass_from(&self, tow_id: u32, depth: u32) -> f32
+    {
+        if depth > 8 { return 0.0; }
+        self.hitches.iter().filter(|(_, hitch)| hitch.tow == tow_id && hitch.state == HitchState::Coupled).map(|(trailer, _)|
+        {
+            let own = self.vehicles.get(trailer).and_then(|vehicle| self.bodies.get(vehicle.body)).map_or(0.0, |body| body.mass());
+            own + self.towed_mass_from(*trailer, depth + 1)
+        }).sum()
     }
 
     // what the trailers of this vehicle brake with, 0..1
@@ -7334,3 +7473,4 @@ mod tests
         assert!((instance_y(&waiting) - 0.5).abs() < 0.06, "the box should have fallen to the ground, it is at {}", instance_y(&waiting));
     }
 }
+

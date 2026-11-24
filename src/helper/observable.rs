@@ -11,6 +11,18 @@
 
 use std::fmt;
 use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+// all render observers of nodes and instances (their on_before_render / on_after_render) - none: the scene skips the walk over every instance
+pub static RENDER_OBSERVERS: AtomicUsize = AtomicUsize::new(0);
+
+// the same for their on_before_update / on_after_update - none: the node update takes no write lock just to find nobody
+pub static UPDATE_OBSERVERS: AtomicUsize = AtomicUsize::new(0);
+
+pub fn anyone(tally: &AtomicUsize) -> bool
+{
+    tally.load(Ordering::Relaxed) > 0
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ObserverId(u64);
@@ -36,6 +48,15 @@ pub struct Observable<T: ?Sized>
     next_id: u64,
     notifying: bool,
     pending_remove: Vec<ObserverId>,
+    tally: Option<&'static AtomicUsize>, // counts the observers of all observables of one kind (see RENDER_OBSERVERS)
+}
+
+impl<T: ?Sized> Drop for Observable<T>
+{
+    fn drop(&mut self)
+    {
+        self.count(-(self.observers.len() as isize));
+    }
 }
 
 impl<T: ?Sized> Default for Observable<T>
@@ -56,7 +77,49 @@ impl<T: ?Sized> Observable<T>
             next_id: 0,
             notifying: false,
             pending_remove: Vec::new(),
+            tally: None,
         }
+    }
+
+    // its observers also count in tally
+    pub fn counted(tally: &'static AtomicUsize) -> Self
+    {
+        let mut observable = Self::new();
+        observable.tally = Some(tally);
+        observable
+    }
+
+    fn count(&self, delta: isize)
+    {
+        let Some(tally) = self.tally else { return; };
+        if delta > 0 { tally.fetch_add(delta as usize, Ordering::Relaxed); }
+        else if delta < 0 { tally.fetch_sub((-delta) as usize, Ordering::Relaxed); }
+    }
+
+    // the observer list after a notify: the drained ones that stay, then the ones added meanwhile, minus the removed ones
+    fn merge_after_notify(&mut self, mut drained: Vec<Entry<T>>)
+    {
+        let before = drained.len() + self.observers.len();
+        self.notifying = false;
+
+        let removed = std::mem::take(&mut self.pending_remove);
+
+        // drop one-shot entries that fired and entries removed during the notify
+        drained.retain(|e| !e.once && !removed.contains(&e.id));
+
+        // anything added mid-notify is currently in self.observers; preserve original
+        // order by putting the drained (surviving) list first, then the newcomers
+        let added_during = std::mem::take(&mut self.observers);
+        self.observers = drained;
+        self.observers.extend(added_during);
+
+        // in case a callback also tried to remove something added mid-notify
+        if !removed.is_empty()
+        {
+            self.observers.retain(|e| !removed.contains(&e.id));
+        }
+
+        self.count(self.observers.len() as isize - before as isize);
     }
 
     pub fn add(&mut self, cb: impl FnMut(&mut T) + Send + Sync + 'static) -> ObserverId
@@ -74,6 +137,7 @@ impl<T: ?Sized> Observable<T>
         self.next_id += 1;
         let id = ObserverId(self.next_id);
         self.observers.push(Entry { id, once, cb });
+        self.count(1);
         id
     }
 
@@ -88,6 +152,7 @@ impl<T: ?Sized> Observable<T>
 
         let len = self.observers.len();
         self.observers.retain(|e| e.id != id);
+        self.count(self.observers.len() as isize - len as isize);
         self.observers.len() != len
     }
 
@@ -101,6 +166,7 @@ impl<T: ?Sized> Observable<T>
             }
             return;
         }
+        self.count(-(self.observers.len() as isize));
         self.observers.clear();
     }
 
@@ -142,25 +208,7 @@ where
         (entry.cb)(owner);
     }
 
-    let obs = get(owner);
-    obs.notifying = false;
-
-    let removed = std::mem::take(&mut obs.pending_remove);
-
-    // drop one-shot entries that fired and entries removed during the notify
-    drained.retain(|e| !e.once && !removed.contains(&e.id));
-
-    // anything added mid-notify is currently in obs.observers; preserve original
-    // order by putting the drained (surviving) list first, then the newcomers
-    let added_during = std::mem::take(&mut obs.observers);
-    obs.observers = drained;
-    obs.observers.extend(added_during);
-
-    // in case a callback also tried to remove something added mid-notify
-    if !removed.is_empty()
-    {
-        obs.observers.retain(|e| !removed.contains(&e.id));
-    }
+    get(owner).merge_after_notify(drained);
 }
 
 // Notify variant for owners wrapped in `Arc<RwLock<Box<T>>>` (e.g. `NodeItem`,
@@ -192,21 +240,7 @@ where
     }
 
     let mut w = owner.write().unwrap();
-    let obs = get(&mut **w);
-    obs.notifying = false;
-
-    let removed = std::mem::take(&mut obs.pending_remove);
-
-    drained.retain(|e| !e.once && !removed.contains(&e.id));
-
-    let added_during = std::mem::take(&mut obs.observers);
-    obs.observers = drained;
-    obs.observers.extend(added_during);
-
-    if !removed.is_empty()
-    {
-        obs.observers.retain(|e| !removed.contains(&e.id));
-    }
+    get(&mut **w).merge_after_notify(drained);
 }
 
 // Convenience macro: `notify_observable!(owner, field_name)`
