@@ -18,7 +18,7 @@ use std::cell::RefCell;
 
 use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point3, Vector3, Vector4};
 
-use crate::{helper::{change_tracker::ChangeTracker, math::up_vector_for_direction}, render_item_impl_default, state::{helper::render_item::RenderItem, scene::{camera::{CameraData, OPENGL_TO_WGPU_MATRIX}, light::{Light, LightItem, LightType}}}};
+use crate::{console_warning, helper::{change_tracker::ChangeTracker, math::up_vector_for_direction}, render_item_impl_default, state::{helper::render_item::RenderItem, scene::{camera::{CameraData, OPENGL_TO_WGPU_MATRIX}, light::{Light, LightItem, LightType}}}};
 
 use super::wgpu::WGpu;
 
@@ -27,6 +27,9 @@ pub const SHADOW_CASCADES: u32 = 3;
 
 // resolution comes from state.rendering.shadow_map_resolution - this is just the lower sanity bound
 const MIN_SHADOW_MAP_SIZE: u32 = 16;
+
+// out of gpu memory: the resolution is halved down to this (vulkan on integrated gpus: no allocation above the vram heap, e.g. 256 MB)
+const FALLBACK_MIN_SHADOW_MAP_SIZE: u32 = 512;
 
 // how far casters behind a cascade slice are still captured (multiple of the cascade radius)
 const SHADOW_CSM_Z_EXTENSION: f32 = 4.0;
@@ -416,6 +419,9 @@ pub struct ShadowBuffer
 
     // array<mat4x4, MAX_SHADOW_VIEWS> - used by the fragment shader (base.wgsl)
     shadow_views_buffer: wgpu::Buffer,
+
+    // lowered after an out of gpu memory - so the full size is not tried again every frame
+    max_size: u32,
 }
 
 crate::render_item_send_sync!(ShadowBuffer);
@@ -532,6 +538,8 @@ impl ShadowBuffer
             caster_bind_group,
 
             shadow_views_buffer,
+
+            max_size: u32::MAX,
         }
     }
 
@@ -623,20 +631,32 @@ impl ShadowBuffer
     fn ensure(&mut self, wgpu: &mut WGpu, needed_layers: u32, size: u32, translucent: bool) -> bool
     {
         let needed_layers = needed_layers.clamp(1, MAX_SHADOW_VIEWS);
-        let size = size.max(MIN_SHADOW_MAP_SIZE);
+        let mut size = size.max(MIN_SHADOW_MAP_SIZE).min(self.max_size);
 
         if needed_layers == self.layers && size == self.size && translucent == self.translucent
         {
             return false;
         }
 
+        // out of gpu memory: half the resolution (the translucent texture is half the bytes - it fits then too)
+        let (atlas_texture, layer_views, atlas_view) = loop
+        {
+            if let Some(atlas) = Self::try_create_atlas(wgpu, needed_layers, size)
+            {
+                break atlas;
+            }
+
+            assert!(size / 2 >= FALLBACK_MIN_SHADOW_MAP_SIZE, "shadow atlas: out of gpu memory for {} layers of {} px", needed_layers, size);
+            console_warning!("shadow atlas: out of gpu memory for {} layers of {} px - using {} px", needed_layers, size, size / 2);
+            size /= 2;
+            self.max_size = size;
+        };
+
         let (translucent_texture, translucent_layer_views, translucent_view) = Self::create_translucent(wgpu, needed_layers, size, translucent);
         self.translucent = translucent;
         self.translucent_texture = translucent_texture;
         self.translucent_layer_views = translucent_layer_views;
         self.translucent_view = translucent_view;
-
-        let (atlas_texture, layer_views, atlas_view) = Self::create_atlas(wgpu, needed_layers, size);
 
         self.atlas_texture = atlas_texture;
         self.layer_views = layer_views;
@@ -645,6 +665,32 @@ impl ShadowBuffer
         self.size = size;
 
         true
+    }
+
+    // None: out of gpu memory (native only - the web could only answer async)
+    fn try_create_atlas(wgpu: &mut WGpu, layers: u32, size: u32) -> Option<(wgpu::Texture, Vec<wgpu::TextureView>, wgpu::TextureView)>
+    {
+        // the views of a texture without memory are validation errors - caught too, raised again if it was not the memory
+        #[cfg(not(target_arch = "wasm32"))]
+        let (validation, out_of_memory) = (wgpu.device().push_error_scope(wgpu::ErrorFilter::Validation), wgpu.device().push_error_scope(wgpu::ErrorFilter::OutOfMemory));
+
+        let atlas = Self::create_atlas(wgpu, layers, size);
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let out_of_memory = pollster::block_on(out_of_memory.pop()).is_some();
+            let validation = pollster::block_on(validation.pop());
+            if out_of_memory
+            {
+                return None;
+            }
+            if let Some(err) = validation
+            {
+                panic!("wgpu error: {}", err);
+            }
+        }
+
+        Some(atlas)
     }
 
     // translucent_layers: the views with translucent shadows this frame

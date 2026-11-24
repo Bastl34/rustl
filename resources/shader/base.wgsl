@@ -1072,11 +1072,11 @@ fn shadow_factor(light_index: i32, world_pos: vec3<f32>) -> vec3<f32>
         {
             return shadow_sample_view(first_view, world_pos, bias);
         }
-        default
-        {
-            return vec3<f32>(1.0);
-        }
+        default {}
     }
+
+    // after the switch, not in its default: naga writes no return after a switch and FXC (dx12) does not see that all cases return
+    return vec3<f32>(1.0);
 }
 
 
